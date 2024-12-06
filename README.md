@@ -1,3 +1,5 @@
-Matt's video IDs:
+### Well, here's a thing
 
-* nhXevKMm3JI
+```shell
+$ poetry run youtubey -- new-comments --playlist PLzH6n4zXuckpwdGMHgRH5N9xNHzVGCxwf
+```
