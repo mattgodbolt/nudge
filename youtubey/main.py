@@ -218,13 +218,18 @@ def get_video_watch_counts(channel_id, api_key):
 @cli.command(name="new-comments")
 @click.option("--state-file", type=Path,
               default=Path.home() / ".youtubey-state.json")
-@click.argument("video_ids", type=str, nargs=-1, required=True)
+@click.option("--playlist")
+@click.argument("video_ids", type=str, nargs=-1)
 @click.pass_obj
-def new_comments_cmd(ctx: Context, state_file: Path,
-                     video_ids: list[str]) -> None:
+def new_comments_cmd(ctx: Context, state_file: Path, playlist: str | None,
+                     video_ids: tuple[str]) -> None:
     monitor = YouTubeCommentMonitor(ctx.api_key, state_file)
     try:
-        new_comments = monitor.get_new_comments(video_ids)
+        playlist_video_ids = []
+        if playlist is not None:
+            playlist_video_ids = monitor.get_playlist_video_ids(playlist)
+        new_comments = monitor.get_new_comments(
+            [*video_ids] + playlist_video_ids)
 
         # Print new comments
         for video_id, comments in new_comments.items():
@@ -248,7 +253,7 @@ def new_comments_cmd(ctx: Context, state_file: Path,
 @cli.command(name="watch-counts")
 @click.argument("channel_id", type=str, default="UC9-y-6csu5WGm29I7JiwpnA")
 @click.pass_obj
-def main(ctx: Context, channel_id: str):
+def watch_counts(ctx: Context, channel_id: str):
     try:
         # Get video watch counts
         videos = get_video_watch_counts(channel_id, ctx.api_key)

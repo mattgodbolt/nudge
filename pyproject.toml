@@ -11,7 +11,7 @@ google-api-python-client = "^2.154.0"
 click = "^8.1.7"
 
 [tool.poetry.scripts]
-youtubey = 'youtubey.main:main'
+youtubey = 'youtubey.main:cli'
 
 [build-system]
 requires = ["poetry-core"]
