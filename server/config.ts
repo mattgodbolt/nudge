@@ -6,6 +6,10 @@ import { parseGoogleClientJson } from './reply/google-client.js';
 
 export interface Config {
   port: number;
+  /** Listen address. Loopback unless a container publishes the port (then 0.0.0.0 inside, loopback on the host). */
+  host: string;
+  allowedHosts: string[];
+  allowedUsers: string[];
   dbPath: string;
   demo: boolean;
   /** Demo world does not grow on its own (deterministic e2e). */
@@ -48,8 +52,16 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, home: string = 
     throw new Error(`Invalid NUDGE_PORT: ${portEnv}`);
   }
   const truthy = (v: string | undefined) => v === '1' || v?.toLowerCase() === 'true';
+  const list = (v: string | undefined) =>
+    (v ?? '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
   return {
     port,
+    host: pick(env, 'HOST') || '127.0.0.1',
+    allowedHosts: list(pick(env, 'ALLOWED_HOSTS')),
+    allowedUsers: list(pick(env, 'ALLOWED_USERS')),
     dbPath: pick(env, 'DB') || DEFAULT_DB,
     demo: truthy(pick(env, 'DEMO')),
     demoClockFixed: pick(env, 'DEMO_CLOCK') === 'fixed',

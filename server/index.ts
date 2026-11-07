@@ -125,9 +125,13 @@ async function main(): Promise<void> {
     demoTick,
     staticDir,
   };
-  const app = buildApp(deps, { port: config.port || undefined });
+  const app = buildApp(deps, {
+    port: config.port || undefined,
+    allowedHosts: config.allowedHosts,
+    allowedUsers: config.allowedUsers,
+  });
 
-  await app.listen({ host: '127.0.0.1', port: config.port });
+  await app.listen({ host: config.host, port: config.port });
   const port = (app.server.address() as { port: number }).port;
   listenPort = port;
   scheduler.start();
@@ -138,7 +142,7 @@ async function main(): Promise<void> {
     );
   }
   console.log(
-    `Nudge listening on http://127.0.0.1:${port}` +
+    `Nudge listening on http://${config.host}:${port}` +
       `${config.demo ? ' (DEMO mode)' : ''}${staticDir ? '' : ' (no built web UI found; run `npm run build` or use vite dev)'}`,
   );
 

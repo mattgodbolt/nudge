@@ -101,6 +101,36 @@ Known limitations: held-for-review comments are still invisible (viewing them ne
 or hearting comments is not possible through the API, editing a posted reply is not supported, and deleted comments
 are not detected.
 
+## Deploying (Docker + Tailscale)
+
+One box on your LAN runs the container; `tailscale serve` puts HTTPS in front of it, reachable only from your tailnet
+(phone included). The app listens on the host's loopback only and still checks Host, Origin and, optionally, your
+Tailscale identity. It has no password of its own, so do not publish the port anywhere else.
+
+```shell
+git clone git@github.com:mattgodbolt/nudge.git ~/nudge && cd ~/nudge
+mkdir -p data
+cat > .env <<EOF2
+NUDGE_ALLOWED_HOSTS=<machine>.<tailnet>.ts.net
+NUDGE_ALLOWED_USERS=<your tailscale login>
+EOF2
+docker compose up -d --build            # the image build runs the unit tests
+tailscale serve --bg --https=443 http://127.0.0.1:4517
+deploy/install-cron.sh                  # auto-update + nightly backup
+```
+
+- **Auto-update:** `deploy/update.sh` (cron, every 5 minutes) fetches `origin/main`; on a new commit it takes a backup,
+  builds (a failing test aborts the build and the old container keeps running), restarts, and rolls back to the
+  previous image if the new one is not healthy within ~90s. A commit that fails is remembered and not retried. See
+  `data/update.log`.
+- **Backups:** `deploy/backup.sh` (cron, 03:15) snapshots the live database with SQLite's online backup API, verifies
+  it, keeps 7 in `data/backups/` and 14 on the NAS (`NUDGE_BACKUP_DIR`, default `/nas/BackedUp/nudge`). It exits
+  non-zero if the NAS copy fails. Restore: stop the container, copy a snapshot over `data/nudge.db`, delete
+  `nudge.db-wal`/`-shm`, start it. Snapshots contain your Google token and API key, so keep them private.
+- **Google sign-in** redirects to `http://127.0.0.1:4517/...`, which only works on the machine itself. Connect once
+  with `ssh -L 4517:127.0.0.1:4517 <box>` and open `http://127.0.0.1:4517/settings` (the tokens then live in the
+  database), or connect on your laptop and copy the database across.
+
 ## Naming
 
 The app was called Youtubey. Existing setups keep working: `YOUTUBEY_*` environment variables, `~/.youtubey-key` and

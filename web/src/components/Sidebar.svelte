@@ -42,7 +42,10 @@
 
 <nav class="sidebar" aria-label="Main">
   <div class="brand">
-    <span class="logo" aria-hidden="true"></span>
+    <svg class="logo" viewBox="0 0 32 32" aria-hidden="true">
+      <path d="M3 17h7l2 4h8l2-4h7v8a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3z" fill="currentColor" />
+      <circle cx="16" cy="8" r="5" fill="var(--accent)" />
+    </svg>
     <span class="name">Nudge</span>
     <button
       class="btn ghost sm collapse"
@@ -156,20 +159,10 @@
     padding: var(--s1) var(--s2);
   }
   .logo {
-    width: 18px;
-    height: 18px;
-    border-radius: 5px;
-    background: var(--accent);
-    position: relative;
-  }
-  .logo::after {
-    content: '';
-    position: absolute;
-    left: 7px;
-    top: 5px;
-    border-left: 6px solid #fff;
-    border-top: 4px solid transparent;
-    border-bottom: 4px solid transparent;
+    width: 20px;
+    height: 20px;
+    flex: none;
+    color: var(--text);
   }
   .name {
     font-weight: 600;

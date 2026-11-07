@@ -9,6 +9,17 @@ export interface SecurityOptions {
   port?: number;
   /** Extra allowed Origin values (e.g. the Vite dev server). */
   extraOrigins?: string[];
+  /**
+   * Extra hostnames accepted in Host besides loopback, e.g. the Tailscale name of the machine when `tailscale serve`
+   * fronts the app. The port check is skipped for these (the proxy talks on 443, not our port).
+   */
+  allowedHosts?: string[];
+  /**
+   * If non-empty, a request to an allowed (non-loopback) host must carry a Tailscale-User-Login header naming one of
+   * these logins. `tailscale serve` sets it from the caller's tailnet identity and strips any client-supplied value;
+   * it is only trustworthy because the app listens on loopback, so only the local proxy can reach it.
+   */
+  allowedUsers?: string[];
 }
 
 function parseHost(host: string | undefined): { hostname: string; port: string } | null {
@@ -29,9 +40,19 @@ export function checkRequest(
 ): { status: number; body: ApiError } | null {
   const hostHeader = typeof headers.host === 'string' ? headers.host : undefined;
   const host = parseHost(hostHeader);
-  // Blocks DNS rebinding: a rebound hostname is never 127.0.0.1/localhost.
-  if (!host || !LOOPBACK.test(host.hostname) || (opts.port !== undefined && host.port !== String(opts.port))) {
+  // Blocks DNS rebinding: a rebound hostname is never 127.0.0.1/localhost or one we were told to expect.
+  const loopback = host !== null && LOOPBACK.test(host.hostname);
+  const allowed =
+    host !== null && (opts.allowedHosts ?? []).some((h) => h.toLowerCase() === host.hostname.toLowerCase());
+  if (!host || !(allowed || loopback) || (loopback && opts.port !== undefined && host.port !== String(opts.port))) {
     return reject(403, 'Forbidden host', 'bad_host');
+  }
+  if (allowed && (opts.allowedUsers ?? []).length > 0) {
+    const login = headers['tailscale-user-login'];
+    const who = typeof login === 'string' ? login.toLowerCase() : '';
+    if (!(opts.allowedUsers ?? []).some((u) => u.toLowerCase() === who)) {
+      return reject(403, 'Not signed in to the tailnet as an allowed user', 'bad_user');
+    }
   }
   if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') return null;
 

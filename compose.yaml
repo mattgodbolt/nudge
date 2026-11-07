@@ -1,0 +1,19 @@
+# Deployment on a LAN box fronted by `tailscale serve` (see README, "Deploying"). The port is published on the
+# host's loopback only; Tailscale (HTTPS, tailnet-only) is the sole way in.
+services:
+  nudge:
+    build: .
+    image: nudge:latest
+    container_name: nudge
+    restart: unless-stopped
+    user: '1000:1000' # matches the owner of ./data on the host
+    ports:
+      - '127.0.0.1:4517:4517'
+    environment:
+      # Set these in a gitignored .env next to this file, e.g.
+      #   NUDGE_ALLOWED_HOSTS=phoenix.your-tailnet.ts.net
+      #   NUDGE_ALLOWED_USERS=you@example.com
+      NUDGE_ALLOWED_HOSTS: ${NUDGE_ALLOWED_HOSTS:-}
+      NUDGE_ALLOWED_USERS: ${NUDGE_ALLOWED_USERS:-}
+    volumes:
+      - ./data:/app/data

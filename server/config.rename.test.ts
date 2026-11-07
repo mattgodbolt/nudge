@@ -44,3 +44,17 @@ describe('pre-rename compatibility', () => {
     }
   });
 });
+
+describe('network config', () => {
+  it('defaults to loopback with nothing extra allowed', () => {
+    expect(loadConfig({}, tmp())).toMatchObject({ host: '127.0.0.1', allowedHosts: [], allowedUsers: [] });
+  });
+  it('parses comma-separated lists and a custom bind host', () => {
+    expect(
+      loadConfig(
+        { NUDGE_HOST: '0.0.0.0', NUDGE_ALLOWED_HOSTS: 'a.ts.net, b.ts.net ,', NUDGE_ALLOWED_USERS: 'm@x.com' },
+        tmp(),
+      ),
+    ).toMatchObject({ host: '0.0.0.0', allowedHosts: ['a.ts.net', 'b.ts.net'], allowedUsers: ['m@x.com'] });
+  });
+});
