@@ -224,7 +224,7 @@ export function createReplyPoster(deps: ReplyPosterDeps): ReplyPoster {
 
     async deleteReply(comment) {
       if (!comment.isOwn || !comment.parentId || !repo.isAppPostedReply(comment.id)) {
-        throw new PostError('cannot_reply', 'Only replies posted from Youtubey can be deleted here', 422);
+        throw new PostError('cannot_reply', 'Only replies posted from Nudge can be deleted here', 422);
       }
       if (!quota.canManual()) throw new PostError('quota_exhausted', 'Daily API quota exhausted', 429);
       const { token } = await auth.getAccessToken(comment.authorChannelId ?? undefined);

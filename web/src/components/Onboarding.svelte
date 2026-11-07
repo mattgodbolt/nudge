@@ -27,7 +27,7 @@
 
 <div class="wrap" data-testid="onboarding">
   <form class="card panel" onsubmit={save}>
-    <h1>Welcome to Youtubey</h1>
+    <h1>Welcome to Nudge</h1>
     <p class="muted">
       A local, keyboard-driven inbox for your YouTube comments. To start, add a YouTube Data API v3 key.
     </p>

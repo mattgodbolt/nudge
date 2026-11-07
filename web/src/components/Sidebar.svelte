@@ -43,7 +43,7 @@
 <nav class="sidebar" aria-label="Main">
   <div class="brand">
     <span class="logo" aria-hidden="true"></span>
-    <span class="name">Youtubey</span>
+    <span class="name">Nudge</span>
     <button
       class="btn ghost sm collapse"
       onclick={() => ui.toggleSidebar()}

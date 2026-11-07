@@ -21,7 +21,7 @@ class AppStore {
       theme.adopt(b.settings.theme);
       this.error = null;
     } catch (e) {
-      this.error = e instanceof Error ? e.message : 'Could not reach the Youtubey server';
+      this.error = e instanceof Error ? e.message : 'Could not reach the Nudge server';
     } finally {
       this.ready = true;
     }

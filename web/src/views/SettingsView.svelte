@@ -154,7 +154,7 @@
     </section>
 
     <section class="panel sec" data-testid="settings-google">
-      <h2>Reply from Youtubey</h2>
+      <h2>Reply from Nudge</h2>
       {#if google}
         <p class="muted meta">
           Connect a Google account to post replies straight from here instead of copying them to YouTube. Setup takes a

@@ -137,7 +137,7 @@ async function main(): Promise<void> {
     );
   }
   console.log(
-    `Youtubey listening on http://127.0.0.1:${port}` +
+    `Nudge listening on http://127.0.0.1:${port}` +
       `${config.demo ? ' (DEMO mode)' : ''}${staticDir ? '' : ' (no built web UI found; run `npm run build` or use vite dev)'}`,
   );
 

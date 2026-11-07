@@ -1,4 +1,4 @@
-# Youtubey
+# Nudge
 
 A local, keyboard-driven inbox for the comments on your YouTube videos (and on videos you merely appear in).
 Track channels, playlists and individual videos; every new comment lands in an inbox; reply or mark it done
@@ -20,7 +20,7 @@ Ticking "This is my channel" when adding a channel source does exactly the same 
 
 ## Replying
 
-By default Youtubey only has an API key, which YouTube restricts to reading. `⌘/Ctrl+Enter` in the composer then
+By default Nudge only has an API key, which YouTube restricts to reading. `⌘/Ctrl+Enter` in the composer then
 copies your reply, opens the comment on YouTube (`&lc=` permalink) and marks it replied (`z` undoes). This hand-off
 is always the fallback: it is used until you connect a Google account, and again if the sign-in lapses.
 
@@ -33,7 +33,7 @@ units) as your channel, with no copy and paste. One-time Google Cloud setup, in 
    picker in the top bar.
 2. Check that **APIs & Services > Library > YouTube Data API v3** says "Enabled". It already should be.
 3. Go to **Google Auth Platform** (left menu, or search "OAuth consent"). If you see **Get started**, click it:
-   - App name: `Youtubey`. User support email: your address.
+   - App name: `Nudge`. User support email: your address.
    - **Audience: External.** "Internal" only exists for Workspace organisations.
    - Contact email: your address. Tick the policy box, then **Create**.
 4. **Data Access > Add or remove scopes.** Filter for `youtube.force-ssl`, tick `.../auth/youtube.force-ssl`
@@ -43,17 +43,17 @@ units) as your channel, with no copy and paste. One-time Google Cloud setup, in 
    Account channel, the Google account you sign in with), then **Save**.
 6. **Avoid signing in again every week:** still under **Audience**, click **Publish app > Confirm**. Status becomes
    "In production". Ignore any "needs verification" notice: an app used only by you (fewer than 100 users) is
-   exempt. In "Testing" status Google expires your sign-in every 7 days and Youtubey falls back to copy-and-open
+   exempt. In "Testing" status Google expires your sign-in every 7 days and Nudge falls back to copy-and-open
    until you reconnect.
-7. **Clients > Create client.** Application type **Desktop app**, name `Youtubey local`, **Create**, then
-   **Download JSON**. No redirect URI is needed: Youtubey always uses `http://127.0.0.1:4517/api/auth/callback`
+7. **Clients > Create client.** Application type **Desktop app**, name `Nudge local`, **Create**, then
+   **Download JSON**. No redirect URI is needed: Nudge always uses `http://127.0.0.1:4517/api/auth/callback`
    (or your `YOUTUBEY_PORT`).
-8. Give Youtubey the client in any one of these ways:
-   - paste the downloaded JSON into **Settings > Reply from Youtubey**;
+8. Give Nudge the client in any one of these ways:
+   - paste the downloaded JSON into **Settings > Reply from Nudge**;
    - save it as `~/.youtubey-google-client.json` and run `chmod 600` on it;
    - set `YOUTUBEY_GOOGLE_CLIENT_ID` and `YOUTUBEY_GOOGLE_CLIENT_SECRET`.
 9. **Settings > Connect Google account.** Choose the account, then the channel if Google asks (Brand Accounts are
-   listed separately). On "Google hasn't verified this app", click **Advanced > Go to Youtubey (unsafe)**: it is
+   listed separately). On "Google hasn't verified this app", click **Advanced > Go to Nudge (unsafe)**: it is
    your own app. On the permissions screen, **tick the YouTube box**. Google lets you untick it, and then posting
    cannot work.
 10. You are sent back to Settings showing "Connected as <channel>". `⌘/Ctrl+Enter` now posts directly.
@@ -100,3 +100,9 @@ Design notes: [docs/PLAN.md](docs/PLAN.md). OAuth posting design: [docs/OAUTH-PL
 Known limitations: held-for-review comments are still invisible (viewing them needs OAuth reads, deferred), liking
 or hearting comments is not possible through the API, editing a posted reply is not supported, and deleted comments
 are not detected.
+
+## Naming
+
+The app is called Nudge. Some internals keep the old name on purpose so existing installs keep working: the
+database `data/youtubey.db`, `~/.youtubey-key`, `~/.youtubey-google-client.json`, the `YOUTUBEY_*` environment
+variables and the `X-Youtubey` request header.

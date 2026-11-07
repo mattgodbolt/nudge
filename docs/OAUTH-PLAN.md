@@ -1,4 +1,4 @@
-# Plan: Google OAuth for posting YouTube replies from Youtubey
+# Plan: Google OAuth for posting YouTube replies from Nudge
 
 The plan builds on the existing `ReplyPoster` seam (`server/reply/poster.ts`), selected in `server/index.ts`. Routes stay the same, and the UI changes are limited to Settings, `web/src/lib/reply.ts`, the composer wording and one new SSE event.
 
@@ -71,24 +71,24 @@ Add this to README under "Replying from the app (optional)". Use the same Google
 1. Open https://console.cloud.google.com and pick the project that holds your YouTube API key from the project picker in the top bar.
 2. Check that **APIs & Services → Library → YouTube Data API v3** says "Enabled". It already should be.
 3. Go to **Google Auth Platform** (left menu, or search "OAuth consent"). If you see **Get started**, click it:
-   - App name: `Youtubey`. User support email: your address.
+   - App name: `Nudge`. User support email: your address.
    - **Audience: External.** "Internal" only exists for Workspace organisations.
    - Contact email: your address. Tick the policy box, then **Create**.
 4. **Data Access → Add or remove scopes.** Filter for `youtube.force-ssl`, tick `…/auth/youtube.force-ssl` ("See, edit, and permanently delete your YouTube videos, ratings, comments and captions"), then **Update → Save**. Add no other scopes.
 5. **Audience → Test users → Add users.** Add the Google account that owns or manages your channel (for a Brand Account channel, the Google account you sign in with), then **Save**.
 6. **Avoid signing in again every week:** still under **Audience**, click **Publish app → Confirm**. Status becomes "In production".
    - Ignore any "needs verification" notice. An app used only by you (fewer than 100 users) is exempt.
-   - In "Testing" status, Google expires your sign-in every 7 days and Youtubey falls back to copy-and-open until you reconnect.
+   - In "Testing" status, Google expires your sign-in every 7 days and Nudge falls back to copy-and-open until you reconnect.
 7. **Clients → Create client.**
-   - Application type: **Desktop app**. Name: `Youtubey local`. Click **Create**, then **Download JSON**.
-   - No redirect URI is needed. Youtubey always uses `http://127.0.0.1:4517/api/auth/callback`, or your `YOUTUBEY_PORT`.
-8. Give Youtubey the client in any one of these ways:
-   - paste the downloaded JSON into **Settings → Reply from Youtubey**;
+   - Application type: **Desktop app**. Name: `Nudge local`. Click **Create**, then **Download JSON**.
+   - No redirect URI is needed. Nudge always uses `http://127.0.0.1:4517/api/auth/callback`, or your `YOUTUBEY_PORT`.
+8. Give Nudge the client in any one of these ways:
+   - paste the downloaded JSON into **Settings → Reply from Nudge**;
    - save it as `~/.youtubey-google-client.json` and run `chmod 600` on it;
    - set `YOUTUBEY_GOOGLE_CLIENT_ID` and `YOUTUBEY_GOOGLE_CLIENT_SECRET`.
 9. **Settings → Connect Google account.**
    - Choose the account, then the channel if Google asks (Brand Accounts are listed separately).
-   - On "Google hasn't verified this app", click **Advanced → Go to Youtubey (unsafe)**. It is your own app.
+   - On "Google hasn't verified this app", click **Advanced → Go to Nudge (unsafe)**. It is your own app.
    - On the permissions screen, **tick the YouTube box**. Google lets you untick it, and then posting cannot work.
 10. You are sent back to Settings showing "Connected as <channel>". `⌘/Ctrl+Enter` now posts directly.
 
@@ -276,7 +276,7 @@ The route (`/api/comments/:id/reply`) is otherwise unchanged. It already calls `
 
 ## 4. UI changes
 
-### 4.1 `SettingsView.svelte`: new "Reply from Youtubey" card, placed after the API key card
+### 4.1 `SettingsView.svelte`: new "Reply from Nudge" card, placed after the API key card
 
 **State A, no client configured:**
 
@@ -317,7 +317,7 @@ The route (`/api/comments/:id/reply`) is otherwise unchanged. It already calls `
   - `post_unconfirmed` → Open on YouTube, and do not restore the draft as unsent.
   - Copy & open from a toast button click is a user gesture, so clipboard and `window.open` still work.
 - **Undo (decision):** a reply posted through the API is **not** deleted by `z`. `z` only undoes the triage action, moving the comment back to inbox, as now. The toast wording makes that explicit.
-  - Deleting is an explicit, separate action: a **Delete reply** button on own comments that were posted from Youtubey (have a `reply_posts` row), with a confirm. It calls `comments.delete` (50 units).
+  - Deleting is an explicit, separate action: a **Delete reply** button on own comments that were posted from Nudge (have a `reply_posts` row), with a confirm. It calls `comments.delete` (50 units).
   - Rationale: a silent API delete on `z` is surprising, costs 50 units, and races with people who have already seen the reply.
   - A Gmail-style "undo send" delay is listed in section 7 as a choice for you.
 

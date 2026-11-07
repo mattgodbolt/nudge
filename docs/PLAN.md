@@ -1,4 +1,4 @@
-# Youtubey implementation plan: from the Python CLI to a local keyboard-driven web app
+# Nudge implementation plan: from the Python CLI to a local keyboard-driven web app
 
 ## 0. Current state and environment
 

@@ -9,7 +9,7 @@ export interface GoogleToast {
 export function googleToast(code: string): GoogleToast {
   switch (code) {
     case 'connected':
-      return { message: 'Google account connected. Replies will now post from Youtubey.', kind: 'success' };
+      return { message: 'Google account connected. Replies will now post from Nudge.', kind: 'success' };
     case 'denied':
       return { message: 'Google sign-in was cancelled.', kind: 'error' };
     case 'scope_missing':

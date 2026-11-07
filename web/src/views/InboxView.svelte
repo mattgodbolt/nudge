@@ -185,7 +185,7 @@
       {#if noSources && !filtered}
         <EmptyState
           title="Add a playlist, video or channel"
-          body="Youtubey watches the sources you add and gathers every new comment here."
+          body="Nudge watches the sources you add and gathers every new comment here."
         >
           {#if settings.needsOwnChannel}
             <div class="own-ask" data-testid="own-channel-prompt">

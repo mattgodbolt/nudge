@@ -36,7 +36,7 @@
   <div class="boot" aria-busy="true"></div>
 {:else if app.error && !settings.value}
   <div class="boot">
-    <EmptyState title="Can't reach the Youtubey server" body={app.error}>
+    <EmptyState title="Can't reach the Nudge server" body={app.error}>
       <button class="btn" onclick={() => void app.boot()}>Retry</button>
     </EmptyState>
   </div>
