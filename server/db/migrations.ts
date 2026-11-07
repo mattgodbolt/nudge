@@ -98,4 +98,21 @@ ALTER TABLE sources ADD COLUMN feed_scan_incomplete INTEGER NOT NULL DEFAULT 0;
 -- last_reply_fetch_at: when all reply pages of a thread were last fetched OK; reset when total_reply_count changes.
 ALTER TABLE threads ADD COLUMN last_reply_fetch_at TEXT;
 `,
+  /* 003 Google OAuth accounts + reply post log */ `
+CREATE TABLE google_accounts (
+  channel_id TEXT PRIMARY KEY, channel_title TEXT, channel_thumb TEXT,
+  refresh_token TEXT NOT NULL, access_token TEXT, access_expires_at TEXT,
+  scope TEXT NOT NULL, connected_at TEXT NOT NULL,
+  needs_reauth INTEGER NOT NULL DEFAULT 0, last_error TEXT,
+  is_default INTEGER NOT NULL DEFAULT 0);
+CREATE TABLE reply_posts (
+  id INTEGER PRIMARY KEY, comment_id TEXT NOT NULL, body_hash TEXT NOT NULL,
+  status TEXT NOT NULL CHECK (status IN ('pending','posted','failed','unknown')),
+  posted_comment_id TEXT, via_channel_id TEXT, error TEXT, created_at TEXT NOT NULL);
+CREATE INDEX idx_reply_posts_comment ON reply_posts(comment_id, created_at DESC);
+`,
+  /* 004 video duration + like count (for the Stats view); NULL until fetched */ `
+ALTER TABLE videos ADD COLUMN duration_seconds INTEGER;
+ALTER TABLE videos ADD COLUMN like_count INTEGER;
+`,
 ];

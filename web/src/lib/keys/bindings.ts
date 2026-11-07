@@ -67,6 +67,14 @@ export function appBindings(): Binding[] {
       run: () => router.navigate('sources'),
     },
     {
+      id: 'go.stats',
+      keys: ['g t'],
+      scope: 'global',
+      group: 'Go to',
+      description: 'Go to Stats',
+      run: () => router.navigate('stats'),
+    },
+    {
       id: 'go.settings',
       keys: ['g ,'],
       scope: 'global',

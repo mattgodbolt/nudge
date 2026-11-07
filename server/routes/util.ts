@@ -70,5 +70,7 @@ export function buildSettingsDto(deps: AppDeps): SettingsDTO {
     backfillDays: s.backfillDays,
     theme: s.theme,
     demo: deps.demo,
+    // Status only: account titles and flags. Tokens and the client secret never leave the server.
+    google: deps.auth.status(),
   };
 }

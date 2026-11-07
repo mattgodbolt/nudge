@@ -66,11 +66,18 @@ const THREAD_FIELDS =
   `nextPageToken,items(id,snippet(videoId,channelId,canReply,totalReplyCount,topLevelComment(id,snippet(${COMMENT_SNIPPET}))),` +
   `replies(comments(id,snippet(${COMMENT_SNIPPET},parentId))))`;
 const REPLY_FIELDS = `nextPageToken,items(id,snippet(${COMMENT_SNIPPET},parentId))`;
+/** ISO 8601 duration as YouTube sends it (PT1H2M3S, P1DT2H); null for missing/live/garbage. */
+export function parseIsoDuration(d: string | undefined): number | null {
+  const m = d ? /^P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?$/.exec(d) : null;
+  if (!m || d === 'P' || d === 'PT') return null;
+  return Number(m[1] ?? 0) * 86400 + Number(m[2] ?? 0) * 3600 + Number(m[3] ?? 0) * 60 + Number(m[4] ?? 0);
+}
+
 const THUMB = 'thumbnails(default(url),medium(url),high(url))';
 
 const thumb = (t?: RawThumbs): string | null => t?.medium?.url ?? t?.high?.url ?? t?.default?.url ?? null;
 
-function normComment(c: RawComment, videoId: string, parentId: string | null): YtComment {
+export function normComment(c: RawComment, videoId: string, parentId: string | null): YtComment {
   const s = c.snippet ?? {};
   const published = s.publishedAt ?? new Date(0).toISOString();
   return {
@@ -233,13 +240,14 @@ export function createHttpClient(opts: HttpClientOptions): YouTubeClient {
               publishedAt?: string;
               thumbnails?: RawThumbs;
             };
-            statistics?: { viewCount?: string; commentCount?: string };
+            statistics?: { viewCount?: string; commentCount?: string; likeCount?: string };
+            contentDetails?: { duration?: string };
           }>
         >('videos', {
-          part: 'snippet,statistics',
+          part: 'snippet,statistics,contentDetails',
           id: unique.slice(i, i + 50).join(','),
           maxResults: '50',
-          fields: `items(id,snippet(title,channelId,channelTitle,publishedAt,${THUMB}),statistics(viewCount,commentCount))`,
+          fields: `items(id,snippet(title,channelId,channelTitle,publishedAt,${THUMB}),statistics(viewCount,commentCount,likeCount),contentDetails(duration))`,
         });
         for (const v of raw.items ?? []) {
           const num = (s?: string) => (s === undefined ? null : Number(s));
@@ -252,6 +260,8 @@ export function createHttpClient(opts: HttpClientOptions): YouTubeClient {
             publishedAt: v.snippet?.publishedAt ?? null,
             viewCount: num(v.statistics?.viewCount),
             commentCount: num(v.statistics?.commentCount),
+            likeCount: num(v.statistics?.likeCount),
+            durationSeconds: parseIsoDuration(v.contentDetails?.duration),
           });
         }
       }

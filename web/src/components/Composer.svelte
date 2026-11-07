@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { InboxItem } from '../../../shared/types';
   import { keymap } from '../lib/keys/keymap.svelte';
-  import { copyOnly, send } from '../lib/reply';
+  import { copyOnly, handoff, send } from '../lib/reply';
   import { drafts } from '../lib/stores/drafts.svelte';
   import { inbox } from '../lib/stores/inbox.svelte';
   import { settings } from '../lib/stores/settings.svelte';
@@ -13,7 +13,8 @@
 
   const id = $derived(item.comment.id);
   const body = $derived(drafts.bodies[id] ?? '');
-  const handoff = $derived(settings.capabilities.postMode === 'handoff');
+  const handoffMode = $derived(settings.capabilities.postMode === 'handoff');
+  const postAs = $derived(settings.capabilities.postAs?.title ?? null);
   const open = $derived(ui.composerOpen || body.trim().length > 0);
   let ta: HTMLTextAreaElement | undefined = $state();
 
@@ -67,6 +68,12 @@
   function doSend() {
     if (!canReply || !body.trim()) return;
     send(item, body);
+    ui.composerOpen = false;
+    ta?.blur();
+  }
+  function handoffInstead() {
+    if (!canReply || !body.trim()) return;
+    handoff(item, body);
     ui.composerOpen = false;
     ta?.blur();
   }
@@ -134,15 +141,26 @@
       {onblur}></textarea>
     <div class="bar meta">
       <span class="hint muted">
-        {#if handoff}<Kbd keys="$mod+Enter" /> copy &amp; open on YouTube{:else}<Kbd keys="$mod+Enter" /> reply{/if}
+        {#if handoffMode}<Kbd keys="$mod+Enter" /> copy &amp; open on YouTube{:else}<Kbd keys="$mod+Enter" /> post{postAs
+            ? ` as ${postAs}`
+            : ''}{/if}
         <span class="sep">·</span>
         <Kbd keys="Escape" /> cancel
       </span>
       <span class="grow"></span>
       <span class="faint count" class:over={body.length > 10000}>{body.length}</span>
+      {#if !handoffMode}
+        <button
+          class="btn sm ghost"
+          type="button"
+          onclick={handoffInstead}
+          disabled={!body.trim()}
+          data-testid="composer-handoff">Copy &amp; open instead</button
+        >
+      {/if}
       <button class="btn sm" type="button" onclick={() => copyOnly(body)} disabled={!body.trim()}>Copy</button>
       <button class="btn sm primary" type="button" onclick={doSend} disabled={!body.trim()} data-testid="composer-send">
-        {handoff ? 'Copy & open' : 'Reply'}
+        {handoffMode ? 'Copy & open' : 'Reply'}
       </button>
     </div>
   {:else}

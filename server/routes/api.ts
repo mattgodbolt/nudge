@@ -2,8 +2,9 @@ import type { FastifyInstance } from 'fastify';
 import type { InboxQuery, SettingsUpdate, SyncRequest } from '../../shared/api.js';
 import { parseSourceInput } from '../../shared/youtube-urls.js';
 import type { Bootstrap, CommentState, ImportMode, PollTier, TriageResult } from '../../shared/types.js';
-import type { AppDeps } from '../contracts.js';
-import { YtError } from '../contracts.js';
+import type { AppDeps, StoredSettings } from '../contracts.js';
+import { PostError, YtError } from '../contracts.js';
+import { isValidClientId, parseGoogleClientJson } from '../reply/google-client.js';
 import { setOwnChannelId } from '../sync/own-channels.js';
 import { HttpError, asObject, bad, bool, buildSettingsDto, int, notFound, oneOf, str } from './util.js';
 
@@ -11,6 +12,16 @@ const VIEWS = ['inbox', 'done', 'all'] as const;
 const IMPORT_MODES = ['none', 'recent', 'all'] as const;
 const TIERS = ['hot', 'warm', 'cold', 'frozen', 'paused'] as const;
 const THEMES = ['system', 'light', 'dark'] as const;
+
+/** Run a posting action, turning PostError into the HTTP error the client understands. */
+async function asHttp<T>(fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn();
+  } catch (e) {
+    if (e instanceof PostError) throw new HttpError(e.status, e.message, e.code);
+    throw e;
+  }
+}
 
 export function registerApiRoutes(app: FastifyInstance, deps: AppDeps): void {
   const { repo, engine, bus, quota, poster } = deps;
@@ -93,9 +104,39 @@ export function registerApiRoutes(app: FastifyInstance, deps: AppDeps): void {
     const body = str(asObject(req.body), 'body')!;
     const comment = repo.getComment(req.params.id);
     if (!comment) throw notFound('Comment');
-    const result = await poster.reply(comment, body);
-    emitInbox([comment.id]);
+    let result: Awaited<ReturnType<typeof poster.reply>>;
+    try {
+      result = await asHttp(() => poster.reply(comment, body));
+    } catch (e) {
+      // A failed post can flip capabilities (sign-in revoked, thread not replyable): tell every open tab.
+      if (e instanceof HttpError && ['auth_required', 'cannot_reply', 'quota_exhausted'].includes(e.code)) {
+        bus.emit({ type: 'capabilities.changed', capabilities: poster.capabilities() });
+        emitSettings();
+        bus.emit({ type: 'quota.update', quota: quota.snapshot() });
+      }
+      throw e;
+    }
+    if (result.mode === 'posted') {
+      // The auto-clear may have moved older comments of the thread, so report the whole thread as changed.
+      const threadIds = repo.getThread(comment.threadId)?.comments.map((c) => c.id) ?? [comment.id];
+      emitInbox([...new Set([comment.id, ...threadIds])], [result.comment.id]);
+      bus.emit({ type: 'quota.update', quota: quota.snapshot() });
+    } else {
+      emitInbox([comment.id]);
+    }
     return result;
+  });
+
+  /** Delete a reply this app posted (own + app-posted only; enforced by the poster). */
+  app.post<{ Params: { id: string } }>('/api/comments/:id/delete', async (req, reply) => {
+    const comment = repo.getComment(req.params.id);
+    if (!comment) throw notFound('Comment');
+    if (!poster.deleteReply)
+      throw new HttpError(422, 'Deleting replies needs a connected Google account', 'cannot_reply');
+    await asHttp(() => poster.deleteReply!(comment));
+    emitInbox([comment.id, comment.threadId]);
+    bus.emit({ type: 'quota.update', quota: quota.snapshot() });
+    return reply.code(204).send();
   });
 
   /* ---- sources ---- */
@@ -192,6 +233,18 @@ export function registerApiRoutes(app: FastifyInstance, deps: AppDeps): void {
   });
   app.get('/api/sync/status', async () => engine.status());
   app.get('/api/quota', async () => quota.snapshot());
+  app.get('/api/stats', async () => repo.getStats());
+  app.post('/api/stats/refresh', async (_req, reply) => {
+    if (!deps.backfillDetails) return reply.code(501).send({ error: 'Not available', code: 'unsupported' });
+    try {
+      await deps.backfillDetails();
+    } catch (e) {
+      return reply
+        .code(502)
+        .send({ error: e instanceof Error ? e.message : 'Could not fetch video details', code: 'refresh_failed' });
+    }
+    return repo.getStats();
+  });
 
   /* ---- settings ---- */
   app.get('/api/settings', async () => buildSettingsDto(deps));
@@ -218,10 +271,12 @@ export function registerApiRoutes(app: FastifyInstance, deps: AppDeps): void {
       u.manualReserve = int(b.manualReserve, 'manualReserve', { min: 0, max: 1_000_000 });
     if (b.backfillDays !== undefined) u.backfillDays = int(b.backfillDays, 'backfillDays', { min: 0, max: 36500 });
     if (b.theme !== undefined) u.theme = oneOf(b.theme, 'theme', THEMES);
+    const googleClient = b.googleClient === undefined ? undefined : parseGoogleClientUpdate(b.googleClient);
 
     const before = repo.getSettings();
-    const { apiKey, ...rest } = u;
+    const { apiKey, googleClient: _ignored, ...rest } = u;
     const patch: Parameters<typeof repo.updateSettings>[0] = { ...rest };
+    if (googleClient !== undefined) patch.googleClient = googleClient;
     if (apiKey !== undefined) patch.apiKey = apiKey?.trim() ? apiKey.trim() : null;
     repo.updateSettings(patch);
 
@@ -243,6 +298,7 @@ export function registerApiRoutes(app: FastifyInstance, deps: AppDeps): void {
     const dto = buildSettingsDto(deps);
     bus.emit({ type: 'settings.changed', settings: dto });
     bus.emit({ type: 'quota.update', quota: quota.snapshot() });
+    if (googleClient !== undefined) bus.emit({ type: 'capabilities.changed', capabilities: poster.capabilities() });
     return dto;
   });
 
@@ -300,4 +356,21 @@ export function registerApiRoutes(app: FastifyInstance, deps: AppDeps): void {
       return reply.code(204).send();
     });
   }
+}
+
+/** Accepts {json}, {clientId, clientSecret} or null (remove). Never echoes the secret in an error. */
+function parseGoogleClientUpdate(v: unknown): StoredSettings['googleClient'] {
+  if (v === null) return null;
+  const o = asObject(v);
+  if (typeof o.json === 'string') {
+    const parsed = parseGoogleClientJson(o.json);
+    if (!parsed) {
+      throw bad('Could not find a valid client_id (…apps.googleusercontent.com) and client_secret in that JSON');
+    }
+    return parsed;
+  }
+  const clientId = str(o, 'clientId')!.trim();
+  const clientSecret = str(o, 'clientSecret')!.trim();
+  if (!isValidClientId(clientId)) throw bad('"clientId" must end with .apps.googleusercontent.com');
+  return { clientId, clientSecret };
 }

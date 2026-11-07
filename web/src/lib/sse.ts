@@ -14,6 +14,7 @@ const TYPES: ServerEvent['type'][] = [
   'quota.update',
   'sources.changed',
   'settings.changed',
+  'capabilities.changed',
   'error',
 ];
 
@@ -37,6 +38,9 @@ export function dispatch(e: ServerEvent) {
     case 'settings.changed':
       settings.value = e.settings;
       theme.adopt(e.settings.theme);
+      break;
+    case 'capabilities.changed':
+      settings.capabilities = e.capabilities;
       break;
     case 'error':
       toasts.error(e.message);

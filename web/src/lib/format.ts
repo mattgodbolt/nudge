@@ -43,6 +43,17 @@ export function formatNumber(n: number): string {
   return new Intl.NumberFormat().format(n);
 }
 
+/** "12d 4h 31m": the two largest-to-smallest units that matter, dropping zero leaders. */
+export function formatDuration(totalSeconds: number): string {
+  const mins = Math.round(totalSeconds / 60);
+  const d = Math.floor(mins / 1440);
+  const h = Math.floor((mins % 1440) / 60);
+  const m = mins % 60;
+  if (d) return `${d}d ${h}h ${m}m`;
+  if (h) return `${h}h ${m}m`;
+  return `${m}m`;
+}
+
 export function until(iso: string | null | undefined, now = Date.now()): string {
   if (!iso) return '';
   const d = Date.parse(iso) - now;

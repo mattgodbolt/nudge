@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach } from 'vitest';
-import type { Repo, YtComment, YtThread } from '../contracts.js';
+import type { GoogleAccountRow, Repo, YtComment, YtThread } from '../contracts.js';
 import { createRepo, UndoError } from './repo.js';
 import { openDb, migrate } from './db.js';
 import { MIGRATIONS } from './migrations.js';
@@ -92,6 +92,7 @@ describe('settings', () => {
   it('returns defaults and persists updates', () => {
     expect(repo.getSettings()).toEqual({
       apiKey: null,
+      googleClient: null,
       ownChannelIds: [],
       pollEnabled: true,
       dailyQuotaBudget: 9000,
@@ -102,6 +103,13 @@ describe('settings', () => {
     const s = repo.updateSettings({ apiKey: 'k', theme: 'dark', pollEnabled: false });
     expect(s).toMatchObject({ apiKey: 'k', theme: 'dark', pollEnabled: false, dailyQuotaBudget: 9000 });
     expect(repo.updateSettings({ apiKey: null }).apiKey).toBeNull();
+  });
+
+  it('stores the Google client as JSON and clears it with null', () => {
+    const c = { clientId: 'x.apps.googleusercontent.com', clientSecret: 's' };
+    expect(repo.updateSettings({ googleClient: c }).googleClient).toEqual(c);
+    expect(repo.getSettings().googleClient).toEqual(c);
+    expect(repo.updateSettings({ googleClient: null }).googleClient).toBeNull();
   });
 });
 
@@ -809,5 +817,196 @@ describe('quota ledger and runs', () => {
     const id2 = repo.startRun('poll', 'all');
     repo.finishRun(id2, { units: 0, videos: 0, newComments: 0, error: 'quota' });
     expect(repo.lastRun()).toMatchObject({ id: id2, error: 'quota' });
+  });
+});
+
+describe('google accounts', () => {
+  const acct = (channelId: string, o: Partial<GoogleAccountRow> = {}): GoogleAccountRow => ({
+    channelId,
+    title: channelId,
+    thumbnailUrl: null,
+    refreshToken: 'r',
+    accessToken: null,
+    accessExpiresAt: null,
+    scope: 'scope',
+    connectedAt: at(0),
+    needsReauth: false,
+    lastError: null,
+    isDefault: false,
+    ...o,
+  });
+
+  it('round-trips and makes the first account the default', () => {
+    repo.upsertGoogleAccount(acct('UC1'));
+    expect(repo.listGoogleAccounts()).toEqual([acct('UC1', { isDefault: true })]);
+  });
+
+  it('keeps one default; setDefault and delete re-point it', () => {
+    repo.upsertGoogleAccount(acct('UC1', { connectedAt: at(0) }));
+    repo.upsertGoogleAccount(acct('UC2', { connectedAt: at(1) }));
+    expect(repo.listGoogleAccounts().map((a) => a.isDefault)).toEqual([true, false]);
+    repo.setDefaultGoogleAccount('UC2');
+    expect(repo.listGoogleAccounts().map((a) => a.isDefault)).toEqual([false, true]);
+    repo.deleteGoogleAccount('UC2');
+    expect(repo.listGoogleAccounts().map((a) => [a.channelId, a.isDefault])).toEqual([['UC1', true]]);
+    expect(() => repo.setDefaultGoogleAccount('nope')).toThrow();
+  });
+
+  it('reconnecting the default account keeps it default', () => {
+    repo.upsertGoogleAccount(acct('UC1'));
+    repo.upsertGoogleAccount(acct('UC2', { connectedAt: at(1) }));
+    repo.upsertGoogleAccount(acct('UC1', { refreshToken: 'new' }));
+    const a = repo.listGoogleAccounts().find((x) => x.channelId === 'UC1')!;
+    expect(a).toMatchObject({ refreshToken: 'new', isDefault: true });
+  });
+
+  it('updates a subset of fields, including booleans', () => {
+    repo.upsertGoogleAccount(acct('UC1'));
+    repo.updateGoogleAccount('UC1', { needsReauth: true, lastError: 'invalid_grant', accessToken: 'a' });
+    expect(repo.listGoogleAccounts()[0]).toMatchObject({
+      needsReauth: true,
+      lastError: 'invalid_grant',
+      accessToken: 'a',
+      refreshToken: 'r',
+    });
+  });
+});
+
+describe('reply posts', () => {
+  beforeEach(() => {
+    setup();
+    repo.updateSettings({ ownChannelIds: [OWN] });
+    repo.upsertThread(thread('t1', {}, [{ id: 't1.r1', publishedAt: at(-0.5) }]));
+  });
+  const posted = (id = 't1.mine') =>
+    cmt(id, { parentId: 't1', authorChannelId: OWN, publishedAt: at(0), updatedAt: at(0), textHtml: 'hi' });
+
+  it('records a posted reply in one step: draft, triage, own insert, auto-clear, post row', () => {
+    const post = repo.beginReplyPost('t1', 'hash');
+    const r = repo.recordPostedReply({
+      commentId: 't1',
+      body: 'hi',
+      posted: posted(),
+      viaChannelId: OWN,
+      replyPostId: post,
+    });
+    expect(r.newCommentIds).toEqual(['t1.mine']);
+    expect(r.changedIds).toContain('t1.r1'); // older inbox reply auto-cleared
+    expect(repo.getComment('t1')).toMatchObject({ state: 'replied', stateSource: 'user' });
+    expect(repo.getComment('t1.mine')).toMatchObject({ state: 'own', isOwn: true });
+    expect(repo.getComment('t1.r1')!.state).toBe('auto_replied');
+    expect(repo.getDraft('t1')).toMatchObject({ body: 'hi', status: 'posted' });
+    expect(repo.isAppPostedReply('t1.mine')).toBe(true);
+    expect(repo.isAppPostedReply('t1.r1')).toBe(false);
+    // undo only touches the target; the posted reply stays
+    repo.undo(r.actionId);
+    expect(repo.getComment('t1')!.state).toBe('inbox');
+    expect(repo.getComment('t1.mine')).not.toBeNull();
+  });
+
+  it('rolls everything back when the transaction fails', () => {
+    const post = repo.beginReplyPost('t1', 'hash');
+    expect(() =>
+      repo.recordPostedReply({
+        commentId: 't1',
+        body: 'hi',
+        posted: { ...posted(), publishedAt: undefined as unknown as string },
+        viaChannelId: OWN,
+        replyPostId: post,
+      }),
+    ).toThrow();
+    expect(repo.getComment('t1')!.state).toBe('inbox');
+    expect(repo.getDraft('t1')).toBeNull();
+    expect(repo.isAppPostedReply('t1.mine')).toBe(false);
+  });
+
+  it('recentPostedReply honours body hash, status and the time window', () => {
+    const post = repo.beginReplyPost('t1', 'h1');
+    expect(repo.recentPostedReply('t1', 'h1', at(-1))).toBeNull(); // still pending
+    repo.finishReplyPost(post, { status: 'posted', postedCommentId: 't1.mine', viaChannelId: OWN });
+    expect(repo.recentPostedReply('t1', 'h1', at(-1))).toEqual({ postedCommentId: 't1.mine' });
+    expect(repo.recentPostedReply('t1', 'other', at(-1))).toBeNull();
+    advance(hours(1));
+    expect(repo.recentPostedReply('t1', 'h1', at(0.5))).toBeNull();
+  });
+
+  it('removeLocalComment drops a reply and refreshes thread stats; unknown id is a no-op', () => {
+    repo.addReplies('t1', [posted()]);
+    expect(repo.getThread('t1')!.comments.map((c) => c.id)).toContain('t1.mine');
+    repo.removeLocalComment('t1.mine');
+    expect(repo.getComment('t1.mine')).toBeNull();
+    repo.removeLocalComment('nope');
+  });
+
+  it('setThreadCanReply flips the thread flag', () => {
+    repo.setThreadCanReply('t1', false);
+    expect(repo.getThread('t1')!.canReply).toBe(false);
+  });
+});
+
+describe('stats', () => {
+  const vid = (id: string, o: Partial<import('../contracts.js').YtVideo> = {}) => ({
+    id,
+    title: id,
+    channelId: null,
+    channelTitle: null,
+    thumbnailUrl: null,
+    publishedAt: at(-48),
+    viewCount: 100,
+    commentCount: 10,
+    durationSeconds: 600,
+    likeCount: 7,
+    ...o,
+  });
+
+  it('totals duration, likes and comments once per video, even when two sources list it', () => {
+    repo.upsertVideos([vid('vid1'), vid('vid2', { durationSeconds: 90, likeCount: 3, commentCount: 5 })]);
+    const second = repo.addSource({
+      kind: 'playlist',
+      ytId: 'PLy',
+      title: 'Mine',
+      thumbnailUrl: null,
+      isOwn: true,
+      importMode: 'all',
+    });
+    repo.setSourceVideos(second.id, [
+      { id: 'vid1', position: 0 },
+      { id: 'vid2', position: 1 },
+    ]);
+    repo.upsertThread(thread('t1', { likeCount: 4 }, [{ id: 't1.r1', likeCount: 2 }]));
+    repo.upsertThread(thread('t2', { videoId: 'vid2', likeCount: 1 }));
+
+    const s = repo.getStats();
+    expect(s.totals).toMatchObject({
+      videos: 2,
+      videosWithDetails: 2,
+      durationSeconds: 690,
+      videoLikes: 10,
+      commentsOnYoutube: 15,
+      views: 200,
+    });
+    // vid1 is in both sources but the per-source rows each count it.
+    const rows = Object.fromEntries(s.bySource.map((r) => [r.title, r]));
+    expect(rows['P']!.videos).toBe(1);
+    expect(rows['Mine']!.videos).toBe(2);
+    expect(rows['Mine']!.isOwn).toBe(true);
+    expect(s.mine.videos).toBe(2);
+    expect(s.totals).toMatchObject({ commentsSynced: 3, commentLikes: 7 });
+  });
+
+  it('reports videos without details and keeps known values when a later fetch lacks them', () => {
+    repo.upsertVideos([vid('vid1', { durationSeconds: null, likeCount: null })]);
+    expect(repo.videosMissingDetails()).toEqual(['vid1']);
+    expect(repo.getStats().totals.videosWithDetails).toBe(0);
+    repo.upsertVideos([vid('vid1')]);
+    expect(repo.videosMissingDetails()).toEqual([]);
+    repo.upsertVideos([vid('vid1', { durationSeconds: null, likeCount: null })]);
+    expect(repo.getStats().totals).toMatchObject({ durationSeconds: 600, videoLikes: 7 });
+  });
+
+  it('ignores missing videos', () => {
+    repo.upsertVideos([vid('vid1')]);
+    repo.updateVideoSync('vid1', { missing: true });
+    expect(repo.getStats().totals.videos).toBe(0);
   });
 });

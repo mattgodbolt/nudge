@@ -812,6 +812,13 @@ Ordering and dependencies: step 0, then A–F in parallel. Expected integration 
   - Should Shorts be included when tracking a channel's uploads? Yes by default, since the uploads playlist includes them.
   - Should replies under someone else's thread on a third-party video land in the inbox even when the user never participated? The stated rule says all new comments, so yes. A future "only threads I'm in" per-source filter would be cheap to add to `listInbox`.
 
+## 10. Phase 2: OAuth posting (implemented)
+
+The `ReplyPoster` seam described above is now implemented: a switching poster uses the OAuth-backed `ApiPoster`
+when a Google account is connected and falls back to the clipboard hand-off otherwise (R9). The design, Google Cloud
+setup, error table and test plan are in [docs/OAUTH-PLAN.md](docs/OAUTH-PLAN.md). Demo mode can exercise it with
+`YOUTUBEY_DEMO_POST=api` (`server/demo/post.ts`). Held-for-review moderation (R8) remains deferred.
+
 Sources:
 
 - [youtube-comment-suite](https://awesome.ecosyste.ms/projects/github.com%2Fmattwright324%2Fyoutube-comment-suite)

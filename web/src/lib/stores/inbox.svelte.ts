@@ -238,7 +238,7 @@ export class InboxStore {
     ids: string[],
     to: CommentState,
     request: () => Promise<{ actionId: number; counts?: Counts }>,
-    opts: { message?: string | null } = {},
+    opts: { message?: string | null; onError?: (e: unknown) => void } = {},
   ): Promise<boolean> {
     const wanted = new Set(ids);
     const changes: Change[] = this.items
@@ -275,7 +275,8 @@ export class InboxStore {
       this.counts = prevCounts;
       if (prevSelected && this.items.some((i) => i.comment.id === prevSelected)) this.selectedId = prevSelected;
       this.selectedIds = prevMulti;
-      toasts.error(`Could not update: ${e instanceof Error ? e.message : 'unknown error'}`);
+      if (opts.onError) opts.onError(e);
+      else toasts.error(`Could not update: ${e instanceof Error ? e.message : 'unknown error'}`);
       return false;
     } finally {
       for (const c of changes) this.#inflight.delete(c.item.comment.id);

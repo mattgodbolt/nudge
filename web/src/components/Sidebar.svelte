@@ -115,6 +115,15 @@
     >
     <a
       class="item"
+      class:active={router.route === 'stats'}
+      href="/stats"
+      onclick={(e) => {
+        e.preventDefault();
+        router.navigate('stats');
+      }}><Icon name="chart" /><span class="grow">Stats</span></a
+    >
+    <a
+      class="item"
       class:active={router.route === 'settings'}
       href="/settings"
       onclick={(e) => {

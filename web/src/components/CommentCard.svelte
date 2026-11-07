@@ -2,6 +2,7 @@
   import type { CommentDTO } from '../../../shared/types';
   import { sanitizeCommentHtml } from '../lib/sanitize';
   import { fullDate, relativeTime, compactNumber } from '../lib/format';
+  import { deleteReply } from '../lib/reply';
   import Avatar from './Avatar.svelte';
   import Icon from './Icon.svelte';
 
@@ -11,6 +12,14 @@
     reply = false,
     now,
   }: { comment: CommentDTO; focused?: boolean; reply?: boolean; now: number } = $props();
+  let deleting = $state(false);
+  async function remove() {
+    if (deleting) return;
+    if (!window.confirm('Delete this reply from YouTube? This cannot be undone and costs 50 quota units.')) return;
+    deleting = true;
+    await deleteReply(comment);
+    deleting = false;
+  }
   const html = $derived(sanitizeCommentHtml(comment.textHtml));
 </script>
 
@@ -35,6 +44,16 @@
       {/if}
       <span class="spacer"></span>
       {#if comment.likeCount > 0}<span class="faint meta likes">♥ {compactNumber(comment.likeCount)}</span>{/if}
+      {#if comment.isOwn && comment.postedByApp}
+        <button
+          type="button"
+          class="btn ghost sm ext del"
+          onclick={remove}
+          disabled={deleting}
+          title="Delete this reply from YouTube"
+          data-testid="delete-reply">{deleting ? 'Deleting…' : 'Delete reply'}</button
+        >
+      {/if}
       <a
         class="btn ghost sm ext"
         href={comment.permalink}
@@ -98,6 +117,9 @@
   .card:hover .ext,
   .ext:focus-visible {
     opacity: 1;
+  }
+  .del:hover {
+    color: var(--danger);
   }
   .comment-html {
     line-height: 1.55;

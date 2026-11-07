@@ -16,6 +16,7 @@
   import InboxView from './views/InboxView.svelte';
   import SourcesView from './views/SourcesView.svelte';
   import SettingsView from './views/SettingsView.svelte';
+  import StatsView from './views/StatsView.svelte';
 
   onMount(() => {
     theme.init();
@@ -50,6 +51,8 @@
       {/if}
       {#if router.route === 'sources' || router.route === 'source'}
         <SourcesView />
+      {:else if router.route === 'stats'}
+        <StatsView />
       {:else if router.route === 'settings'}
         <SettingsView />
       {:else}

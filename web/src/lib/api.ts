@@ -70,6 +70,11 @@ export const api = {
   deleteDraft: (commentId: string) => request<void>('DELETE', `/api/drafts/${encodeURIComponent(commentId)}`),
   reply: (commentId: string, body: string) =>
     request<T.ReplyResult>('POST', `/api/comments/${encodeURIComponent(commentId)}/reply`, { body }),
+  deleteReply: (commentId: string) => request<void>('POST', `/api/comments/${encodeURIComponent(commentId)}/delete`),
+  authStatus: () => request<T.GoogleAuthDTO>('GET', '/api/auth/status'),
+  authStart: () => request<{ url: string }>('POST', '/api/auth/start', {}),
+  authLogout: (channelId?: string) => request<T.GoogleAuthDTO>('POST', '/api/auth/logout', { channelId }),
+  authDefault: (channelId: string) => request<T.GoogleAuthDTO>('POST', '/api/auth/default', { channelId }),
   sources: () => request<T.SourceDTO[]>('GET', '/api/sources'),
   addSource: (input: string, opts: { importMode?: T.ImportMode; isOwn?: boolean } = {}) =>
     request<T.SourceDTO>('POST', '/api/sources', { input, ...opts }),
@@ -82,6 +87,8 @@ export const api = {
   sync: (req: SyncRequest) => request<T.SyncStatus>('POST', '/api/sync', req),
   syncStatus: () => request<T.SyncStatus>('GET', '/api/sync/status'),
   quota: () => request<T.QuotaDTO>('GET', '/api/quota'),
+  stats: () => request<T.StatsDTO>('GET', '/api/stats'),
+  refreshStats: () => request<T.StatsDTO>('POST', '/api/stats/refresh', {}),
   settings: () => request<T.SettingsDTO>('GET', '/api/settings'),
   saveSettings: (u: SettingsUpdate) => request<T.SettingsDTO>('PUT', '/api/settings', u),
   addOwnChannel: (input: string, importMode?: T.ImportMode) =>

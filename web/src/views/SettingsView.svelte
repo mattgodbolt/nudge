@@ -7,6 +7,9 @@
   import { theme, type ThemePref } from '../lib/stores/theme.svelte';
   import { toasts } from '../lib/stores/toasts.svelte';
   import { formatNumber, until } from '../lib/format';
+  import { anyNeedsReauth, clientSourceLabel, connectedLabel, googleState, googleToast } from '../lib/google';
+  import { router } from '../lib/router.svelte';
+  import { untrack } from 'svelte';
 
   const s = $derived(settings.value);
 
@@ -60,6 +63,57 @@
     if (Number.isFinite(n) && s && n !== s[field]) void settings.save({ [field]: n });
   }
 
+  // Result of the OAuth round trip: toast it once, then drop the query so a reload doesn't repeat it.
+  $effect(() => {
+    const code = router.query.google;
+    if (!code) return;
+    untrack(() => {
+      const t = googleToast(code);
+      toasts.push({ message: t.message, kind: t.kind, timeoutMs: t.kind === 'error' ? 10000 : 5000 });
+      router.setQuery({ google: undefined });
+    });
+  });
+
+  let clientJson = $state('');
+  let clientError = $state('');
+  let clientBusy = $state(false);
+  let connecting = $state(false);
+  let copied = $state(false);
+  const google = $derived(s?.google ?? null);
+  const gState = $derived(google ? googleState(google) : 'no-client');
+
+  async function saveClient() {
+    if (!clientJson.trim() || clientBusy) return;
+    clientBusy = true;
+    clientError = (await settings.saveGoogleClient(clientJson.trim())) ?? '';
+    clientBusy = false;
+    if (!clientError) {
+      clientJson = '';
+      toasts.push({ message: 'Google client saved', kind: 'success', timeoutMs: 2500 });
+    }
+  }
+  async function removeClient() {
+    if (!window.confirm('Remove the stored Google client? Connected accounts will stop working.')) return;
+    clientError = (await settings.saveGoogleClient(null)) ?? '';
+  }
+  async function connect() {
+    connecting = true;
+    if (!(await settings.connectGoogle())) connecting = false;
+  }
+  function disconnect(channelId: string, title: string | null) {
+    if (!window.confirm(`Disconnect ${title ?? channelId}? Replies will go back to copy & open.`)) return;
+    void settings.disconnectGoogle(channelId);
+  }
+  async function copyRedirect(uri: string) {
+    try {
+      await navigator.clipboard.writeText(uri);
+      copied = true;
+      setTimeout(() => (copied = false), 1500);
+    } catch {
+      toasts.error('Could not copy');
+    }
+  }
+
   const sourceLabel = {
     env: 'YOUTUBE_API_KEY environment variable',
     settings: 'Settings (stored in the local database)',
@@ -97,6 +151,101 @@
         {#if s.apiKey.source === 'settings'}<button class="btn danger" onclick={removeKey}>Remove</button>{/if}
       </div>
       {#if keyResult}<p class="meta" class:ok={keyResult.ok} class:bad={!keyResult.ok}>{keyResult.message}</p>{/if}
+    </section>
+
+    <section class="panel sec" data-testid="settings-google">
+      <h2>Reply from Youtubey</h2>
+      {#if google}
+        <p class="muted meta">
+          Connect a Google account to post replies straight from here instead of copying them to YouTube. Setup takes a
+          few minutes in Google Cloud; follow the
+          <a href="https://github.com/mattgodbolt/youtubey" target="_blank" rel="noopener noreferrer"
+            >README checklist</a
+          >.
+        </p>
+        {#if gState === 'no-client'}
+          <textarea
+            class="input mono json"
+            rows="5"
+            placeholder="Paste the downloaded client JSON…"
+            bind:value={clientJson}
+            spellcheck="false"
+            autocomplete="off"
+            aria-label="Google client JSON"
+            data-testid="google-client-json"></textarea>
+          <div class="line">
+            <button class="btn primary" onclick={saveClient} disabled={!clientJson.trim() || clientBusy}
+              >{clientBusy ? 'Saving…' : 'Save'}</button
+            >
+          </div>
+          {#if clientError}<p class="bad meta" role="alert">{clientError}</p>{/if}
+        {:else}
+          <p class="muted meta">
+            Using the Google client from <strong>{clientSourceLabel[google.clientSource ?? 'settings']}</strong>.
+            {#if google.clientSource === 'settings'}
+              <button class="link" onclick={removeClient}>Remove client</button>
+            {/if}
+          </p>
+        {/if}
+        <div class="line redirect">
+          <span class="faint meta">Redirect URI</span>
+          <code class="grow mono truncate" data-testid="google-redirect">{google.redirectUri}</code>
+          <button class="btn sm" onclick={() => copyRedirect(google.redirectUri)}>{copied ? 'Copied' : 'Copy'}</button>
+        </div>
+
+        {#if gState !== 'no-client'}
+          <ul class="accounts" data-testid="google-accounts">
+            {#each google.accounts as a (a.channelId)}
+              <li class="acct" data-testid="google-account">
+                <Avatar name={a.title ?? a.channelId} url={a.thumbnailUrl} size={28} />
+                <div class="who">
+                  <strong>{a.title ?? a.channelId}</strong>
+                  <span class="faint meta">{connectedLabel(a.connectedAt)}</span>
+                  {#if a.needsReauth}
+                    <span class="bad meta" role="alert">Google sign-in expired or was revoked</span>
+                  {/if}
+                </div>
+                {#if google.accounts.length > 1}
+                  <label class="meta def">
+                    <input
+                      type="radio"
+                      name="google-default"
+                      checked={a.isDefault}
+                      onchange={() => void settings.setDefaultGoogle(a.channelId)}
+                    />
+                    Default
+                  </label>
+                {/if}
+                {#if a.needsReauth}
+                  <button class="btn sm primary" onclick={connect} disabled={connecting}>Reconnect</button>
+                {/if}
+                <button class="btn sm danger" onclick={() => disconnect(a.channelId, a.title)}>Disconnect</button>
+              </li>
+            {/each}
+          </ul>
+          <div class="line">
+            <button
+              class="btn"
+              class:primary={gState !== 'connected'}
+              onclick={connect}
+              disabled={connecting}
+              data-testid="google-connect"
+            >
+              {connecting
+                ? 'Opening Google…'
+                : gState === 'connected'
+                  ? 'Add another channel'
+                  : 'Connect Google account'}
+            </button>
+          </div>
+          {#if anyNeedsReauth(google.accounts)}
+            <p class="faint meta">
+              If the Google Cloud app is still in Testing status, sign-ins expire weekly: publish the app (README step
+              6) to stop that.
+            </p>
+          {/if}
+        {/if}
+      {/if}
     </section>
 
     <section class="panel sec">
@@ -245,6 +394,45 @@
   }
   .grow {
     flex: 1;
+  }
+  .json {
+    resize: vertical;
+    font-size: 12px;
+  }
+  .redirect {
+    align-items: center;
+  }
+  .accounts {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--s2);
+  }
+  .acct {
+    display: flex;
+    align-items: center;
+    gap: var(--s3);
+  }
+  .who {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+  .def {
+    display: inline-flex;
+    gap: 4px;
+    align-items: center;
+  }
+  .link {
+    border: 0;
+    background: none;
+    padding: 0;
+    color: var(--accent);
+    cursor: pointer;
+    text-decoration: underline;
   }
   .chips {
     display: flex;

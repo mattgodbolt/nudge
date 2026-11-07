@@ -286,6 +286,9 @@ export function createDemoWorld(seed = 42, baseNow: Date = new Date()): DemoWorl
   }
 
   const stats = (ageDays: number, own: boolean) => ({
+    // Derived from the age, not rng(), so adding stats does not reshuffle the seeded demo world.
+    durationSeconds: Math.round(180 + ((ageDays * 7919) % 1500) * (own ? 1.4 : 2)),
+    likeCount: Math.round(40 + ((ageDays * 104729) % 900) * (own ? 4 : 1.5)),
     viewCount: Math.round(((own ? 40_000 : 15_000) * (0.4 + rng() * 2) * Math.min(ageDays + 5, 120)) / 10),
   });
 

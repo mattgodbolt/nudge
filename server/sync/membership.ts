@@ -61,3 +61,18 @@ export async function refreshVideoMetadata(repo: Repo, yt: YouTubeClient, source
     .map((v) => v.id);
   if (ids.length) repo.upsertVideos(await yt.getVideos(ids));
 }
+
+/**
+ * One-off backfill of duration and like counts for videos stored before those columns existed. getVideos batches 50 ids
+ * per 1-unit call, so a few hundred videos cost a handful of units. Returns how many videos were updated.
+ */
+export async function backfillVideoDetails(repo: Repo, yt: YouTubeClient): Promise<number> {
+  const ids = repo.videosMissingDetails();
+  let updated = 0;
+  for (let i = 0; i < ids.length; i += 50) {
+    const found = await yt.getVideos(ids.slice(i, i + 50));
+    repo.upsertVideos(found);
+    updated += found.length;
+  }
+  return updated;
+}

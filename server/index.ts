@@ -2,13 +2,19 @@ import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildApp } from './app.js';
-import { loadConfig, resolveApiKey } from './config.js';
+import type { AppDeps, GoogleAuth, PostGateway, ReplyPoster } from './contracts.js';
+import { createGoogleAuth } from './auth/google.js';
+import { loadConfig, resolveApiKey, resolveGoogleClient } from './config.js';
 import { openRepo } from './db/repo.js';
 import { createFakeClient } from './demo/fake-client.js';
 import { nonDemoSources, seedDemo } from './demo/seed.js';
+import { createDemoPosting } from './demo/post.js';
 import { createWorld } from './demo/world.js';
 import { createEventBus } from './events/bus.js';
-import { createHandoffPoster } from './reply/poster.js';
+import { createHttpPostGateway } from './reply/gateway.js';
+import { createHandoffPoster, createReplyPoster } from './reply/poster.js';
+import { buildSettingsDto } from './routes/util.js';
+import { backfillVideoDetails } from './sync/membership.js';
 import { createSyncEngine } from './sync/engine.js';
 import { createQuotaTracker } from './sync/quota.js';
 import { createScheduler } from './sync/scheduler.js';
@@ -50,8 +56,8 @@ async function main(): Promise<void> {
 
   let demoTick: (() => void) | undefined;
   let yt;
-  if (config.demo) {
-    const world = createWorld();
+  const world = config.demo ? createWorld() : null;
+  if (config.demo && world) {
     const fake = createFakeClient(world, { live: !config.demoClockFixed });
     yt = fake;
     demoTick = () => fake.tick();
@@ -71,28 +77,65 @@ async function main(): Promise<void> {
 
   if (config.demo) await seedDemo(repo, addSource); // no-op unless the DB is empty
 
-  const staticDir = findStaticDir();
-  const app = buildApp(
-    {
+  // The listening port is only known after listen() (YOUTUBEY_PORT=0 in tests), so the redirect URI is a getter.
+  let listenPort = config.port;
+  // Assigned just below; auth's onChange and the poster refer to each other, so both read this lazily.
+  let poster: ReplyPoster | undefined;
+  const onAuthChange = () => {
+    if (!poster) return;
+    bus.emit({ type: 'capabilities.changed', capabilities: poster.capabilities() });
+    bus.emit({ type: 'settings.changed', settings: buildSettingsDto(deps) });
+  };
+
+  let auth: GoogleAuth;
+  let gateway: PostGateway;
+  if (config.demo && process.env.YOUTUBEY_DEMO_POST === 'api') {
+    // Demo "API" posting: a fake GoogleAuth (starts connected as the demo channel) + a gateway that appends to the world.
+    ({ auth, gateway } = createDemoPosting({ repo, world: world!, onChange: onAuthChange }));
+  } else {
+    gateway = createHttpPostGateway();
+    auth = createGoogleAuth({
       repo,
-      engine,
-      bus,
-      quota,
-      poster: createHandoffPoster(repo),
+      gateway,
+      getClient: () => resolveGoogleClient(config, repo),
+      redirectUri: () => `http://127.0.0.1:${listenPort}/api/auth/callback`,
+      onChange: onAuthChange,
       addSource,
-      testKey: config.demo ? async () => ({ ok: true, message: 'Demo mode: no YouTube calls are made' }) : testKey,
-      onSettingsChanged: () => scheduler.start(),
-      resolveApiKey: resolveKey,
-      demo: config.demo,
-      demoTick,
-      staticDir,
-    },
-    { port: config.port || undefined },
-  );
+      quota,
+    });
+  }
+  const replyPoster = createReplyPoster({ repo, auth, quota, gateway, handoff: createHandoffPoster(repo) });
+  poster = replyPoster;
+
+  const staticDir = findStaticDir();
+  const deps: AppDeps = {
+    repo,
+    engine,
+    bus,
+    quota,
+    poster: replyPoster,
+    auth,
+    addSource,
+    testKey: config.demo ? async () => ({ ok: true, message: 'Demo mode: no YouTube calls are made' }) : testKey,
+    onSettingsChanged: () => scheduler.start(),
+    backfillDetails: () => backfillVideoDetails(repo, yt),
+    resolveApiKey: resolveKey,
+    demo: config.demo,
+    demoTick,
+    staticDir,
+  };
+  const app = buildApp(deps, { port: config.port || undefined });
 
   await app.listen({ host: '127.0.0.1', port: config.port });
   const port = (app.server.address() as { port: number }).port;
+  listenPort = port;
   scheduler.start();
+  // Videos stored before duration/likes were tracked: fill them in once, quietly (best effort; the Stats page can retry).
+  if (resolveKey().key) {
+    backfillVideoDetails(repo, yt).catch((e: unknown) =>
+      console.warn('Video detail backfill failed:', e instanceof Error ? e.message : e),
+    );
+  }
   console.log(
     `Youtubey listening on http://127.0.0.1:${port}` +
       `${config.demo ? ' (DEMO mode)' : ''}${staticDir ? '' : ' (no built web UI found; run `npm run build` or use vite dev)'}`,

@@ -4,6 +4,7 @@ import { buildApp } from '../app.js';
 import type { AppDeps, Repo, StoredSettings } from '../contracts.js';
 import { createEventBus } from '../events/bus.js';
 import { createHandoffPoster } from '../reply/poster.js';
+import { fakeGoogleAuth } from '../reply/test-helpers.js';
 import type {
   CommentDTO,
   CommentState,
@@ -48,6 +49,7 @@ function stubRepo() {
   const actions: { id: number; changes: { commentId: string; from: CommentState; to: CommentState }[] }[] = [];
   let settings: StoredSettings = {
     apiKey: null,
+    googleClient: null,
     ownChannelIds: [],
     pollEnabled: true,
     dailyQuotaBudget: 9000,
@@ -185,6 +187,7 @@ beforeEach(() => {
       blockUntilNextDay() {},
     },
     poster: createHandoffPoster(repo as unknown as Repo),
+    auth: fakeGoogleAuth(),
     addSource: vi.fn(async (input: string) => ({ ...repo.listSources()[0]!, id: 2, ytId: input })),
     testKey: vi.fn(async (k: string) => ({ ok: k === 'good', message: 'm' })),
     onSettingsChanged: vi.fn(),

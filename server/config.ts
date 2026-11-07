@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { Repo } from './contracts.js';
+import { parseGoogleClientJson } from './reply/google-client.js';
 
 export interface Config {
   port: number;
@@ -11,6 +12,9 @@ export interface Config {
   demoClockFixed: boolean;
   envApiKey: string | null;
   keyFile: string;
+  envGoogleClientId: string | null;
+  envGoogleClientSecret: string | null;
+  googleClientFile: string;
 }
 
 export type ApiKeySource = 'env' | 'settings' | 'file';
@@ -28,6 +32,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, home: string = 
     demoClockFixed: env.YOUTUBEY_DEMO_CLOCK === 'fixed',
     envApiKey: env.YOUTUBE_API_KEY?.trim() || null,
     keyFile: join(home, '.youtubey-key'),
+    envGoogleClientId: env.YOUTUBEY_GOOGLE_CLIENT_ID?.trim() || null,
+    envGoogleClientSecret: env.YOUTUBEY_GOOGLE_CLIENT_SECRET?.trim() || null,
+    googleClientFile: join(home, '.youtubey-google-client.json'),
   };
 }
 
@@ -46,4 +53,29 @@ export function resolveApiKey(
     // no key file: fine
   }
   return { key: null, source: null };
+}
+
+export interface GoogleClient {
+  clientId: string;
+  clientSecret: string;
+  source: ApiKeySource;
+}
+
+/** Order: env > settings (DB) > ~/.youtubey-google-client.json. Never serialise the secret to clients. */
+export function resolveGoogleClient(
+  config: Pick<Config, 'envGoogleClientId' | 'envGoogleClientSecret' | 'googleClientFile'>,
+  repo: Pick<Repo, 'getSettings'>,
+): GoogleClient | null {
+  if (config.envGoogleClientId && config.envGoogleClientSecret) {
+    return { clientId: config.envGoogleClientId, clientSecret: config.envGoogleClientSecret, source: 'env' };
+  }
+  const stored = repo.getSettings().googleClient;
+  if (stored?.clientId && stored.clientSecret) return { ...stored, source: 'settings' };
+  try {
+    const parsed = parseGoogleClientJson(readFileSync(config.googleClientFile, 'utf8'));
+    if (parsed) return { ...parsed, source: 'file' };
+  } catch {
+    // no client file: fine
+  }
+  return null;
 }

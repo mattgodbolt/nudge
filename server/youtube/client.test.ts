@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createHttpClient, testKey } from './client.js';
+import { createHttpClient, parseIsoDuration, testKey } from './client.js';
 import { YtError, type QuotaTracker } from '../contracts.js';
 import threadsPage from './fixtures/threads-page.json' with { type: 'json' };
 import repliesPage from './fixtures/replies-page.json' with { type: 'json' };
@@ -255,5 +255,21 @@ describe('testKey', () => {
     expect(r.ok).toBe(false);
     expect(r.message).not.toContain('secret123');
     expect((await testKey('  ')).ok).toBe(false);
+  });
+});
+
+describe('parseIsoDuration', () => {
+  it.each([
+    ['PT1H2M3S', 3723],
+    ['PT45S', 45],
+    ['PT10M', 600],
+    ['P1DT2H', 93600],
+    ['P0D', 0],
+    ['PT', null],
+    ['P', null],
+    ['nonsense', null],
+    [undefined, null],
+  ])('%s -> %s', (input, expected) => {
+    expect(parseIsoDuration(input)).toBe(expected);
   });
 });

@@ -3,6 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../app.js';
 import type { SyncEngine } from '../contracts.js';
 import { createHandoffPoster } from '../reply/poster.js';
+import { fakeGoogleAuth } from '../reply/test-helpers.js';
 import { createAddSource } from '../sync/sources.js';
 import { makeEnv } from '../sync/test-helpers.js';
 import type { SettingsDTO } from '../../shared/types.js';
@@ -28,6 +29,7 @@ beforeEach(() => {
     bus: env.bus,
     quota: env.quota,
     poster: createHandoffPoster(env.repo),
+    auth: fakeGoogleAuth(),
     addSource: createAddSource({ repo: env.repo, yt: env.yt, engine, clock: env.clock.now }),
     testKey: async () => ({ ok: true, message: '' }),
     onSettingsChanged: () => {},

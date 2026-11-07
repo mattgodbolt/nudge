@@ -7,6 +7,8 @@ import type {
   InboxItem,
   PollTier,
   SourceDTO,
+  StatsDTO,
+  StatsTotals,
   SyncRunSummary,
   ThreadDetail,
   TriageResult,
@@ -15,6 +17,7 @@ import type {
 import type { DraftDTO, InboxPage, InboxQuery } from '../../shared/api.js';
 import { permalink } from '../../shared/youtube-urls.js';
 import type {
+  GoogleAccountRow,
   NewSource,
   Repo,
   SourceRow,
@@ -38,6 +41,7 @@ const MAX_LIMIT = 500;
 
 const DEFAULT_SETTINGS: StoredSettings = {
   apiKey: null,
+  googleClient: null,
   ownChannelIds: [],
   pollEnabled: true,
   dailyQuotaBudget: 9000,
@@ -81,6 +85,7 @@ function commentDto(r: Row): CommentDTO {
     state: r.state,
     stateSource: r.state_source,
     permalink: permalink(r.video_id, r.id),
+    postedByApp: !!r.posted_by_app,
   };
 }
 
@@ -186,16 +191,107 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
 
   function upsertVideos(vs: YtVideo[]): void {
     const stmt = db.prepare(`INSERT INTO videos
-        (id, channel_id, channel_title, title, thumbnail_url, published_at, view_count, comment_count, meta_refreshed_at, next_sync_at)
-      VALUES (@id, @channelId, @channelTitle, @title, @thumbnailUrl, @publishedAt, @viewCount, @commentCount, @at, @at)
+        (id, channel_id, channel_title, title, thumbnail_url, published_at, view_count, comment_count, duration_seconds, like_count, meta_refreshed_at, next_sync_at)
+      VALUES (@id, @channelId, @channelTitle, @title, @thumbnailUrl, @publishedAt, @viewCount, @commentCount, @durationSeconds, @likeCount, @at, @at)
       ON CONFLICT(id) DO UPDATE SET channel_id = excluded.channel_id, channel_title = excluded.channel_title,
         title = excluded.title, thumbnail_url = excluded.thumbnail_url, published_at = excluded.published_at,
         view_count = excluded.view_count, comment_count = excluded.comment_count,
+        duration_seconds = COALESCE(excluded.duration_seconds, duration_seconds),
+        like_count = COALESCE(excluded.like_count, like_count),
         meta_refreshed_at = excluded.meta_refreshed_at`);
     const at = now();
     db.transaction(() => {
-      for (const v of vs) stmt.run({ ...v, publishedAt: v.publishedAt ? iso(v.publishedAt) : null, at });
+      for (const v of vs)
+        stmt.run({
+          durationSeconds: null,
+          likeCount: null,
+          ...v,
+          publishedAt: v.publishedAt ? iso(v.publishedAt) : null,
+          at,
+        });
     })();
+  }
+
+  /** Every tracked video exactly once, however many sources list it; `mine` = reachable from an own-channel source. */
+  const TRACKED = `SELECT sv.video_id AS id, MAX(s.is_own) AS mine FROM source_videos sv
+      JOIN sources s ON s.id = sv.source_id GROUP BY sv.video_id`;
+
+  function statsTotals(onlyMine: boolean): StatsTotals {
+    const where = `v.missing = 0${onlyMine ? ' AND t.mine = 1' : ''}`;
+    const v = db
+      .prepare(
+        `SELECT COUNT(*) AS videos, COUNT(v.duration_seconds) AS withDetails,
+           COALESCE(SUM(v.duration_seconds), 0) AS dur, COALESCE(SUM(v.view_count), 0) AS views,
+           COALESCE(SUM(v.like_count), 0) AS likes, COALESCE(SUM(v.comment_count), 0) AS ytComments
+         FROM (${TRACKED}) t JOIN videos v ON v.id = t.id WHERE ${where}`,
+      )
+      .get() as Row;
+    const c = db
+      .prepare(
+        `SELECT COALESCE(SUM(c.is_own = 0), 0) AS synced, COALESCE(SUM(CASE WHEN c.is_own = 0 THEN c.like_count END), 0) AS likes,
+           COALESCE(SUM(c.is_own = 1 AND c.parent_id IS NOT NULL), 0) AS ownReplies,
+           COALESCE(SUM(c.state = 'inbox'), 0) AS inbox
+         FROM (${TRACKED}) t JOIN videos v ON v.id = t.id JOIN comments c ON c.video_id = v.id WHERE ${where}`,
+      )
+      .get() as Row;
+    return {
+      videos: v.videos,
+      videosWithDetails: v.withDetails,
+      durationSeconds: v.dur,
+      views: v.views,
+      videoLikes: v.likes,
+      commentsOnYoutube: v.ytComments,
+      commentsSynced: c.synced,
+      commentLikes: c.likes,
+      ownReplies: c.ownReplies,
+      inbox: c.inbox,
+    };
+  }
+
+  function getStats(): StatsDTO {
+    const rows = db
+      .prepare(
+        `SELECT s.id, s.kind, s.title, s.yt_id, s.is_own,
+           COUNT(v.id) AS videos, COALESCE(SUM(v.duration_seconds), 0) AS dur, COALESCE(SUM(v.view_count), 0) AS views,
+           COALESCE(SUM(v.like_count), 0) AS likes, COALESCE(SUM(v.comment_count), 0) AS ytComments,
+           COALESCE(SUM(cs.synced), 0) AS synced, COALESCE(SUM(cs.likes), 0) AS commentLikes
+         FROM sources s
+         LEFT JOIN source_videos sv ON sv.source_id = s.id
+         LEFT JOIN videos v ON v.id = sv.video_id AND v.missing = 0
+         LEFT JOIN (SELECT video_id, SUM(is_own = 0) AS synced,
+                           SUM(CASE WHEN is_own = 0 THEN like_count ELSE 0 END) AS likes
+                    FROM comments GROUP BY video_id) cs ON cs.video_id = v.id
+         GROUP BY s.id ORDER BY dur DESC, s.id`,
+      )
+      .all() as Row[];
+    return {
+      totals: statsTotals(false),
+      mine: statsTotals(true),
+      bySource: rows.map((r) => ({
+        sourceId: r.id,
+        kind: r.kind,
+        title: r.title ?? r.yt_id,
+        isOwn: !!r.is_own,
+        videos: r.videos,
+        durationSeconds: r.dur,
+        views: r.views,
+        videoLikes: r.likes,
+        commentsOnYoutube: r.ytComments,
+        commentsSynced: r.synced,
+        commentLikes: r.commentLikes,
+      })),
+    };
+  }
+
+  function videosMissingDetails(): string[] {
+    return (
+      db
+        .prepare(
+          `SELECT v.id FROM videos v WHERE v.missing = 0 AND v.duration_seconds IS NULL AND v.meta_refreshed_at IS NOT NULL
+             AND v.id IN (SELECT video_id FROM source_videos)`,
+        )
+        .all() as Row[]
+    ).map((r) => r.id);
   }
 
   function videoRows(sourceId?: number): Row[] {
@@ -724,7 +820,7 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
     const v = db.prepare(`${VIDEO_SELECT} WHERE v.id = ?`).get(t.video_id) as Row;
     const rows = db
       .prepare(
-        `SELECT * FROM comments WHERE thread_id = ?
+        `SELECT comments.*, (SELECT 1 FROM reply_posts rp WHERE rp.posted_comment_id = comments.id AND rp.status = 'posted') IS NOT NULL AS posted_by_app FROM comments WHERE thread_id = ?
          ORDER BY (parent_id IS NOT NULL), published_at, id`,
       )
       .all(threadId) as Row[];
@@ -738,7 +834,11 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
   }
 
   function getComment(id: string): CommentDTO | null {
-    const r = db.prepare('SELECT * FROM comments WHERE id = ?').get(id) as Row | undefined;
+    const r = db
+      .prepare(
+        "SELECT comments.*, (SELECT 1 FROM reply_posts rp WHERE rp.posted_comment_id = comments.id AND rp.status = 'posted') IS NOT NULL AS posted_by_app FROM comments WHERE id = ?",
+      )
+      .get(id) as Row | undefined;
     return r ? commentDto(r) : null;
   }
 
@@ -834,6 +934,203 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
     })();
   }
 
+  /* ---------------- Google accounts + reply posts ---------------- */
+  const accountRow = (r: Row): GoogleAccountRow => ({
+    channelId: r.channel_id,
+    title: r.channel_title,
+    thumbnailUrl: r.channel_thumb,
+    refreshToken: r.refresh_token,
+    accessToken: r.access_token,
+    accessExpiresAt: r.access_expires_at,
+    scope: r.scope,
+    connectedAt: r.connected_at,
+    needsReauth: !!r.needs_reauth,
+    lastError: r.last_error,
+    isDefault: !!r.is_default,
+  });
+  const ACCOUNT_COLUMNS: Record<keyof GoogleAccountRow, string> = {
+    channelId: 'channel_id',
+    title: 'channel_title',
+    thumbnailUrl: 'channel_thumb',
+    refreshToken: 'refresh_token',
+    accessToken: 'access_token',
+    accessExpiresAt: 'access_expires_at',
+    scope: 'scope',
+    connectedAt: 'connected_at',
+    needsReauth: 'needs_reauth',
+    lastError: 'last_error',
+    isDefault: 'is_default',
+  };
+  const dbVal = (v: unknown) => (typeof v === 'boolean' ? (v ? 1 : 0) : v);
+
+  function listGoogleAccounts(): GoogleAccountRow[] {
+    return (db.prepare('SELECT * FROM google_accounts ORDER BY connected_at, channel_id').all() as Row[]).map(
+      accountRow,
+    );
+  }
+
+  /** Keep exactly one default while any account exists (the earliest-connected wins if none is flagged). */
+  function normaliseDefault(preferred?: string): void {
+    const rows = db
+      .prepare('SELECT channel_id, is_default FROM google_accounts ORDER BY connected_at, channel_id')
+      .all() as Row[];
+    if (rows.length === 0) return;
+    let pick: string | undefined = preferred && rows.some((r) => r.channel_id === preferred) ? preferred : undefined;
+    pick ??= (rows.find((r) => r.is_default) ?? rows[0]!).channel_id;
+    db.prepare('UPDATE google_accounts SET is_default = (channel_id = ?)').run(pick);
+  }
+
+  function upsertGoogleAccount(a: GoogleAccountRow): void {
+    db.transaction(() => {
+      db.prepare(
+        `INSERT INTO google_accounts (channel_id, channel_title, channel_thumb, refresh_token, access_token,
+           access_expires_at, scope, connected_at, needs_reauth, last_error, is_default)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(channel_id) DO UPDATE SET channel_title = excluded.channel_title,
+           channel_thumb = excluded.channel_thumb, refresh_token = excluded.refresh_token,
+           access_token = excluded.access_token, access_expires_at = excluded.access_expires_at,
+           scope = excluded.scope, connected_at = excluded.connected_at, needs_reauth = excluded.needs_reauth,
+           last_error = excluded.last_error,
+           is_default = CASE WHEN excluded.is_default = 1 THEN 1 ELSE google_accounts.is_default END`,
+      ).run(
+        a.channelId,
+        a.title,
+        a.thumbnailUrl,
+        a.refreshToken,
+        a.accessToken,
+        a.accessExpiresAt,
+        a.scope,
+        a.connectedAt,
+        a.needsReauth ? 1 : 0,
+        a.lastError,
+        a.isDefault ? 1 : 0,
+      );
+      // The first account is always the default; an explicit default elsewhere wins over the flag on the others.
+      const hasOtherDefault = db
+        .prepare('SELECT 1 FROM google_accounts WHERE is_default = 1 AND channel_id != ?')
+        .get(a.channelId);
+      if (a.isDefault) normaliseDefault(a.channelId);
+      else if (!hasOtherDefault) normaliseDefault();
+    })();
+  }
+
+  function updateGoogleAccount(channelId: string, p: Partial<GoogleAccountRow>): void {
+    const sets: string[] = [];
+    const vals: unknown[] = [];
+    for (const [k, v] of Object.entries(p) as [keyof GoogleAccountRow, unknown][]) {
+      const col = ACCOUNT_COLUMNS[k];
+      if (!col || v === undefined || k === 'channelId' || k === 'isDefault') continue;
+      sets.push(`${col} = ?`);
+      vals.push(dbVal(v));
+    }
+    db.transaction(() => {
+      if (sets.length) {
+        db.prepare(`UPDATE google_accounts SET ${sets.join(', ')} WHERE channel_id = ?`).run(...vals, channelId);
+      }
+      if (p.isDefault === true) normaliseDefault(channelId);
+    })();
+  }
+
+  function deleteGoogleAccount(channelId: string): void {
+    db.transaction(() => {
+      db.prepare('DELETE FROM google_accounts WHERE channel_id = ?').run(channelId);
+      normaliseDefault();
+    })();
+  }
+
+  function setDefaultGoogleAccount(channelId: string): void {
+    db.transaction(() => {
+      if (!db.prepare('SELECT 1 FROM google_accounts WHERE channel_id = ?').get(channelId)) {
+        throw new Error(`Unknown Google account ${channelId}`);
+      }
+      normaliseDefault(channelId);
+    })();
+  }
+
+  function beginReplyPost(commentId: string, bodyHash: string): number {
+    const res = db
+      .prepare("INSERT INTO reply_posts (comment_id, body_hash, status, created_at) VALUES (?, ?, 'pending', ?)")
+      .run(commentId, bodyHash, now());
+    return Number(res.lastInsertRowid);
+  }
+
+  function finishReplyPost(
+    id: number,
+    p: {
+      status: 'posted' | 'failed' | 'unknown';
+      postedCommentId?: string | null;
+      viaChannelId?: string | null;
+      error?: string | null;
+    },
+  ): void {
+    db.prepare(
+      `UPDATE reply_posts SET status = ?, posted_comment_id = COALESCE(?, posted_comment_id),
+         via_channel_id = COALESCE(?, via_channel_id), error = ? WHERE id = ?`,
+    ).run(p.status, p.postedCommentId ?? null, p.viaChannelId ?? null, p.error ?? null, id);
+  }
+
+  function recentPostedReply(
+    commentId: string,
+    bodyHash: string,
+    sinceIso: string,
+  ): { postedCommentId: string } | null {
+    const r = db
+      .prepare(
+        `SELECT posted_comment_id FROM reply_posts
+         WHERE comment_id = ? AND body_hash = ? AND status = 'posted' AND posted_comment_id IS NOT NULL
+           AND created_at >= ? ORDER BY created_at DESC, id DESC LIMIT 1`,
+      )
+      .get(commentId, bodyHash, iso(sinceIso)) as Row | undefined;
+    return r ? { postedCommentId: r.posted_comment_id } : null;
+  }
+
+  function isAppPostedReply(commentId: string): boolean {
+    return !!db
+      .prepare("SELECT 1 FROM reply_posts WHERE posted_comment_id = ? AND status = 'posted' LIMIT 1")
+      .get(commentId);
+  }
+
+  function recordPostedReply(p: {
+    commentId: string;
+    body: string;
+    posted: YtComment;
+    viaChannelId: string;
+    replyPostId: number;
+  }): { actionId: number; newCommentIds: string[]; changedIds: string[] } {
+    return db.transaction(() => {
+      const target = db.prepare('SELECT thread_id FROM comments WHERE id = ?').get(p.commentId) as Row | undefined;
+      if (!target) throw new Error(`Unknown comment ${p.commentId}`);
+      saveDraft(p.commentId, p.body, 'posted');
+      // Triage first so the target is a 'user' state that the auto-clear below must not touch.
+      const t = triage([p.commentId], 'replied');
+      const added = addReplies(target.thread_id, [p.posted]);
+      finishReplyPost(p.replyPostId, {
+        status: 'posted',
+        postedCommentId: p.posted.id,
+        viaChannelId: p.viaChannelId,
+      });
+      const changed = new Set([...t.changes.map((c) => c.commentId), ...added.changedIds]);
+      return { actionId: t.actionId, newCommentIds: added.newCommentIds, changedIds: [...changed] };
+    })();
+  }
+
+  function removeLocalComment(commentId: string): void {
+    db.transaction(() => {
+      const r = db.prepare('SELECT thread_id, parent_id FROM comments WHERE id = ?').get(commentId) as Row | undefined;
+      if (!r) return;
+      // Replies are never top-level here; deleting a top-level comment cascades the whole thread via FK.
+      db.prepare('DELETE FROM comments WHERE id = ?').run(commentId);
+      if (r.parent_id !== null) {
+        refreshThreadStats(r.thread_id);
+        applyOwnReplies(r.thread_id);
+      }
+    })();
+  }
+
+  function setThreadCanReply(threadId: string, canReply: boolean): void {
+    db.prepare('UPDATE threads SET can_reply = ? WHERE id = ?').run(canReply ? 1 : 0, threadId);
+  }
+
   /* ---------------- quota and runs ---------------- */
   function runSummary(r: Row): SyncRunSummary {
     return {
@@ -850,6 +1147,18 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
 
   return {
     close: () => void db.close(),
+    listGoogleAccounts,
+    upsertGoogleAccount,
+    updateGoogleAccount,
+    deleteGoogleAccount,
+    setDefaultGoogleAccount,
+    beginReplyPost,
+    finishReplyPost,
+    recentPostedReply,
+    isAppPostedReply,
+    recordPostedReply,
+    removeLocalComment,
+    setThreadCanReply,
     getSettings,
     updateSettings,
     listSources,
@@ -861,6 +1170,8 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
     deleteSource,
     setSourceVideos,
     upsertVideos,
+    getStats,
+    videosMissingDetails,
     listVideos,
     setVideoTier,
     dueVideos,

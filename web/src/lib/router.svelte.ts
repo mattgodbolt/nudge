@@ -1,4 +1,4 @@
-export type RouteName = 'inbox' | 'done' | 'all' | 'sources' | 'source' | 'settings';
+export type RouteName = 'inbox' | 'done' | 'all' | 'sources' | 'source' | 'settings' | 'stats';
 
 export interface RouteState {
   route: RouteName;
@@ -16,7 +16,8 @@ export function parseLocation(pathname: string, search: string): RouteState {
     case 'all':
       return { route: a, params: {}, query };
     case 'settings':
-      return { route: 'settings', params: {}, query };
+    case 'stats':
+      return { route: a, params: {}, query };
     case 'sources':
       return b ? { route: 'source', params: { id: b }, query } : { route: 'sources', params: {}, query };
     default:

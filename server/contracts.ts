@@ -1,6 +1,8 @@
 // Server-internal interfaces shared by the db / sync / http chunks.
 // Owned by the lead; implementers must conform to these and ask before changing them.
 import type {
+  StatsDTO,
+  GoogleAuthDTO,
   CommentDTO,
   CommentState,
   Counts,
@@ -58,6 +60,9 @@ export interface YtVideo {
   publishedAt: string | null;
   viewCount: number | null;
   commentCount: number | null;
+  /** Optional so older fixtures stay valid; null/absent = unknown. */
+  durationSeconds?: number | null;
+  likeCount?: number | null;
 }
 export interface YtChannel {
   id: string;
@@ -104,6 +109,8 @@ export interface YouTubeClient {
 /* ---------------- Repo (SQLite) ---------------- */
 export interface StoredSettings {
   apiKey: string | null;
+  /** Google OAuth client (from the Cloud console). The secret is never sent to the browser. */
+  googleClient: { clientId: string; clientSecret: string } | null;
   ownChannelIds: string[];
   pollEnabled: boolean;
   dailyQuotaBudget: number;
@@ -149,10 +156,55 @@ export interface VideoSyncRow {
 }
 export interface Repo {
   close(): void;
+  /* --- Google OAuth accounts + reply posting (migration 003) --- */
+  listGoogleAccounts(): GoogleAccountRow[];
+  upsertGoogleAccount(a: GoogleAccountRow): void;
+  updateGoogleAccount(channelId: string, p: Partial<GoogleAccountRow>): void;
+  deleteGoogleAccount(channelId: string): void;
+  setDefaultGoogleAccount(channelId: string): void;
+  /** Insert a reply_posts row with status 'pending'. */
+  beginReplyPost(commentId: string, bodyHash: string): number;
+  finishReplyPost(
+    id: number,
+    p: {
+      status: 'posted' | 'failed' | 'unknown';
+      postedCommentId?: string | null;
+      viaChannelId?: string | null;
+      error?: string | null;
+    },
+  ): void;
+  /** A 'posted' reply_posts row for this comment+body created at/after sinceIso, if any (double-post guard). */
+  recentPostedReply(commentId: string, bodyHash: string, sinceIso: string): { postedCommentId: string } | null;
+  /** Was this comment id posted by this app (has a posted reply_posts row)? */
+  isAppPostedReply(commentId: string): boolean;
+  /**
+   * One transaction: save draft as 'posted', triage target -> 'replied' (user-undoable), insert the posted comment
+   * via the addReplies path (own + auto-clear), mark the reply_posts row posted.
+   */
+  recordPostedReply(p: {
+    commentId: string;
+    body: string;
+    posted: YtComment;
+    viaChannelId: string;
+    replyPostId: number;
+  }): {
+    actionId: number;
+    newCommentIds: string[];
+    changedIds: string[];
+  };
+  /** Remove a locally stored own comment after it was deleted on YouTube. */
+  removeLocalComment(commentId: string): void;
+  /** Mark a thread as (not) replyable, e.g. after YouTube answers operationNotSupported. */
+  setThreadCanReply(threadId: string, canReply: boolean): void;
+
   getSettings(): StoredSettings;
   updateSettings(p: Partial<StoredSettings>): StoredSettings;
 
   listSources(): SourceDTO[];
+  /** Aggregate totals over every tracked, non-missing video. */
+  getStats(): StatsDTO;
+  /** Ids of tracked videos whose duration has never been fetched (pre-migration rows). */
+  videosMissingDetails(): string[];
   getSourceRow(id: number): SourceRow | null;
   enabledSourceRows(): SourceRow[];
   addSource(s: NewSource): SourceDTO;
@@ -245,9 +297,93 @@ export interface Scheduler {
   stop(): void;
 }
 
+export interface GoogleAccountRow {
+  channelId: string;
+  title: string | null;
+  thumbnailUrl: string | null;
+  refreshToken: string;
+  accessToken: string | null;
+  accessExpiresAt: string | null;
+  scope: string;
+  connectedAt: string;
+  needsReauth: boolean;
+  lastError: string | null;
+  isDefault: boolean;
+}
+
+export type PostErrorCode =
+  | 'auth_required'
+  | 'quota_exhausted'
+  | 'rate_limited'
+  | 'cannot_reply'
+  | 'comment_gone'
+  | 'text_too_long'
+  | 'bad_text'
+  | 'ineligible_account'
+  | 'duplicate_in_flight'
+  | 'post_failed'
+  | 'post_unconfirmed'
+  | 'no_client';
+export class PostError extends Error {
+  constructor(
+    public code: PostErrorCode,
+    message: string,
+    public status: number,
+    public retryable = false,
+  ) {
+    super(message);
+    this.name = 'PostError';
+  }
+}
+
+/** Thrown by a PostGateway for any failed write call. `network` = the request may or may not have reached Google. */
+export class GatewayError extends Error {
+  constructor(
+    message: string,
+    public status: number,
+    public reason: string | null,
+    public network = false,
+  ) {
+    super(message);
+    this.name = 'GatewayError';
+  }
+}
+/** OAuth-authorised YouTube write/verification calls. Real impl: fetch; demo impl: fake world; tests: scripted. */
+export interface PostGateway {
+  /** comments.insert (50 units). parentId must be the top-level comment id. */
+  insertReply(token: string, p: { parentId: string; videoId: string; text: string }): Promise<YtComment>;
+  /** comments.list?parentId (1 unit), used to verify an ambiguous insert. */
+  listReplies(token: string, parentId: string, videoId: string): Promise<YtComment[]>;
+  /** comments.delete (50 units). */
+  deleteComment(token: string, commentId: string): Promise<void>;
+  /** channels.list?mine=true (1 unit) -> the authorised user's channel(s). */
+  myChannel(token: string): Promise<{ id: string; title: string; thumbnailUrl: string | null } | null>;
+}
+
+export interface GoogleAuth {
+  status(): GoogleAuthDTO;
+  /** Begin the loopback PKCE flow; returnOrigin is the UI origin to send the browser back to. */
+  start(returnOrigin: string): { url: string };
+  /** Handle Google's redirect. Never throws for user-facing failures: returns the ?google= code. */
+  handleCallback(q: { code?: string; state?: string; error?: string }): Promise<{ returnTo: string; result: string }>;
+  /** Valid access token for the channel (default account if omitted); refreshes single-flight. Throws PostError('auth_required'). */
+  getAccessToken(channelId?: string): Promise<{ token: string; channelId: string }>;
+  disconnect(channelId?: string): Promise<void>;
+  setDefault(channelId: string): void;
+  /** Connected, non-expired accounts exist. */
+  canPost(): boolean;
+  /** Channel id that should post for a video owned by videoChannelId (matching account, else default). */
+  pickAccount(videoChannelId: string | null): GoogleAccountRow | null;
+}
+
 export interface ReplyPoster {
   capabilities(): Capabilities;
   reply(comment: CommentDTO, body: string): Promise<ReplyResult>;
+  /**
+   * Delete an own reply that this app posted (comments.delete, 50 units) and drop it locally. Absent on pure hand-off
+   * posters. Throws PostError.
+   */
+  deleteReply?(comment: CommentDTO): Promise<void>;
 }
 
 /** Everything the HTTP layer needs. */
@@ -257,12 +393,15 @@ export interface AppDeps {
   bus: EventBus;
   quota: QuotaTracker;
   poster: ReplyPoster;
+  auth: GoogleAuth;
   /** Resolve + add a source (and kick off its first sync). */
   addSource(input: string, opts: { importMode?: ImportMode; isOwn?: boolean }): Promise<SourceDTO>;
   /** Check a YouTube API key with a 1-unit call. */
   testKey(apiKey: string): Promise<{ ok: boolean; message: string }>;
   /** Called after settings change (e.g. own channel ids) so the server can react. */
   onSettingsChanged(): void;
+  /** Fetch durations/likes for videos stored before those columns existed; resolves to the number updated. */
+  backfillDetails?(): Promise<number>;
   resolveApiKey(): { key: string | null; source: 'env' | 'settings' | 'file' | null };
   demo: boolean;
   /** Demo mode only: force new comments to appear. */

@@ -23,6 +23,8 @@ export interface CommentDTO {
   state: CommentState;
   stateSource: 'sync' | 'user' | 'auto';
   permalink: string;
+  /** Own comment that this app posted through the API (so it can be deleted from here). */
+  postedByApp?: boolean;
 }
 export interface VideoDTO {
   id: string;
@@ -79,6 +81,38 @@ export interface Counts {
   all: number;
   bySource: Record<number, number>;
 }
+export interface StatsTotals {
+  videos: number;
+  /** Videos whose duration/likes are known; fewer than `videos` until the one-off backfill has run. */
+  videosWithDetails: number;
+  durationSeconds: number;
+  views: number;
+  videoLikes: number;
+  /** Comment totals as reported by YouTube (includes replies), vs what we have synced locally. */
+  commentsOnYoutube: number;
+  commentsSynced: number;
+  /** Likes on other people's comments that we have synced. */
+  commentLikes: number;
+  /** Replies written by your own channels, among the synced comments. */
+  ownReplies: number;
+  inbox: number;
+}
+export interface StatsSourceRow extends Pick<StatsTotals, 'videos' | 'durationSeconds' | 'views' | 'videoLikes'> {
+  sourceId: number;
+  kind: SourceKind;
+  title: string;
+  isOwn: boolean;
+  commentsOnYoutube: number;
+  commentsSynced: number;
+  commentLikes: number;
+}
+export interface StatsDTO {
+  totals: StatsTotals;
+  /** Same totals restricted to videos from your own channels. */
+  mine: StatsTotals;
+  bySource: StatsSourceRow[];
+}
+
 export interface QuotaDTO {
   dayPt: string;
   used: number;
@@ -105,6 +139,22 @@ export interface SyncStatus {
   currentVideoId: string | null;
   lastRun: SyncRunSummary | null;
 }
+export interface GoogleAccountDTO {
+  channelId: string;
+  title: string | null;
+  thumbnailUrl: string | null;
+  connectedAt: string;
+  needsReauth: boolean;
+  lastError: string | null;
+  isDefault: boolean;
+}
+export interface GoogleAuthDTO {
+  clientConfigured: boolean;
+  clientSource: 'env' | 'settings' | 'file' | null;
+  /** The loopback redirect URI the OAuth client must allow (shown in Settings for the web-client fallback). */
+  redirectUri: string;
+  accounts: GoogleAccountDTO[];
+}
 export interface SettingsDTO {
   apiKey: { configured: boolean; source: 'env' | 'settings' | 'file' | null; last4: string | null };
   ownChannelIds: string[];
@@ -116,10 +166,13 @@ export interface SettingsDTO {
   backfillDays: number;
   theme: 'system' | 'light' | 'dark';
   demo: boolean;
+  google: GoogleAuthDTO;
 }
 export interface Capabilities {
   canPost: boolean;
   postMode: 'handoff' | 'api';
+  /** Channel replies are posted as by default (api mode only). */
+  postAs?: { channelId: string; title: string | null } | null;
 }
 export interface TriageResult {
   actionId: number;
@@ -143,6 +196,7 @@ export type ServerEvent =
   | { type: 'quota.update'; quota: QuotaDTO }
   | { type: 'sources.changed'; sources: SourceDTO[] }
   | { type: 'settings.changed'; settings: SettingsDTO }
+  | { type: 'capabilities.changed'; capabilities: Capabilities }
   | { type: 'error'; message: string; sourceId?: number; videoId?: string };
 export interface ApiError {
   error: string;

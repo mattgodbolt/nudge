@@ -23,9 +23,11 @@
     | 'moon'
     | 'trash'
     | 'undo'
-    | 'check-all';
+    | 'check-all'
+    | 'chart';
   let { name, size = 16 }: { name: Name; size?: number } = $props();
   const paths: Record<Name, string> = {
+    chart: 'M4 20V10m6 10V4m6 16v-7m4 7H2',
     inbox:
       'M3 13l2.5-7.5A2 2 0 0 1 7.4 4h9.2a2 2 0 0 1 1.9 1.5L21 13v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-5zm0 0h5l1 2h6l1-2h5',
     check: 'M5 12.5l4.5 4.5L19 7.5',
