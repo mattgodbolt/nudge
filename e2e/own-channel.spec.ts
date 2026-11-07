@@ -1,0 +1,33 @@
+import { expect, test } from '@playwright/test';
+
+test('adding my channel from Settings by @handle shows its title and marks the source as mine', async ({ page }) => {
+  await page.goto('/settings');
+  const chips = page.getByTestId('own-channel-chip');
+  await expect(chips).toHaveCount(1); // the demo seed
+  await chips.first().getByRole('button').click();
+  await expect(chips).toHaveCount(0);
+
+  // Un-marking keeps the channel tracked, but no longer flags it as mine.
+  await page.goto('/sources');
+  await expect(page.getByTestId('own-badge')).toHaveCount(0);
+  await expect(page.getByTestId('sources-table')).not.toContainText('Mine');
+
+  await page.goto('/settings');
+  await page.getByTestId('own-channel-input').fill('https://www.youtube.com/@demochannel');
+  await page.getByRole('button', { name: 'Add', exact: true }).click();
+  await expect(chips).toHaveCount(1);
+  await expect(chips.first()).not.toContainText('UCdemo'); // title, not the bare id
+
+  await page.goto('/sources');
+  await expect(page.getByTestId('own-badge')).toHaveCount(1);
+  await expect(page.getByRole('columnheader', { name: 'Mine' })).toHaveCount(0);
+});
+
+test('an unknown handle shows an error and adds nothing', async ({ page }) => {
+  await page.goto('/settings');
+  const before = await page.getByTestId('own-channel-chip').count();
+  await page.getByTestId('own-channel-input').fill('@nosuchchannelanywhere');
+  await page.getByRole('button', { name: 'Add', exact: true }).click();
+  await expect(page.getByRole('alert')).toContainText(/not found/i);
+  await expect(page.getByTestId('own-channel-chip')).toHaveCount(before);
+});

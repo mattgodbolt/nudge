@@ -1,0 +1,18 @@
+{
+  "items": [
+    {
+      "id": "vid00000001",
+      "snippet": {
+        "title": "Hello",
+        "channelId": "UCchan",
+        "channelTitle": "Chan",
+        "publishedAt": "2026-02-01T00:00:00Z",
+        "thumbnails": {
+          "default": { "url": "https://example.com/d.jpg" },
+          "medium": { "url": "https://example.com/m.jpg" }
+        }
+      },
+      "statistics": { "viewCount": "12345", "commentCount": "67" }
+    }
+  ]
+}

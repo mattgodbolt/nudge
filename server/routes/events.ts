@@ -1,0 +1,42 @@
+import type { FastifyInstance } from 'fastify';
+import type { ServerEvent } from '../../shared/types.js';
+import type { AppDeps } from '../contracts.js';
+
+const PING_MS = 20_000;
+
+export function registerEventRoutes(app: FastifyInstance, deps: AppDeps, pingMs = PING_MS): void {
+  const cleanups = new Set<() => void>();
+
+  app.get('/api/events', (req, reply) => {
+    reply.hijack();
+    const res = reply.raw;
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache, no-transform',
+      Connection: 'keep-alive',
+      'X-Accel-Buffering': 'no',
+    });
+    res.write('retry: 2000\n\n');
+
+    const send = (e: ServerEvent) => res.write(`event: ${e.type}\ndata: ${JSON.stringify(e)}\n\n`);
+    const unsubscribe = deps.bus.subscribe(send);
+    const ping = setInterval(() => res.write(': ping\n\n'), pingMs);
+    let cleaned = false;
+    const cleanup = () => {
+      if (cleaned) return;
+      cleaned = true;
+      clearInterval(ping);
+      unsubscribe();
+      cleanups.delete(cleanup);
+      if (!res.writableEnded) res.end();
+    };
+    cleanups.add(cleanup);
+    req.raw.on('close', cleanup);
+    res.on('error', cleanup);
+  });
+
+  // Open SSE streams would otherwise keep app.close() waiting forever.
+  app.addHook('onClose', async () => {
+    for (const c of [...cleanups]) c();
+  });
+}

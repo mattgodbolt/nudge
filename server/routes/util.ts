@@ -1,0 +1,74 @@
+import type { SettingsDTO } from '../../shared/types.js';
+import type { AppDeps } from '../contracts.js';
+
+export class HttpError extends Error {
+  constructor(
+    public status: number,
+    message: string,
+    public code: string = 'bad_request',
+  ) {
+    super(message);
+  }
+}
+
+export const bad = (message: string) => new HttpError(400, message, 'bad_request');
+export const notFound = (what: string) => new HttpError(404, `${what} not found`, 'not_found');
+
+export function asObject(body: unknown): Record<string, unknown> {
+  if (body === null || typeof body !== 'object' || Array.isArray(body)) throw bad('Expected a JSON object body');
+  return body as Record<string, unknown>;
+}
+
+export function str(o: Record<string, unknown>, key: string, opts: { optional?: boolean; allowEmpty?: boolean } = {}) {
+  const v = o[key];
+  if (v === undefined && opts.optional) return undefined;
+  if (typeof v !== 'string') throw bad(`"${key}" must be a string`);
+  if (!opts.allowEmpty && v.trim() === '') throw bad(`"${key}" must not be empty`);
+  return v;
+}
+
+export function bool(o: Record<string, unknown>, key: string): boolean | undefined {
+  const v = o[key];
+  if (v === undefined) return undefined;
+  if (typeof v !== 'boolean') throw bad(`"${key}" must be a boolean`);
+  return v;
+}
+
+export function int(
+  v: unknown,
+  name: string,
+  { min = 0, max = Number.MAX_SAFE_INTEGER }: { min?: number; max?: number } = {},
+): number {
+  const n = typeof v === 'string' && v.trim() !== '' ? Number(v) : v;
+  if (typeof n !== 'number' || !Number.isInteger(n) || n < min || n > max) {
+    throw bad(`"${name}" must be an integer between ${min} and ${max}`);
+  }
+  return n;
+}
+
+export function oneOf<T extends string>(v: unknown, name: string, allowed: readonly T[]): T {
+  if (typeof v !== 'string' || !(allowed as readonly string[]).includes(v)) {
+    throw bad(`"${name}" must be one of ${allowed.join(', ')}`);
+  }
+  return v as T;
+}
+
+export function buildSettingsDto(deps: AppDeps): SettingsDTO {
+  const s = deps.repo.getSettings();
+  const { key, source } = deps.resolveApiKey();
+  const channels = deps.repo.listSources().filter((x) => x.kind === 'channel');
+  return {
+    apiKey: { configured: key !== null, source, last4: key ? key.slice(-4) : null },
+    ownChannelIds: s.ownChannelIds,
+    ownChannels: s.ownChannelIds.map((id) => {
+      const src = channels.find((c) => c.ytId === id);
+      return { id, title: src?.title ?? null, thumbnailUrl: src?.thumbnailUrl ?? null };
+    }),
+    pollEnabled: s.pollEnabled,
+    dailyQuotaBudget: s.dailyQuotaBudget,
+    manualReserve: s.manualReserve,
+    backfillDays: s.backfillDays,
+    theme: s.theme,
+    demo: deps.demo,
+  };
+}

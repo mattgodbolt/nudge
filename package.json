@@ -1,0 +1,49 @@
+{
+  "name": "youtubey",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "description": "Local keyboard-driven inbox for YouTube comments",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "concurrently -n api,web \"tsx watch server/index.ts\" \"vite\"",
+    "build": "vite build && tsc -p server",
+    "start": "npm run build && NODE_ENV=production node dist/server/server/index.js",
+    "demo": "YOUTUBEY_DEMO=1 YOUTUBEY_DB=data/demo.db npm run dev",
+    "demo:e2e": "vite build && YOUTUBEY_DEMO=1 YOUTUBEY_DB=:memory: YOUTUBEY_PORT=4518 YOUTUBEY_DEMO_CLOCK=fixed tsx server/index.ts",
+    "test": "vitest run",
+    "test:e2e": "playwright test",
+    "typecheck": "tsc -p server --noEmit && svelte-check --tsconfig web/tsconfig.json",
+    "lint": "prettier --check .",
+    "format": "prettier --write ."
+  },
+  "dependencies": {
+    "@fastify/static": "^10.1.10",
+    "@fontsource-variable/inter": "^5.3.0",
+    "@fontsource-variable/jetbrains-mono": "^5.3.0",
+    "better-sqlite3": "^13.0.3",
+    "dompurify": "^3.4.17",
+    "fastify": "^5.12.8"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.65.0",
+    "@sveltejs/vite-plugin-svelte": "^7.3.1",
+    "@testing-library/svelte": "^5.4.2",
+    "@tsconfig/svelte": "^5.0.8",
+    "@types/better-sqlite3": "^9.6.0",
+    "@types/dompurify": "^3.0.5",
+    "@types/node": "^26.6.6",
+    "concurrently": "^10.0.6",
+    "jsdom": "^31.0.0",
+    "prettier": "^3.9.10",
+    "prettier-plugin-svelte": "^4.1.1",
+    "svelte": "^5.57.3",
+    "svelte-check": "^4.7.8",
+    "tsx": "^4.23.15",
+    "typescript": "^6.0.3",
+    "vite": "^8.3.6",
+    "vitest": "^5.1.0"
+  }
+}

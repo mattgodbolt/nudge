@@ -1,0 +1,62 @@
+{
+  "nextPageToken": "NEXT1",
+  "items": [
+    {
+      "id": "UgzTop1",
+      "snippet": {
+        "videoId": "vid00000001",
+        "channelId": "UCchan",
+        "canReply": true,
+        "totalReplyCount": 7,
+        "topLevelComment": {
+          "id": "UgzTop1",
+          "snippet": {
+            "authorDisplayName": "Alice",
+            "authorProfileImageUrl": "https://example.com/a.jpg",
+            "authorChannelId": { "value": "UCalice" },
+            "textDisplay": "Great video!<br>See <a href=\"https://example.com\">this</a> at <a href=\"https://www.youtube.com/watch?v=vid00000001&amp;t=225s\">3:45</a>",
+            "likeCount": 3,
+            "publishedAt": "2026-03-01T10:00:00Z",
+            "updatedAt": "2026-03-01T10:05:00Z",
+            "videoId": "vid00000001"
+          }
+        }
+      },
+      "replies": {
+        "comments": [
+          {
+            "id": "UgzTop1.r1",
+            "snippet": {
+              "authorDisplayName": "Bob",
+              "authorChannelId": { "value": "UCbob" },
+              "textDisplay": "Agreed",
+              "likeCount": 0,
+              "publishedAt": "2026-03-01T11:00:00Z",
+              "updatedAt": "2026-03-01T11:00:00Z",
+              "parentId": "UgzTop1",
+              "videoId": "vid00000001"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "UgzTop2",
+      "snippet": {
+        "videoId": "vid00000001",
+        "channelId": "UCchan",
+        "canReply": false,
+        "totalReplyCount": 0,
+        "topLevelComment": {
+          "id": "UgzTop2",
+          "snippet": {
+            "authorDisplayName": "Carol",
+            "textDisplay": "No channel id here",
+            "publishedAt": "2026-03-01T09:00:00Z",
+            "updatedAt": "2026-03-01T09:00:00Z"
+          }
+        }
+      }
+    }
+  ]
+}
