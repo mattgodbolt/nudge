@@ -14,7 +14,7 @@ docker compose exec -T nudge node deploy/backup-db.mjs "/app/data/backups/$name"
 log "snapshot data/backups/$name"
 
 # Keep the newest N matching files in a directory.
-prune() { ls -1t "$1"/nudge-*.db 2>/dev/null | tail -n +"$(($2 + 1))" | xargs -r rm -f --; }
+prune() { ls -1t "$1"/nudge-*.db 2>/dev/null | tail -n +"$(($2 + 1))" | while read -r f; do rm -f -- "$f" "$f-wal" "$f-shm"; done; }
 prune data/backups "$KEEP_LOCAL"
 
 # The NAS is an autofs/NFS soft mount: touching the path mounts it, and a dead NAS fails fast instead of hanging.

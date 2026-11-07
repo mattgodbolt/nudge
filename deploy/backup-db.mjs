@@ -18,8 +18,10 @@ try {
 } finally {
   live.close();
 }
-const copy = new Database(dest, { readonly: true });
+// Convert the copy to a rollback-journal file so it is one self-contained .db (no -wal/-shm sidecars to lose or leak).
+const copy = new Database(dest);
 try {
+  copy.pragma('journal_mode = delete');
   const check = copy.pragma('integrity_check', { simple: true });
   const comments = copy.prepare('SELECT COUNT(*) AS n FROM comments').get().n;
   if (check !== 'ok') throw new Error(`integrity_check: ${check}`);
@@ -31,4 +33,5 @@ try {
   process.exit(1);
 } finally {
   copy.close();
+  for (const ext of ['-wal', '-shm']) rmSync(dest + ext, { force: true });
 }
