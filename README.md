@@ -113,6 +113,7 @@ mkdir -p data
 cat > .env <<EOF2
 NUDGE_ALLOWED_HOSTS=<machine>.<tailnet>.ts.net
 NUDGE_ALLOWED_USERS=<your tailscale login>
+YOUTUBE_API_KEY=<your key>     # the container cannot see ~/.nudge-key; or paste it into Settings
 EOF2
 docker compose up -d --build            # the image build runs the unit tests
 tailscale serve --bg --https=443 http://127.0.0.1:4517
