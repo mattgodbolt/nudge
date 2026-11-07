@@ -92,7 +92,7 @@ export function appBindings(): Binding[] {
     },
     {
       id: 'sync.now',
-      keys: ['s'],
+      keys: ['Shift+N'],
       scope: 'global',
       group: 'App',
       description: 'Sync now',
@@ -159,6 +159,21 @@ export function inboxBindings(): Binding[] {
       run: () => inbox.toggleSelect(),
     }),
     list({
+      id: 'sel.all',
+      keys: ['* a'],
+      group: 'Navigation',
+      description: 'Select all',
+      when: has,
+      run: () => inbox.selectAll(),
+    }),
+    list({
+      id: 'sel.none',
+      keys: ['* n'],
+      group: 'Navigation',
+      description: 'Select none',
+      run: () => inbox.clearSelection(),
+    }),
+    list({
       id: 'thread.focus',
       keys: ['Enter', 'o'],
       group: 'Navigation',
@@ -195,7 +210,7 @@ export function inboxBindings(): Binding[] {
     }),
     list({
       id: 'triage.inbox',
-      keys: ['u'],
+      keys: ['Shift+U'],
       group: 'Triage',
       description: 'Move back to inbox',
       when: () => !!inbox.selected,
@@ -281,7 +296,7 @@ export function inboxBindings(): Binding[] {
     },
     {
       id: 'thread.back',
-      keys: ['Escape'],
+      keys: ['Escape', 'u'],
       scope: 'thread',
       group: 'Navigation',
       description: 'Back to list',

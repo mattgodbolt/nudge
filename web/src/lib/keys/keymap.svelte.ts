@@ -63,6 +63,12 @@ function isEditable(t: EventTarget | null): boolean {
   return false;
 }
 
+/** Focused controls that own Enter/Space: a global Enter binding must not hijack their activation. */
+function activatesOnEnter(t: EventTarget | null): boolean {
+  if (!(t instanceof HTMLElement)) return false;
+  return t.tagName === 'BUTTON' || t.tagName === 'A' || t.getAttribute('role') === 'button';
+}
+
 export class Keymap {
   /** Overridable for tests. */
   isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/i.test(navigator.platform || navigator.userAgent || '');
@@ -162,6 +168,7 @@ export class Keymap {
     const editable = isEditable(e.target);
     const hasCmd = e.metaKey || e.ctrlKey;
     if (editable && !hasCmd && e.key !== 'Escape') return false;
+    if ((e.key === 'Enter' || e.key === ' ') && !hasCmd && activatesOnEnter(e.target)) return false;
 
     const seq = [...this.#buffer, e];
     let partial = false;
@@ -243,4 +250,41 @@ export function keyLabels(keys: string, isMac = keymap.isMac): string[] {
     out.push(isMac ? parts.join('') : parts.join('+'));
   }
   return out;
+}
+
+/** First (primary) key string of a binding, e.g. 'e' for 'triage.done'. Reactive via the registry. */
+export function hotkey(id: string): string | undefined {
+  return keymap.byId(id)?.keys[0];
+}
+
+/** Display tokens for a binding's primary key, e.g. ['Shift+U'] or ['g i'] -> ['g', 'i']. */
+export function hotkeyLabel(id: string): string[] {
+  const k = hotkey(id);
+  return k ? keyLabels(k) : [];
+}
+
+/** WAI-ARIA `aria-keyshortcuts` value; chords have no ARIA form, so they yield undefined. */
+export function ariaShortcut(keys: string | undefined, isMac = keymap.isMac): string | undefined {
+  if (!keys || /\s/.test(keys.trim())) return undefined;
+  const s = parseStep(keys);
+  const parts: string[] = [];
+  if (s.mod) parts.push(isMac ? 'Meta' : 'Control');
+  if (s.ctrl) parts.push('Control');
+  if (s.meta) parts.push('Meta');
+  if (s.alt) parts.push('Alt');
+  const upper = s.key.length === 1 && s.key !== s.key.toLowerCase();
+  if (s.shift || upper) parts.push('Shift');
+  parts.push(s.key.length === 1 ? s.key.toUpperCase() : s.key);
+  return parts.join('+');
+}
+
+/**
+ * Run a binding by id exactly as its hotkey would (respecting `when`). Buttons use this so that
+ * mouse and keyboard can never diverge.
+ */
+export function invoke(id: string): boolean {
+  const b = keymap.byId(id);
+  if (!b || (b.when && !b.when())) return false;
+  b.run();
+  return true;
 }

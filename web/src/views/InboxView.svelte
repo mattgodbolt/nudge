@@ -16,6 +16,7 @@
   import EmptyState from '../components/EmptyState.svelte';
   import AddSourceForm from '../components/AddSourceForm.svelte';
   import Kbd from '../components/Kbd.svelte';
+  import ActionButton from '../components/ActionButton.svelte';
   import Icon from '../components/Icon.svelte';
   import { onMount, untrack } from 'svelte';
 
@@ -128,7 +129,6 @@
     <header>
       <h1>{title}</h1>
       <span class="faint meta count">{pluralize(inbox.total || inbox.items.length, 'comment')}</span>
-      {#if inbox.selectedIds.size > 0}<span class="badge accent">{inbox.selectedIds.size} selected</span>{/if}
       <span class="grow"></span>
     </header>
     <div class="filters">
@@ -158,6 +158,16 @@
           ></span
         >{/if}
     </div>
+
+    {#if inbox.selectedIds.size > 0}
+      <div class="bulk" role="toolbar" aria-label="Selected comments" data-testid="bulk-bar">
+        <span class="badge accent">{inbox.selectedIds.size} selected</span>
+        <ActionButton id="triage.done" label="Done" icon="check" testid="bulk-done" />
+        <ActionButton id="triage.replied" label="Replied" icon="check-all" testid="bulk-replied" />
+        <span class="grow"></span>
+        <ActionButton id="list.escape" label="Clear" icon="x" testid="bulk-clear" />
+      </div>
+    {/if}
 
     {#if inbox.pendingCount > 0}
       <button class="pill" onclick={() => void inbox.showPending()} data-testid="new-pill">
@@ -203,7 +213,7 @@
             ? `Last synced ${ago(sync.status.lastRun.finishedAt ?? sync.status.lastRun.startedAt, sync.now)}.`
             : 'Nothing needs your attention.'}
         >
-          <span class="muted meta">Press <Kbd label="s" /> to sync now</span>
+          <span class="muted meta">Press <Kbd id="sync.now" /> to sync now</span>
         </EmptyState>
       {:else}
         <EmptyState title="Nothing here yet" body="Triaged comments will show up in this view." />
@@ -338,6 +348,14 @@
     cursor: pointer;
     color: var(--text-faint);
     padding: 0;
+  }
+  .bulk {
+    display: flex;
+    align-items: center;
+    gap: var(--s1);
+    padding: var(--s1) var(--s3);
+    background: var(--accent-soft);
+    border-bottom: 1px solid var(--border);
   }
   .pill {
     position: absolute;

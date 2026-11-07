@@ -26,14 +26,18 @@ copies your reply, opens the comment on YouTube (`&lc=` permalink) and marks it 
 
 ## Keys (press `?` in the app for the full list)
 
-| Key                               | Action                                    | Key       | Action                          |
-| --------------------------------- | ----------------------------------------- | --------- | ------------------------------- |
-| `j` / `k`                         | next / previous                           | `e` / `d` | done                            |
-| `m`                               | mark replied (no reply)                   | `u`       | back to inbox                   |
-| `z`                               | undo                                      | `r`       | reply                           |
-| `x`, `J`/`K`                      | multi-select                              | `v` / `V` | open comment / video on YouTube |
-| `s` / `S`                         | sync / deep-sync video                    | `/`       | search                          |
-| `g i`, `g d`, `g a`, `g s`, `g ,` | go to Inbox, Done, All, Sources, Settings | `Ctrl+K`  | command palette                 |
+| Key                               | Action                                    | Key         | Action                          |
+| --------------------------------- | ----------------------------------------- | ----------- | ------------------------------- |
+| `j` / `k`                         | next / previous                           | `e` / `d`   | done                            |
+| `m`                               | mark replied (no reply)                   | `u`         | back to list (from the thread)  |
+| `z`                               | undo                                      | `r`         | reply                           |
+| `x`, `J`/`K`                      | multi-select                              | `* a` `* n` | select all / none               |
+| `Shift+U`                         | move back to inbox                        | `v` / `V`   | open comment / video on YouTube |
+| `Shift+N` / `S`                   | sync now / deep-sync video                | `/`         | search                          |
+| `g i`, `g d`, `g a`, `g s`, `g ,` | go to Inbox, Done, All, Sources, Settings | `Ctrl+K`    | command palette                 |
+
+Every triage action also has a button (thread header, row hover, multi-select bar, sidebar sync) whose tooltip
+shows the hotkey, read from the same keymap registry.
 
 ## Quota
 

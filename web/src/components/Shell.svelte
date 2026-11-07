@@ -11,6 +11,7 @@
   import CommandPalette from './CommandPalette.svelte';
   import HelpOverlay from './HelpOverlay.svelte';
   import Icon from './Icon.svelte';
+  import TipLayer from './TipLayer.svelte';
   import Kbd from './Kbd.svelte';
 
   let { children }: { children: Snippet } = $props();
@@ -51,6 +52,7 @@
 <Toasts />
 <CommandPalette />
 <HelpOverlay />
+<TipLayer />
 {#if keymap.pendingChord}
   <div class="chord" aria-live="polite"><Kbd label={keymap.pendingChord} /> <span class="muted">…</span></div>
 {/if}

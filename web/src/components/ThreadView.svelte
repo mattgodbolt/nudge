@@ -1,15 +1,22 @@
 <script lang="ts">
   import type { InboxItem } from '../../../shared/types';
+  import { inbox } from '../lib/stores/inbox.svelte';
   import { thread } from '../lib/stores/thread.svelte';
   import { ui } from '../lib/stores/ui.svelte';
   import { pluralize } from '../lib/format';
   import CommentCard from './CommentCard.svelte';
   import Composer from './Composer.svelte';
+  import ActionButton from './ActionButton.svelte';
   import Icon from './Icon.svelte';
   import { tick, untrack } from 'svelte';
 
   let { item, now }: { item: InboxItem; now: number } = $props();
 
+  let headerWidth = $state(1000);
+  // Actions share the title row only in a roomy pane; otherwise they take a row of their own,
+  // and drop their labels (still tooltipped) when even that row is too narrow.
+  const inline = $derived(headerWidth >= 1000);
+  const wide = $derived(headerWidth >= 500);
   let scroller: HTMLDivElement | undefined = $state();
   const detail = $derived(thread.current && thread.current.threadId === item.comment.threadId ? thread.current : null);
   const notFetched = $derived(detail ? Math.max(0, detail.totalReplyCount - (detail.comments.length - 1)) : 0);
@@ -37,7 +44,7 @@
 </script>
 
 <section class="thread" data-testid="thread-view" class:focus={ui.pane === 'thread'} aria-label="Thread">
-  <header>
+  <header bind:clientWidth={headerWidth}>
     <button class="btn ghost sm back" onclick={() => (ui.pane = 'list')} aria-label="Back to list"
       ><Icon name="chevron-left" size={15} /> Back</button
     >
@@ -50,7 +57,7 @@
         href="https://www.youtube.com/watch?v={item.video.id}"
         target="_blank"
         rel="noopener noreferrer"
-        title="Open video on YouTube (V)"
+        title="Open video on YouTube"
       >
         {item.video.title}
       </a>
@@ -58,6 +65,29 @@
         {video?.channelTitle ?? ''}
         {#if video?.commentsDisabled}<span class="badge warn">Comments disabled</span>{/if}
       </div>
+    </div>
+    <div
+      class="actions"
+      class:own-row={!inline}
+      role="toolbar"
+      aria-label="Comment actions"
+      data-testid="thread-actions"
+    >
+      <ActionButton id="reply.open" label="Reply" icon="reply" showLabel={wide} testid="act-reply" />
+      <ActionButton id="triage.done" label="Done" icon="check" showLabel={wide} testid="act-done" />
+      <ActionButton id="triage.replied" label="Mark replied" icon="check-all" showLabel={wide} testid="act-replied" />
+      {#if item.comment.state !== 'inbox'}
+        <ActionButton id="triage.inbox" label="Move back to inbox" icon="inbox" showLabel={wide} testid="act-inbox" />
+      {/if}
+      <ActionButton
+        id="triage.undo"
+        label="Undo"
+        icon="undo"
+        showLabel={wide}
+        disabled={inbox.undoDepth === 0}
+        testid="act-undo"
+      />
+      <ActionButton id="open.comment" label="Open on YouTube" icon="external" showLabel={wide} testid="act-open" />
     </div>
   </header>
 
@@ -102,6 +132,7 @@
     border-bottom: 1px solid var(--border);
     background: var(--bg-elev);
     min-height: 58px;
+    flex-wrap: wrap;
   }
   .thumb {
     width: 64px;
@@ -114,6 +145,23 @@
   .vt {
     min-width: 0;
     flex: 1;
+  }
+  .actions {
+    display: flex;
+    flex: none;
+    gap: 2px;
+    padding: 2px;
+    border: 1px solid var(--border);
+    border-radius: calc(var(--radius) + 2px);
+    background: var(--bg);
+  }
+  .actions.own-row {
+    flex-basis: 100%;
+    justify-content: flex-start;
+    border: 0;
+    padding: 0;
+    background: none;
+    margin-top: calc(var(--s1) * -1);
   }
   .title {
     display: block;

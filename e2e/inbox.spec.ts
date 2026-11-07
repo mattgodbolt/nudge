@@ -34,3 +34,62 @@ test('chords, palette and help', async ({ page }) => {
   await page.keyboard.press('Control+k');
   await expect(page.getByTestId('palette')).toBeVisible();
 });
+
+test('Done button marks done with toast, undo button reverts; focus does not eat shortcuts', async ({ page }) => {
+  const count = page.getByTestId('sidebar-count-inbox');
+  const before = Number((await count.innerText()).replace(/\D/g, ''));
+  await page.getByTestId('act-done').click();
+  await expect(page.getByTestId('toast').first()).toContainText('done');
+  await expect(count).toHaveText((before - 1).toLocaleString('en-US'));
+  await page.getByTestId('act-undo').click();
+  await expect(count).toHaveText(before.toLocaleString('en-US'));
+  // Single-key shortcuts still work right after clicking buttons.
+  await page.keyboard.press('e');
+  await expect(count).toHaveText((before - 1).toLocaleString('en-US'));
+});
+
+test('Enter on a focused button activates it instead of the global Enter binding', async ({ page }) => {
+  const count = page.getByTestId('sidebar-count-inbox');
+  const before = Number((await count.innerText()).replace(/\D/g, ''));
+  await page.getByTestId('act-done').focus();
+  await page.keyboard.press('Enter');
+  await expect(count).toHaveText((before - 1).toLocaleString('en-US'));
+  await expect(page.locator('[data-testid=thread-view].focus')).toHaveCount(0);
+});
+
+test('tooltip hotkey text comes from the binding', async ({ page }) => {
+  await page.getByTestId('act-done').hover();
+  const tip = page.getByTestId('tooltip');
+  await expect(tip).toContainText('Done');
+  await expect(tip.locator('kbd')).toHaveText('e');
+  await expect(page.getByTestId('act-done')).toHaveAttribute('aria-keyshortcuts', 'E');
+  await expect(page.getByTestId('act-inbox')).toHaveCount(0); // only shown outside the inbox
+  await page.getByTestId('sync-indicator').hover();
+  await expect(page.getByTestId('tooltip').locator('kbd')).toHaveText('Shift+N');
+});
+
+test('u goes back to the list, Shift+U restores to the inbox', async ({ page }) => {
+  await page.keyboard.press('Enter');
+  await expect(page.locator('[data-testid=thread-view].focus')).toHaveCount(1);
+  await page.keyboard.press('u');
+  await expect(page.locator('[data-testid=thread-view].focus')).toHaveCount(0);
+  const count = page.getByTestId('sidebar-count-inbox');
+  const before = Number((await count.innerText()).replace(/\D/g, ''));
+  await page.keyboard.press('m');
+  await expect(count).toHaveText((before - 1).toLocaleString('en-US'));
+  await page.goto('/done');
+  await page.waitForSelector('[data-testid=inbox-row]');
+  await expect(page.getByTestId('act-inbox')).toBeVisible();
+  await page.keyboard.press('Shift+U');
+  await expect(count).toHaveText(before.toLocaleString('en-US'));
+});
+
+test('* a selects all, bulk bar acts on them', async ({ page }) => {
+  await page.keyboard.press('*');
+  await page.keyboard.press('a');
+  const bar = page.getByTestId('bulk-bar');
+  await expect(bar).toBeVisible();
+  await page.getByTestId('bulk-done').click();
+  await expect(page.getByTestId('toast').first()).toContainText('done');
+  await expect(bar).toHaveCount(0);
+});

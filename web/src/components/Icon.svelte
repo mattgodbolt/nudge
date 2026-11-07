@@ -21,7 +21,9 @@
     | 'alert'
     | 'sun'
     | 'moon'
-    | 'trash';
+    | 'trash'
+    | 'undo'
+    | 'check-all';
   let { name, size = 16 }: { name: Name; size?: number } = $props();
   const paths: Record<Name, string> = {
     inbox:
@@ -47,6 +49,8 @@
     alert: 'M12 9v4m0 4h.01M10.3 3.9L2.4 18a2 2 0 0 0 1.7 3h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z',
     sun: 'M12 16a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM12 2v2m0 16v2M4.9 4.9l1.4 1.4m11.4 11.4l1.4 1.4M2 12h2m16 0h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4',
     moon: 'M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z',
+    undo: 'M9 14L4 9l5-5M4 9h9a6 6 0 0 1 0 12h-3',
+    'check-all': 'M2 12.5l4.5 4.5L15 8.5M10 15l2 2 9-9',
     trash: 'M4 7h16M10 11v6m4-6v6M6 7l1 13h10l1-13M9 7V4h6v3',
   };
 </script>

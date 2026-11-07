@@ -1,6 +1,8 @@
 <script lang="ts">
   import type { InboxItem } from '../../../shared/types';
   import { relativeTime } from '../lib/format';
+  import { inbox } from '../lib/stores/inbox.svelte';
+  import ActionButton from './ActionButton.svelte';
   import Avatar from './Avatar.svelte';
 
   let {
@@ -43,6 +45,31 @@
     </div>
     <div class="text">{c.textPlain}</div>
     <div class="video faint truncate">{item.video.title}</div>
+  </div>
+  <!-- Positioned over the row's bottom-right, so it never changes row height; acts on THIS row. -->
+  <div class="quick" role="group" aria-label="Quick actions">
+    {#if c.state !== 'done'}
+      <ActionButton
+        id="triage.done"
+        label="Done"
+        icon="check"
+        showLabel={false}
+        tabindex={selected ? 0 : -1}
+        onclick={() => void inbox.triage('done', [c.id])}
+        testid="row-done"
+      />
+    {/if}
+    {#if c.state === 'inbox'}
+      <ActionButton
+        id="triage.replied"
+        label="Mark replied"
+        icon="check-all"
+        showLabel={false}
+        tabindex={selected ? 0 : -1}
+        onclick={() => void inbox.triage('replied', [c.id])}
+        testid="row-replied"
+      />
+    {/if}
   </div>
 </div>
 
@@ -134,5 +161,40 @@
   .video {
     font-size: var(--fs-label);
     line-height: 14px;
+    padding-right: 56px; /* room for the quick actions */
+  }
+  .quick {
+    position: absolute;
+    right: var(--s2);
+    bottom: 3px;
+    display: flex;
+    gap: 2px;
+    padding: 1px;
+    border-radius: var(--radius);
+    background: var(--bg-elev);
+    box-shadow: 0 0 0 1px var(--border);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--dur) var(--ease);
+  }
+  .quick :global(.btn) {
+    height: 20px;
+  }
+  .row:hover .quick,
+  .quick:focus-within {
+    opacity: 1;
+    pointer-events: auto;
+  }
+  /* Touch and narrow layouts have no hover: always show them. */
+  @media (hover: none), (max-width: 899px) {
+    .quick {
+      opacity: 1;
+      pointer-events: auto;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .quick {
+      transition: none;
+    }
   }
 </style>

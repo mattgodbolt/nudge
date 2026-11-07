@@ -1,6 +1,7 @@
 <script lang="ts">
   import { sync } from '../lib/stores/sync.svelte';
   import { ago } from '../lib/format';
+  import { tip } from '../lib/tip.svelte';
   import Icon from './Icon.svelte';
 
   const label = $derived(
@@ -16,7 +17,15 @@
   );
 </script>
 
-<button class="sync" onclick={() => void sync.run({ scope: 'all' })} title="Sync now (s)" data-testid="sync-indicator">
+<button
+  class="sync"
+  onclick={(e) => {
+    void sync.run({ scope: 'all' });
+    if (e.detail > 0) e.currentTarget.blur();
+  }}
+  data-testid="sync-indicator"
+  {@attach tip({ id: 'sync.now', label: 'Sync now' })}
+>
   <span class="spin" class:on={sync.status.running}><Icon name="refresh" size={14} /></span>
   <span class="truncate">{label}</span>
 </button>

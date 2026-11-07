@@ -67,6 +67,8 @@ export class InboxStore {
   #generation = 0;
   #loadingMore = false;
   #undoStack: UndoEntry[] = [];
+  /** Mirrors the undo stack length so the UI can enable/disable Undo. */
+  undoDepth = $state(0);
   #inflight = new Set<string>();
 
   /* ---------- loading ---------- */
@@ -200,6 +202,10 @@ export class InboxStore {
     this.selectedIds = next;
   }
 
+  selectAll() {
+    if (this.items.length) this.selectedIds = new Set(this.items.map((i) => i.comment.id));
+  }
+
   clearSelection() {
     if (this.selectedIds.size) this.selectedIds = new Set();
   }
@@ -215,8 +221,9 @@ export class InboxStore {
 
   /* ---------- triage ---------- */
 
-  triage(to: 'done' | 'replied' | 'inbox'): Promise<boolean> {
-    const ids = this.selectedIds.size > 0 ? [...this.selectedIds] : this.selectedId ? [this.selectedId] : [];
+  /** Triage `ids` (e.g. a row's own quick action), defaulting to the multi-selection or the cursor row. */
+  triage(to: 'done' | 'replied' | 'inbox', only?: string[]): Promise<boolean> {
+    const ids = only ?? (this.selectedIds.size > 0 ? [...this.selectedIds] : this.selectedId ? [this.selectedId] : []);
     const message = to === 'done' ? 'Marked done' : to === 'replied' ? 'Marked replied' : 'Moved back to inbox';
     return this.applyOptimistic(ids, to, () => api.triage(ids, to), {
       message: ids.length > 1 ? `${ids.length} items: ${message.toLowerCase()}` : message,
@@ -250,6 +257,7 @@ export class InboxStore {
     const entry: UndoEntry = { changes, actionId: promise.then((r) => r.actionId) };
     entry.actionId.catch(() => {});
     this.#undoStack.push(entry);
+    this.undoDepth = this.#undoStack.length;
     try {
       const result = await promise;
       if (result.counts) this.counts = result.counts;
@@ -262,6 +270,7 @@ export class InboxStore {
       return true;
     } catch (e) {
       this.#undoStack = this.#undoStack.filter((x) => x !== entry);
+      this.undoDepth = this.#undoStack.length;
       this.#setStates(changes, 'from');
       this.counts = prevCounts;
       if (prevSelected && this.items.some((i) => i.comment.id === prevSelected)) this.selectedId = prevSelected;
@@ -275,6 +284,7 @@ export class InboxStore {
 
   async undo(): Promise<boolean> {
     const entry = this.#undoStack.pop();
+    this.undoDepth = this.#undoStack.length;
     if (!entry) {
       toasts.push({ message: 'Nothing to undo', timeoutMs: 2000 });
       return false;
@@ -378,6 +388,7 @@ export class InboxStore {
     this.counts = emptyCounts();
     this.pending = new Set();
     this.#undoStack = [];
+    this.undoDepth = 0;
     this.#inflight.clear();
     this.#generation++;
   }

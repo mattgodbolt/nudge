@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { Keymap, keyLabels } from './keymap.svelte';
+import { Keymap, ariaShortcut, keyLabels } from './keymap.svelte';
+import { appBindings, inboxBindings } from './bindings';
 
 function key(k: string, init: KeyboardEventInit = {}, target?: HTMLElement) {
   const e = new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true, ...init });
@@ -165,5 +166,60 @@ describe('keymap', () => {
     expect(keyLabels('$mod+Enter', false)).toEqual(['Ctrl+↵']);
     expect(keyLabels('$mod+Enter', true)).toEqual(['⌘↵']);
     expect(keyLabels('g i', false)).toEqual(['g', 'i']);
+  });
+
+  it('Shift+letter bindings are distinct from the plain letter', () => {
+    const plain = bind(['u']);
+    const shifted = bind(['Shift+U']);
+    km.handle(key('U', { shiftKey: true }));
+    expect(shifted).toHaveBeenCalledTimes(1);
+    expect(plain).not.toHaveBeenCalled();
+    km.handle(key('u'));
+    expect(plain).toHaveBeenCalledTimes(1);
+  });
+
+  it('supports the * a / * n chords', () => {
+    const all = bind(['* a']);
+    const none = bind(['* n']);
+    km.handle(key('*', { shiftKey: true }));
+    km.handle(key('a'));
+    km.handle(key('*', { shiftKey: true }));
+    km.handle(key('n'));
+    expect(all).toHaveBeenCalledTimes(1);
+    expect(none).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves Enter/Space to a focused button, but still fires other keys', () => {
+    const enter = bind(['Enter']);
+    const done = bind(['e']);
+    const btn = document.createElement('button');
+    expect(km.handle(key('Enter', {}, btn))).toBe(false);
+    expect(km.handle(key(' ', {}, btn))).toBe(false);
+    expect(enter).not.toHaveBeenCalled();
+    km.handle(key('e', {}, btn));
+    expect(done).toHaveBeenCalledTimes(1);
+    km.handle(key('Enter', {}, document.body));
+    expect(enter).toHaveBeenCalledTimes(1);
+  });
+
+  it('formats aria-keyshortcuts', () => {
+    expect(ariaShortcut('e')).toBe('E');
+    expect(ariaShortcut('Shift+U')).toBe('Shift+U');
+    expect(ariaShortcut('S')).toBe('Shift+S');
+    expect(ariaShortcut('$mod+k', false)).toBe('Control+K');
+    expect(ariaShortcut('g i')).toBeUndefined();
+  });
+
+  it('real bindings follow the Gmail-aligned map', () => {
+    const keys = Object.fromEntries([...appBindings(), ...inboxBindings()].map((b) => [b.id, b.keys]));
+    expect(keys['sync.now']).toEqual(['Shift+N']);
+    expect(keys['sync.deep']).toEqual(['S']);
+    expect(keys['triage.inbox']).toEqual(['Shift+U']);
+    expect(keys['thread.back']).toContain('u');
+    expect(keys['triage.done']).toEqual(['e', 'd']);
+    expect(keys['sel.all']).toEqual(['* a']);
+    expect(keys['sel.none']).toEqual(['* n']);
+    const all = Object.values(keys).flat();
+    expect(all.filter((k) => k === 'u')).toHaveLength(1);
   });
 });

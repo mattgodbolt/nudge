@@ -1,8 +1,10 @@
 <script lang="ts">
-  import { keyLabels } from '../lib/keys/keymap.svelte';
+  import { hotkey, keyLabels } from '../lib/keys/keymap.svelte';
   /** `keys` is a binding key string like '$mod+Enter' or 'g i'. Or pass `label` for literal text. */
-  let { keys, label }: { keys?: string; label?: string } = $props();
-  const parts = $derived(label ? [label] : keys ? keyLabels(keys) : []);
+  /** Or `id` to show a binding's primary key straight from the keymap registry. */
+  let { keys, label, id }: { keys?: string; label?: string; id?: string } = $props();
+  const k = $derived(keys ?? (id ? hotkey(id) : undefined));
+  const parts = $derived(label ? [label] : k ? keyLabels(k) : []);
 </script>
 
 {#each parts as p, i (i)}<kbd>{p}</kbd>{/each}
