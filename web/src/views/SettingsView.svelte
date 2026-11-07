@@ -159,7 +159,7 @@
         <p class="muted meta">
           Connect a Google account to post replies straight from here instead of copying them to YouTube. Setup takes a
           few minutes in Google Cloud; follow the
-          <a href="https://github.com/mattgodbolt/youtubey" target="_blank" rel="noopener noreferrer"
+          <a href="https://github.com/mattgodbolt/nudge" target="_blank" rel="noopener noreferrer"
             >README checklist</a
           >.
         </p>
