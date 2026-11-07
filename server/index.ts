@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { buildApp } from './app.js';
 import type { AppDeps, GoogleAuth, PostGateway, ReplyPoster } from './contracts.js';
 import { createGoogleAuth } from './auth/google.js';
-import { loadConfig, resolveApiKey, resolveGoogleClient } from './config.js';
+import { loadConfig, migrateLegacyDb, resolveApiKey, resolveGoogleClient } from './config.js';
 import { openRepo } from './db/repo.js';
 import { createFakeClient } from './demo/fake-client.js';
 import { nonDemoSources, seedDemo } from './demo/seed.js';
@@ -33,14 +33,15 @@ function findStaticDir(): string | undefined {
 
 async function main(): Promise<void> {
   const config = loadConfig();
+  if (migrateLegacyDb(config.dbPath)) console.log('Moved data/youtubey.db to data/nudge.db');
   const repo = openRepo(config.dbPath);
   if (config.demo) {
     const foreign = nonDemoSources(repo);
     if (foreign.length) {
       console.error(
-        `Refusing to start in YOUTUBEY_DEMO mode: ${config.dbPath} already contains non-demo sources ` +
+        `Refusing to start in NUDGE_DEMO mode: ${config.dbPath} already contains non-demo sources ` +
           `(${foreign.slice(0, 3).join(', ')}${foreign.length > 3 ? ', ...' : ''}).\n` +
-          'Demo mode would sync fake data into your real database. Set YOUTUBEY_DB=data/demo.db (or :memory:).',
+          'Demo mode would sync fake data into your real database. Set NUDGE_DB=data/demo.db (or :memory:).',
       );
       repo.close();
       process.exit(1);
@@ -77,7 +78,7 @@ async function main(): Promise<void> {
 
   if (config.demo) await seedDemo(repo, addSource); // no-op unless the DB is empty
 
-  // The listening port is only known after listen() (YOUTUBEY_PORT=0 in tests), so the redirect URI is a getter.
+  // The listening port is only known after listen() (NUDGE_PORT=0 in tests), so the redirect URI is a getter.
   let listenPort = config.port;
   // Assigned just below; auth's onChange and the poster refer to each other, so both read this lazily.
   let poster: ReplyPoster | undefined;
@@ -89,7 +90,7 @@ async function main(): Promise<void> {
 
   let auth: GoogleAuth;
   let gateway: PostGateway;
-  if (config.demo && process.env.YOUTUBEY_DEMO_POST === 'api') {
+  if (config.demo && (process.env.NUDGE_DEMO_POST ?? process.env.YOUTUBEY_DEMO_POST) === 'api') {
     // Demo "API" posting: a fake GoogleAuth (starts connected as the demo channel) + a gateway that appends to the world.
     ({ auth, gateway } = createDemoPosting({ repo, world: world!, onChange: onAuthChange }));
   } else {

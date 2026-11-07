@@ -13,7 +13,7 @@ npm run dev      # the real thing (API on :4517, Vite on :5173)
 npm start        # production build served from :4517
 ```
 
-An API key is read from `YOUTUBE_API_KEY`, then the Settings screen, then `~/.youtubey-key`.
+An API key is read from `YOUTUBE_API_KEY`, then the Settings screen, then `~/.nudge-key`.
 On first run, paste your channel URL or @handle when asked (or under **Settings > My channels**): comments by it
 are never inbox items, a reply from it auto-clears older comments in the same thread, and its uploads are tracked.
 Ticking "This is my channel" when adding a channel source does exactly the same thing.
@@ -47,11 +47,11 @@ units) as your channel, with no copy and paste. One-time Google Cloud setup, in 
    until you reconnect.
 7. **Clients > Create client.** Application type **Desktop app**, name `Nudge local`, **Create**, then
    **Download JSON**. No redirect URI is needed: Nudge always uses `http://127.0.0.1:4517/api/auth/callback`
-   (or your `YOUTUBEY_PORT`).
+   (or your `NUDGE_PORT`).
 8. Give Nudge the client in any one of these ways:
    - paste the downloaded JSON into **Settings > Reply from Nudge**;
-   - save it as `~/.youtubey-google-client.json` and run `chmod 600` on it;
-   - set `YOUTUBEY_GOOGLE_CLIENT_ID` and `YOUTUBEY_GOOGLE_CLIENT_SECRET`.
+   - save it as `~/.nudge-google-client.json` and run `chmod 600` on it;
+   - set `NUDGE_GOOGLE_CLIENT_ID` and `NUDGE_GOOGLE_CLIENT_SECRET`.
 9. **Settings > Connect Google account.** Choose the account, then the channel if Google asks (Brand Accounts are
    listed separately). On "Google hasn't verified this app", click **Advanced > Go to Nudge (unsafe)**: it is
    your own app. On the permissions screen, **tick the YouTube box**. Google lets you untick it, and then posting
@@ -62,14 +62,14 @@ Notes:
 
 - **`redirect_uri_mismatch` at step 9:** your client was created as "Web application". Either recreate it as
   Desktop app, or add exactly `http://127.0.0.1:4517/api/auth/callback` under **Authorized redirect URIs**.
-- **Token storage:** your refresh token lives in `data/youtubey.db` (mode 600, gitignored), at the same trust level
+- **Token storage:** your refresh token lives in `data/nudge.db` (mode 600, gitignored), at the same trust level
   as the stored API key. **Disconnect** in Settings revokes it at Google and deletes it.
 - Posting is a manual action, so it may use the manual quota reserve. If a post fails because the sign-in expired
   or quota ran out, the composer offers Copy & open instead; a failed post keeps your draft.
 - `z` after posting only moves the original comment back to the inbox; your reply stays on YouTube. Delete it with
   the explicit **Delete reply** button on the comment.
 - Replies on videos you do not own are posted as your default connected channel.
-- `YOUTUBEY_DEMO_POST=api` (with `YOUTUBEY_DEMO=1`) fakes a connected Google account and posts into the demo data,
+- `NUDGE_DEMO_POST=api` (with `NUDGE_DEMO=1`) fakes a connected Google account and posts into the demo data,
   for trying the flow without Google.
 
 ## Keys (press `?` in the app for the full list)
@@ -103,6 +103,6 @@ are not detected.
 
 ## Naming
 
-The app is called Nudge. Some internals keep the old name on purpose so existing installs keep working: the
-database `data/youtubey.db`, `~/.youtubey-key`, `~/.youtubey-google-client.json`, the `YOUTUBEY_*` environment
-variables and the `X-Youtubey` request header.
+The app was called Youtubey. Existing setups keep working: `YOUTUBEY_*` environment variables, `~/.youtubey-key` and
+`~/.youtubey-google-client.json` are still read when the `NUDGE_*` / `~/.nudge-*` equivalents are absent, and
+`data/youtubey.db` is moved to `data/nudge.db` automatically on first start.

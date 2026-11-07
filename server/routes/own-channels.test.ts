@@ -9,7 +9,7 @@ import { makeEnv } from '../sync/test-helpers.js';
 import type { SettingsDTO } from '../../shared/types.js';
 
 // Real repo + real addSource against a scripted YouTube client: exercises the whole "this is my channel" flow.
-const H = { 'x-youtubey': '1', host: '127.0.0.1:4517' };
+const H = { 'x-nudge': '1', host: '127.0.0.1:4517' };
 const CH = 'UC' + 'm'.repeat(22);
 
 let app: FastifyInstance;

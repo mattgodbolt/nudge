@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync, renameSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { Repo } from './contracts.js';
@@ -19,26 +19,49 @@ export interface Config {
 
 export type ApiKeySource = 'env' | 'settings' | 'file';
 
+/** The app used to be called Youtubey: NUDGE_* wins, YOUTUBEY_* still works so existing setups keep running. */
+const pick = (env: NodeJS.ProcessEnv, name: string): string | undefined =>
+  env[`NUDGE_${name}`] ?? env[`YOUTUBEY_${name}`];
+
+/** Prefer ~/.nudge-<name>; fall back to the pre-rename ~/.youtubey-<name> when only that exists. */
+function homeFile(home: string, name: string): string {
+  const current = join(home, `.nudge-${name}`);
+  const legacy = join(home, `.youtubey-${name}`);
+  return !existsSync(current) && existsSync(legacy) ? legacy : current;
+}
+
+export const DEFAULT_DB = 'data/nudge.db';
+
+/** One-off: the default database used to be data/youtubey.db. Move it (and WAL/SHM) before it is opened. */
+export function migrateLegacyDb(dbPath: string, legacyPath = 'data/youtubey.db'): boolean {
+  if (dbPath !== DEFAULT_DB || existsSync(dbPath) || !existsSync(legacyPath)) return false;
+  for (const suffix of ['', '-wal', '-shm']) {
+    if (existsSync(legacyPath + suffix)) renameSync(legacyPath + suffix, dbPath + suffix);
+  }
+  return true;
+}
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env, home: string = homedir()): Config {
-  const port = env.YOUTUBEY_PORT ? Number(env.YOUTUBEY_PORT) : 4517;
+  const portEnv = pick(env, 'PORT');
+  const port = portEnv ? Number(portEnv) : 4517;
   if (!Number.isInteger(port) || port < 0 || port > 65535) {
-    throw new Error(`Invalid YOUTUBEY_PORT: ${env.YOUTUBEY_PORT}`);
+    throw new Error(`Invalid NUDGE_PORT: ${portEnv}`);
   }
   const truthy = (v: string | undefined) => v === '1' || v?.toLowerCase() === 'true';
   return {
     port,
-    dbPath: env.YOUTUBEY_DB || 'data/youtubey.db',
-    demo: truthy(env.YOUTUBEY_DEMO),
-    demoClockFixed: env.YOUTUBEY_DEMO_CLOCK === 'fixed',
+    dbPath: pick(env, 'DB') || DEFAULT_DB,
+    demo: truthy(pick(env, 'DEMO')),
+    demoClockFixed: pick(env, 'DEMO_CLOCK') === 'fixed',
     envApiKey: env.YOUTUBE_API_KEY?.trim() || null,
-    keyFile: join(home, '.youtubey-key'),
-    envGoogleClientId: env.YOUTUBEY_GOOGLE_CLIENT_ID?.trim() || null,
-    envGoogleClientSecret: env.YOUTUBEY_GOOGLE_CLIENT_SECRET?.trim() || null,
-    googleClientFile: join(home, '.youtubey-google-client.json'),
+    keyFile: homeFile(home, 'key'),
+    envGoogleClientId: pick(env, 'GOOGLE_CLIENT_ID')?.trim() || null,
+    envGoogleClientSecret: pick(env, 'GOOGLE_CLIENT_SECRET')?.trim() || null,
+    googleClientFile: homeFile(home, 'google-client.json'),
   };
 }
 
-/** Key resolution order: env > settings (DB) > ~/.youtubey-key. Never serialise `key` to clients. */
+/** Key resolution order: env > settings (DB) > ~/.nudge-key. Never serialise `key` to clients. */
 export function resolveApiKey(
   config: Pick<Config, 'envApiKey' | 'keyFile'>,
   repo: Pick<Repo, 'getSettings'>,
@@ -61,7 +84,7 @@ export interface GoogleClient {
   source: ApiKeySource;
 }
 
-/** Order: env > settings (DB) > ~/.youtubey-google-client.json. Never serialise the secret to clients. */
+/** Order: env > settings (DB) > ~/.nudge-google-client.json. Never serialise the secret to clients. */
 export function resolveGoogleClient(
   config: Pick<Config, 'envGoogleClientId' | 'envGoogleClientSecret' | 'googleClientFile'>,
   repo: Pick<Repo, 'getSettings'>,

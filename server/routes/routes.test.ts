@@ -15,7 +15,7 @@ import type {
   TriageResult,
 } from '../../shared/types.js';
 
-const H = { 'x-youtubey': '1', host: '127.0.0.1:4517' };
+const H = { 'x-nudge': '1', host: '127.0.0.1:4517' };
 const OWN = 'UC' + 'a'.repeat(22);
 
 function comment(id: string, state: CommentState = 'inbox'): CommentDTO {
@@ -416,7 +416,7 @@ describe('SSE', () => {
     await readUntil('retry: 2000');
     const post = await fetch(`http://127.0.0.1:${port}/api/triage`, {
       method: 'POST',
-      headers: { 'x-youtubey': '1', 'content-type': 'application/json' },
+      headers: { 'x-nudge': '1', 'content-type': 'application/json' },
       body: JSON.stringify({ commentIds: ['c1'], to: 'done' }),
     });
     expect(post.status).toBe(200);

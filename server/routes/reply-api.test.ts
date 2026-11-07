@@ -8,7 +8,7 @@ import { makeEnv } from '../sync/test-helpers.js';
 import type { ServerEvent } from '../../shared/types.js';
 
 // Real repo + real poster + scripted gateway: the whole POST /reply and /delete path, plus secret hygiene.
-const H = { 'x-youtubey': '1', host: '127.0.0.1:4517' };
+const H = { 'x-nudge': '1', host: '127.0.0.1:4517' };
 const ME = 'UC' + 'm'.repeat(22);
 const CLIENT_ID = '123-abc.apps.googleusercontent.com';
 const SECRET = 'GOCSPX-super-secret-value';

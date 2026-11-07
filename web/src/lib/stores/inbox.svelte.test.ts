@@ -94,7 +94,7 @@ describe('InboxStore', () => {
     expect(await p).toBe(true);
     const call = fetchMock.mock.calls.find((c) => c[0] === '/api/triage')!;
     expect(JSON.parse(call[1].body)).toEqual({ commentIds: ['c2'], to: 'done' });
-    expect(call[1].headers['X-Youtubey']).toBe('1');
+    expect(call[1].headers['X-Nudge']).toBe('1');
     expect(toasts.items.at(-1)?.action?.label).toBe('Undo');
   });
 

@@ -20,7 +20,7 @@ export function registerAuthRoutes(app: FastifyInstance, deps: AppDeps, opts: Au
   app.get('/api/auth/status', async () => auth.status());
 
   app.post('/api/auth/start', async (req) => {
-    // Only this trusted POST (Origin + X-Youtubey checked by security.ts) chooses where the callback returns to.
+    // Only this trusted POST (Origin + X-Nudge checked by security.ts) chooses where the callback returns to.
     const returnOrigin = returnOriginFor(req.headers.origin, req.headers.host, opts.devOrigins);
     try {
       return auth.start(returnOrigin);

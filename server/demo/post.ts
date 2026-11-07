@@ -25,7 +25,7 @@ const OWN_TITLE = 'Demo Channel';
 const OWN_AVATAR = 'https://yt3.ggpht.com/demo/avatar-own=s48';
 
 /**
- * Demo-mode stand-ins for Google OAuth and the authorised YouTube write calls (YOUTUBEY_DEMO_POST=api).
+ * Demo-mode stand-ins for Google OAuth and the authorised YouTube write calls (NUDGE_DEMO_POST=api).
  * Starts connected as the demo own channel; Disconnect/Connect toggle it in memory.
  * Comment text containing [[fail:quota]] or [[fail:auth]] makes insertReply fail, for e2e error paths.
  */

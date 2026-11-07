@@ -117,7 +117,7 @@
   const sourceLabel = {
     env: 'YOUTUBE_API_KEY environment variable',
     settings: 'Settings (stored in the local database)',
-    file: '~/.youtubey-key',
+    file: '~/.nudge-key',
   } as const;
 </script>
 

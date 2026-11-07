@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 
-// Runs against the demo server started with YOUTUBEY_DEMO_POST=api (see playwright.config.ts, port 4519).
+// Runs against the demo server started with NUDGE_DEMO_POST=api (see playwright.config.ts, port 4519).
 // The tests share that server's in-memory state, so they run in order.
 test.describe.configure({ mode: 'serial' });
 

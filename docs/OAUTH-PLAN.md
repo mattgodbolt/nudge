@@ -6,7 +6,7 @@ The plan builds on the existing `ReplyPoster` seam (`server/reply/poster.ts`), s
 
 - **Security guard (`server/security.ts`):**
   - Every request must have a loopback `Host` with the exact port.
-  - Non-GET requests also need a same-host Origin (or a Vite dev origin) and `X-Youtubey: 1`.
+  - Non-GET requests also need a same-host Origin (or a Vite dev origin) and `X-Nudge: 1`.
   - GET requests only get the Host check. So a top-level GET from Google back to `http://127.0.0.1:4517/api/auth/callback` already passes; CSRF protection there has to come from the OAuth `state` value.
 - **Capabilities only reach the browser through `/api/bootstrap`** (`web/src/lib/stores/app.svelte.ts`). There is no event that pushes them, so connecting, disconnecting or a revoked token needs a new SSE event.
 - **What a sent reply does today:**
@@ -81,11 +81,11 @@ Add this to README under "Replying from the app (optional)". Use the same Google
    - In "Testing" status, Google expires your sign-in every 7 days and Nudge falls back to copy-and-open until you reconnect.
 7. **Clients → Create client.**
    - Application type: **Desktop app**. Name: `Nudge local`. Click **Create**, then **Download JSON**.
-   - No redirect URI is needed. Nudge always uses `http://127.0.0.1:4517/api/auth/callback`, or your `YOUTUBEY_PORT`.
+   - No redirect URI is needed. Nudge always uses `http://127.0.0.1:4517/api/auth/callback`, or your `NUDGE_PORT`.
 8. Give Nudge the client in any one of these ways:
    - paste the downloaded JSON into **Settings → Reply from Nudge**;
-   - save it as `~/.youtubey-google-client.json` and run `chmod 600` on it;
-   - set `YOUTUBEY_GOOGLE_CLIENT_ID` and `YOUTUBEY_GOOGLE_CLIENT_SECRET`.
+   - save it as `~/.nudge-google-client.json` and run `chmod 600` on it;
+   - set `NUDGE_GOOGLE_CLIENT_ID` and `NUDGE_GOOGLE_CLIENT_SECRET`.
 9. **Settings → Connect Google account.**
    - Choose the account, then the channel if Google asks (Brand Accounts are listed separately).
    - On "Google hasn't verified this app", click **Advanced → Go to Nudge (unsafe)**. It is your own app.
@@ -94,13 +94,13 @@ Add this to README under "Replying from the app (optional)". Use the same Google
 
 **Troubleshooting note (README):** if step 9 shows `redirect_uri_mismatch`, your client was created as "Web application". Either recreate it as Desktop app, or add exactly `http://127.0.0.1:4517/api/auth/callback` under **Authorized redirect URIs**.
 
-**Dev vs prod:** the redirect always goes straight to the API server port (4517 or `YOUTUBEY_PORT`), never to Vite's 5173. After the callback the server sends the browser back to whichever UI origin started the flow. So `npm run dev` and `npm start` use the same redirect URI, and Vite's `/api` proxy is not involved.
+**Dev vs prod:** the redirect always goes straight to the API server port (4517 or `NUDGE_PORT`), never to Vite's 5173. After the callback the server sends the browser back to whichever UI origin started the flow. So `npm run dev` and `npm start` use the same redirect URI, and Vite's `/api` proxy is not involved.
 
 ## 3. Server design
 
 ### 3.1 Config (`server/config.ts`)
 
-- Add `envGoogleClientId`, `envGoogleClientSecret` (from `YOUTUBEY_GOOGLE_CLIENT_ID` / `_SECRET`) and `googleClientFile` (`~/.youtubey-google-client.json`) to `Config`.
+- Add `envGoogleClientId`, `envGoogleClientSecret` (from `NUDGE_GOOGLE_CLIENT_ID` / `_SECRET`) and `googleClientFile` (`~/.nudge-google-client.json`) to `Config`.
 - Add `resolveGoogleClient(config, repo)`, mirroring `resolveApiKey`.
   - Order: env > settings (DB) > file.
   - Returns `{clientId, clientSecret, source} | null`.
@@ -128,7 +128,7 @@ CREATE INDEX idx_reply_posts_comment ON reply_posts(comment_id, created_at DESC)
 - **Token storage:** plaintext in the 0600 SQLite file, the same trust level as the API key already stored there.
   - A file kept separately with mode 0600 adds nothing.
   - An OS keychain needs a native dependency (`keytar` is archived; libsecret bindings would be new) for a single-user, loopback-only app.
-  - README note: "your refresh token lives in data/youtubey.db (mode 600); Disconnect revokes it at Google."
+  - README note: "your refresh token lives in data/nudge.db (mode 600); Disconnect revokes it at Google."
 
 ### 3.3 Auth module (`server/auth/google.ts`, new, no dependencies)
 
@@ -170,7 +170,7 @@ export interface GoogleAuth {
 | Route                                     | Guard                                                                                                   | Behaviour                                                                                                                                                                                                                                                                                         |
 | ----------------------------------------- | ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `GET /api/auth/status`                    | Host                                                                                                    | Returns `GoogleAuthDTO`.                                                                                                                                                                                                                                                                          |
-| `POST /api/auth/start`                    | Host, Origin and X-Youtubey (existing)                                                                  | Body `{}`. `returnOrigin` = request `Origin` if it equals the Host origin or is in `devOrigins()`, else `http://<Host>`. Returns `{url}`. Returns 400 `no_client` if no client is configured.                                                                                                     |
+| `POST /api/auth/start`                    | Host, Origin and X-Nudge (existing)                                                                     | Body `{}`. `returnOrigin` = request `Origin` if it equals the Host origin or is in `devOrigins()`, else `http://<Host>`. Returns `{url}`. Returns 400 `no_client` if no client is configured.                                                                                                     |
 | `GET /api/auth/callback?code&state&error` | Host only (it is a browser navigation from accounts.google.com; no Origin or custom header is possible) | Responds with a 302 to `${returnOrigin}/settings?google=connected` or `?google=<errorcode>`. Unknown state → 302 to `/settings?google=bad_state` on its own host, never to an attacker-chosen origin. Sets `Cache-Control: no-store` and `Referrer-Policy: no-referrer` so the code doesn't leak. |
 | `POST /api/auth/logout`                   | full                                                                                                    | Body `{channelId?}`. Revokes and returns `GoogleAuthDTO`.                                                                                                                                                                                                                                         |
 | `POST /api/auth/default`                  | full                                                                                                    | Body `{channelId}`. Optional, only when several accounts are connected.                                                                                                                                                                                                                           |
@@ -178,7 +178,7 @@ export interface GoogleAuth {
 
 **Why the GET callback is safe:**
 
-- The side effect needs a `state` that only a POST carrying X-Youtubey could create. That POST is unreachable cross-site, which stops login-CSRF (being tricked into connecting an attacker's account).
+- The side effect needs a `state` that only a POST carrying X-Nudge could create. That POST is unreachable cross-site, which stops login-CSRF (being tricked into connecting an attacker's account).
 - `state` is 256-bit, single-use and expires after 10 minutes.
 - The PKCE verifier never leaves the server, so a leaked code is useless.
 - The Host check still blocks DNS rebinding.
@@ -219,7 +219,7 @@ export interface GoogleAuth {
   - `capabilities()` returns `{canPost:true, postMode:'api'}` when the client is configured and at least one account has `!needsReauth`; otherwise it returns the handoff capabilities.
   - `reply()` delegates the same way. If `capabilities()` says `handoff`, the client already ran the gesture path. If capabilities flip between the client's bootstrap and the POST, the server returns `auth_required` instead of silently recording a hand-off.
 - `index.ts` builds it.
-- **Demo mode:** a `fakeGoogleAuth` that is "connected" as the demo own channel, plus a `postReply` on the fake client that appends to the world. This keeps e2e coverage of api mode, behind `YOUTUBEY_DEMO_POST=api` so existing e2e runs stay in handoff mode.
+- **Demo mode:** a `fakeGoogleAuth` that is "connected" as the demo own channel, plus a `postReply` on the fake client that appends to the world. This keeps e2e coverage of api mode, behind `NUDGE_DEMO_POST=api` so existing e2e runs stay in handoff mode.
 
 **`ApiPoster.reply(comment, body)`:**
 
@@ -364,7 +364,7 @@ The route (`/api/comments/:id/reply`) is otherwise unchanged. It already calls `
 
 **`server/routes/auth.test.ts`** with `buildApp` and `app.inject`:
 
-- The callback passes `security.ts` with a loopback Host and no X-Youtubey, and is rejected with Host `evil.com:4517`.
+- The callback passes `security.ts` with a loopback Host and no X-Nudge, and is rejected with Host `evil.com:4517`.
 - `POST /start` without the header → 403.
 - A dev Origin `http://127.0.0.1:5173` makes the callback redirect back to 5173; an unknown state redirects to its own host only.
 - Callback responses carry `Cache-Control: no-store`.
@@ -377,7 +377,7 @@ The route (`/api/comments/:id/reply`) is otherwise unchanged. It already calls `
 - `reply.ts` api branch: the inflight guard; `onError` maps codes to toast actions; draft restored on failure; draft not restored as unsent on `post_unconfirmed`.
 - `sse` `capabilities.changed` updates the store.
 
-**e2e** (Playwright, demo with `YOUTUBEY_DEMO_POST=api`):
+**e2e** (Playwright, demo with `NUDGE_DEMO_POST=api`):
 
 - Composer shows "post as Demo Channel".
 - `⌘↵` posts; the reply appears in the thread as own; `z` moves the target back to inbox while the reply stays.
@@ -420,7 +420,7 @@ Works against the Step-0 `GoogleAuth` interface with a stub.
 **Chunk D: demo, e2e, docs.** Owns:
 
 - `server/demo/fake-client.ts` / `world.ts` (`postReply`), a fake GoogleAuth (`server/demo/fake-auth.ts`, new);
-- the `YOUTUBEY_DEMO_POST` handling in `index.ts`, coordinated with A (a one-line hook A leaves);
+- the `NUDGE_DEMO_POST` handling in `index.ts`, coordinated with A (a one-line hook A leaves);
 - `e2e/reply-api.spec.ts`;
 - `README.md` (checklist in section 2, Replying section rewrite, known limitations);
 - `docs/PLAN.md` (new section on OAuth, plus the reply seam update).

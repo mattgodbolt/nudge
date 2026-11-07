@@ -37,7 +37,7 @@ export interface DraftDTO {
 }
 
 /** Every request from the web app must carry this header (CSRF guard). */
-export const CLIENT_HEADER = 'X-Youtubey';
+export const CLIENT_HEADER = 'X-Nudge';
 
 /**
  * REST surface (all JSON, under /api). Documented here as the contract:

@@ -3,7 +3,7 @@
 ## 0. Current state and environment
 
 - Repo: `/home/matthew/dev/youtubey`. It contains `youtubey/main.py` (click CLI: `new-comments` keeps a JSON seen-set in `~/.youtubey-state.json`; `watch-counts` defaults to channel `UC9-y-6csu5WGm29I7JiwpnA`), `pyproject.toml`, `poetry.lock`, `README.md`, `.gitignore` (just `__pycache__`) and `.idea/`.
-- Toolchain: Node v24.18.1 (nvm) and npm 11.16.0. The key file `~/.youtubey-key` exists. The old code does not trim the key, so the new code must `.trim()` it.
+- Toolchain: Node v24.18.1 (nvm) and npm 11.16.0. The key file `~/.nudge-key` exists. The old code does not trim the key, so the new code must `.trim()` it.
 - Bugs and quota waste in the old code that the new code must not repeat:
   - On first run every comment is treated as new.
   - `watch-counts` calls `videos.list` once per video instead of batching 50 ids.
@@ -82,8 +82,8 @@ Searches found nothing open source that combines a self-hosted web UI, a unified
 - `dev`: `concurrently -n api,web "tsx watch server/index.ts" "vite"`. The API listens on 127.0.0.1:4517 and Vite on 127.0.0.1:5173.
 - `build`: `vite build && tsc -p server`
 - `start`: `npm run build && node dist/server/index.js` (serves `dist/web` plus SPA fallback on 4517).
-- `demo`: `YOUTUBEY_DEMO=1 YOUTUBEY_DB=data/demo.db npm run dev`
-- `demo:e2e`: `YOUTUBEY_DEMO=1 YOUTUBEY_DB=:memory: YOUTUBEY_PORT=4518 YOUTUBEY_DEMO_CLOCK=fixed vite build && tsx server/index.ts`
+- `demo`: `NUDGE_DEMO=1 NUDGE_DB=data/demo.db npm run dev`
+- `demo:e2e`: `NUDGE_DEMO=1 NUDGE_DB=:memory: NUDGE_PORT=4518 NUDGE_DEMO_CLOCK=fixed vite build && tsx server/index.ts`
 - `test`: `vitest run`
 - `test:e2e`: `playwright test`
 - `typecheck`: `tsc -b && svelte-check`
@@ -207,7 +207,7 @@ Any comment first seen with `published_at < baseline_at` is inserted as `archive
 
 1. env `YOUTUBE_API_KEY`
 2. `settings.apiKey` (set from the Settings UI and stored in the gitignored DB)
-3. `~/.youtubey-key` (trimmed)
+3. `~/.nudge-key` (trimmed)
 
 Responses only ever expose `{configured, source:'env'|'settings'|'file'|null, last4}`. `POST /api/settings/test-key` performs a 1-unit `videos.list?id=jNQXAC9IVRw` call.
 
@@ -489,7 +489,7 @@ A watch URL that contains both `v` and `list` resolves to the playlist. The UI s
 
 - Listen on `127.0.0.1` only.
 - Reject requests whose `Host` is not `127.0.0.1:<port>` or `localhost:<port>`. This blocks DNS rebinding.
-- For non-GET requests, require `Origin` to be absent or same-host, and require an `X-Youtubey: 1` header. The client sets it on every request, and it blocks cross-site form CSRF.
+- For non-GET requests, require `Origin` to be absent or same-host, and require an `X-Nudge: 1` header. The client sets it on every request, and it blocks cross-site form CSRF.
 - Without these, any website could hit the unauthenticated API.
 
 **Reply seam** (`server/reply/poster.ts`):
@@ -642,7 +642,7 @@ export const keymap: {
 
 **Empty states**
 
-- No API key: a full-page onboarding with a "Set key" form and a pointer to `~/.youtubey-key`.
+- No API key: a full-page onboarding with a "Set key" form and a pointer to `~/.nudge-key`.
 - No sources: "Add a playlist, video or channel" with the input inline.
 - Inbox zero: a calm illustration-free "All caught up" with the last sync time and `s` hint.
 - Comments disabled: a badge.
@@ -700,7 +700,7 @@ export const keymap: {
 
 **Demo / fixture mode**
 
-- `YOUTUBEY_DEMO=1` makes `server/index.ts` construct `FakeYouTubeClient(world)` instead of the real client and skips key checks (`capabilities` unchanged, `settings.demo=true`).
+- `NUDGE_DEMO=1` makes `server/index.ts` construct `FakeYouTubeClient(world)` instead of the real client and skips key checks (`capabilities` unchanged, `settings.demo=true`).
 - `server/demo/generate.ts` builds a deterministic world from a seeded PRNG (mulberry32, seed 42):
   - one own channel `UCdemoOwnChannel000000000` with 30 videos, plus 2 playlists and 3 standalone third-party videos;
   - about 1,500 comments, with realistic short and long texts including emoji, links and `<br>`, timestamp links, and some threads of 12+ replies;
@@ -708,7 +708,7 @@ export const keymap: {
   - one video with comments disabled and one missing.
 - `seed.ts` adds the sources on first boot of an empty demo DB.
 - The fake world is "live": each `listCommentThreads` call advances a virtual clock and may append 0–3 new comments or replies to hot videos, so polling and SSE are visible.
-- `YOUTUBEY_DEMO_CLOCK=fixed` disables live growth for deterministic e2e runs.
+- `NUDGE_DEMO_CLOCK=fixed` disables live growth for deterministic e2e runs.
 - `POST /api/demo/tick`, mounted only in demo mode, forces new comments for e2e tests.
 
 **Playwright** (`e2e/`, Chromium; `data-testid`s: `inbox-row`, `thread-view`, `composer`, `toast`, `palette`, `help`, `sidebar-count-inbox`)
@@ -772,12 +772,12 @@ export class Repo { constructor(db: Database, clock?: () => Date);
 
 **Chunk C: HTTP server** (owns `server/index.ts`, `server/app.ts`, `server/config.ts`, `server/security.ts`, `server/routes/**`, `server/events/**`, `server/reply/**`)
 
-- All routes in section 5, SSE with heartbeat and per-client cleanup, static serving with SPA fallback in production, key resolution, demo wiring (`YOUTUBEY_DEMO`, `/api/demo/tick`), and graceful shutdown that stops the scheduler and closes the DB.
+- All routes in section 5, SSE with heartbeat and per-client cleanup, static serving with SPA fallback in production, key resolution, demo wiring (`NUDGE_DEMO`, `/api/demo/tick`), and graceful shutdown that stops the scheduler and closes the DB.
 - Tests: `routes.test.ts` with stub repo and engine.
 
 **Chunk D: Frontend foundation** (owns `web/index.html`, `web/src/main.ts`, `App.svelte`, `web/src/lib/**`, `web/src/styles/**`, and components `Shell`, `Sidebar`, `CommandPalette`, `HelpOverlay`, `Toasts`, `Kbd`, `VirtualList`, `SyncIndicator`, `QuotaMeter`, `EmptyState`)
 
-- Tokens, theme, router, typed API client (adds the `X-Youtubey` header and throws `ApiError`), SSE, all stores, keymap, `bindings.ts`, `reply.ts`, `sanitize.ts`.
+- Tokens, theme, router, typed API client (adds the `X-Nudge` header and throws `ApiError`), SSE, all stores, keymap, `bindings.ts`, `reply.ts`, `sanitize.ts`.
 - Exposes the store APIs above. `VirtualList` props: `{items, rowHeight, selectedIndex, onNearEnd, row: Snippet<[T, number]>}`.
 
 **Chunk E: Frontend views** (owns `web/src/views/**` and components `InboxRow`, `ThreadView`, `CommentCard`, `Composer`)
@@ -817,7 +817,7 @@ Ordering and dependencies: step 0, then A–F in parallel. Expected integration 
 The `ReplyPoster` seam described above is now implemented: a switching poster uses the OAuth-backed `ApiPoster`
 when a Google account is connected and falls back to the clipboard hand-off otherwise (R9). The design, Google Cloud
 setup, error table and test plan are in [docs/OAUTH-PLAN.md](docs/OAUTH-PLAN.md). Demo mode can exercise it with
-`YOUTUBEY_DEMO_POST=api` (`server/demo/post.ts`). Held-for-review moderation (R8) remains deferred.
+`NUDGE_DEMO_POST=api` (`server/demo/post.ts`). Held-for-review moderation (R8) remains deferred.
 
 Sources:
 

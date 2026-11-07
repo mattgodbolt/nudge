@@ -8,7 +8,7 @@ import { makeEnv } from '../sync/test-helpers.js';
 import type { GoogleAuthDTO } from '../../shared/types.js';
 
 const HOST = '127.0.0.1:4517';
-const H = { 'x-youtubey': '1', host: HOST };
+const H = { 'x-nudge': '1', host: HOST };
 const CH = 'UC' + 'm'.repeat(22);
 const CLIENT: GoogleClient = { clientId: 'cid.apps.googleusercontent.com', clientSecret: 'sek', source: 'env' };
 
@@ -63,7 +63,7 @@ describe('/api/auth/start', () => {
     expect((res.json() as { url: string }).url).toContain('accounts.google.com');
   });
 
-  it('is rejected without X-Youtubey (login-CSRF protection)', async () => {
+  it('is rejected without X-Nudge (login-CSRF protection)', async () => {
     const res = await app.inject({ method: 'POST', url: '/api/auth/start', headers: { host: HOST }, payload: {} });
     expect(res.statusCode).toBe(403);
   });
@@ -81,7 +81,7 @@ describe('/api/auth/start', () => {
 });
 
 describe('/api/auth/callback', () => {
-  it('passes security with a loopback Host and no X-Youtubey / Origin, and redirects home', async () => {
+  it('passes security with a loopback Host and no X-Nudge / Origin, and redirects home', async () => {
     const state = stateOf(await start({ origin: `http://${HOST}` }));
     const res = await app.inject({
       method: 'GET',

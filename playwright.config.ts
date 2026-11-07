@@ -2,7 +2,7 @@ import { defineConfig } from '@playwright/test';
 
 const use = { permissions: ['clipboard-read', 'clipboard-write'] };
 
-// Two demo servers: hand-off mode (4518, the default) and API-posting mode (4519, YOUTUBEY_DEMO_POST=api).
+// Two demo servers: hand-off mode (4518, the default) and API-posting mode (4519, NUDGE_DEMO_POST=api).
 // reply-api.spec.ts runs only against the second.
 export default defineConfig({
   testDir: 'e2e',
