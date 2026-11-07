@@ -5,7 +5,11 @@ import type {
   Counts,
   ImportMode,
   InboxItem,
+  LabelApplyResult,
+  LabelColor,
+  LabelDTO,
   PollTier,
+  SnoozeResult,
   SourceDTO,
   StatsDTO,
   StatsTotals,
@@ -14,8 +18,10 @@ import type {
   TriageResult,
   VideoDTO,
 } from '../../shared/types.js';
+import { LABEL_COLORS, MAX_LABEL_NAME, MAX_LABELS } from '../../shared/types.js';
 import type { DraftDTO, InboxPage, InboxQuery } from '../../shared/api.js';
 import { permalink } from '../../shared/youtube-urls.js';
+import { LabelError } from '../contracts.js';
 import type {
   GoogleAccountRow,
   NewSource,
@@ -760,20 +766,45 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
     JOIN threads t ON t.id = c.thread_id
     LEFT JOIN comments p ON p.id = c.parent_id`;
 
-  function inboxItem(r: Row): InboxItem {
+  /** SQL fragments for "needs attention now" (inbox state and not currently snoozed); bind @now. */
+  const NOT_SNOOZED = '(c.snoozed_until IS NULL OR c.snoozed_until <= @now)';
+  const SORT_VALUE = 'COALESCE(c.woke_at, c.published_at)';
+
+  function inboxItem(r: Row, labels: number[], at: string): InboxItem {
     return {
       comment: commentDto(r),
       video: { id: r.video_id, title: r.v_title, thumbnailUrl: r.v_thumb },
       parent: r.p_id ? { id: r.p_id, authorName: r.p_author, textPlain: r.p_text, isOwn: !!r.p_own } : null,
       threadReplyCount: r.t_total,
       hasDraft: !!r.has_draft,
+      labels,
+      snoozedUntil: r.snoozed_until && r.snoozed_until > at ? r.snoozed_until : null,
+      wokeAt: r.woke_at ?? null,
     };
+  }
+
+  /** Label ids per comment for one page of rows, in a single query. */
+  function labelsFor(ids: string[]): Map<string, number[]> {
+    const out = new Map<string, number[]>();
+    if (ids.length === 0) return out;
+    for (const r of db
+      .prepare(
+        'SELECT comment_id, label_id FROM comment_labels WHERE comment_id IN (SELECT value FROM json_each(?)) ORDER BY label_id',
+      )
+      .all(JSON.stringify(ids)) as Row[]) {
+      const list = out.get(r.comment_id);
+      if (list) list.push(r.label_id);
+      else out.set(r.comment_id, [r.label_id]);
+    }
+    return out;
   }
 
   function listInbox(q: InboxQuery): InboxPage {
     const where: string[] = [];
-    const args: Record<string, unknown> = {};
-    if (q.view === 'inbox') where.push("c.state = 'inbox'");
+    const at = now();
+    const args: Record<string, unknown> = { now: at };
+    if (q.view === 'inbox') where.push(`c.state = 'inbox' AND ${NOT_SNOOZED}`);
+    else if (q.view === 'snoozed') where.push("c.state = 'inbox' AND c.snoozed_until > @now");
     else if (q.view === 'done') where.push("c.state IN ('done','replied','auto_replied')");
     else where.push("c.state != 'own'");
     if (q.sourceId !== undefined) {
@@ -783,6 +814,10 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
     if (q.videoId) {
       where.push('c.video_id = @videoId');
       args.videoId = q.videoId;
+    }
+    if (q.labelId !== undefined) {
+      where.push('c.id IN (SELECT comment_id FROM comment_labels WHERE label_id = @labelId)');
+      args.labelId = q.labelId;
     }
     if (q.q && q.q.trim()) {
       const fts = ftsQuery(q.q);
@@ -798,18 +833,19 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
     if (q.cursor && sep > 0) {
       args.cPub = q.cursor.slice(0, sep);
       args.cId = q.cursor.slice(sep + 1);
-      pageWhere.push('(c.published_at < @cPub OR (c.published_at = @cPub AND c.id > @cId))');
+      pageWhere.push(`(${SORT_VALUE} < @cPub OR (${SORT_VALUE} = @cPub AND c.id > @cId))`);
     }
     const limit = Math.min(Math.max(Math.trunc(q.limit ?? DEFAULT_LIMIT), 1), MAX_LIMIT);
     const rows = db
-      .prepare(`${INBOX_SELECT} WHERE ${pageWhere.join(' AND ')} ORDER BY c.published_at DESC, c.id ASC LIMIT @lim`)
+      .prepare(`${INBOX_SELECT} WHERE ${pageWhere.join(' AND ')} ORDER BY ${SORT_VALUE} DESC, c.id ASC LIMIT @lim`)
       .all({ ...args, lim: limit + 1 }) as Row[];
     const more = rows.length > limit;
     const pageRows = more ? rows.slice(0, limit) : rows;
     const last = pageRows[pageRows.length - 1];
+    const labels = labelsFor(pageRows.map((r) => r.id as string));
     return {
-      items: pageRows.map(inboxItem),
-      nextCursor: more && last ? `${last.published_at}|${last.id}` : null,
+      items: pageRows.map((r) => inboxItem(r, labels.get(r.id) ?? [], at)),
+      nextCursor: more && last ? `${last.woke_at ?? last.published_at}|${last.id}` : null,
       total,
     };
   }
@@ -843,6 +879,7 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
   }
 
   function counts(): Counts {
+    const at = now();
     const by = new Map<string, number>(
       (db.prepare('SELECT state, COUNT(*) AS n FROM comments GROUP BY state').all() as Row[]).map((r) => [
         r.state,
@@ -850,18 +887,38 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
       ]),
     );
     const n = (s: string) => by.get(s) ?? 0;
+    const snoozed = (
+      db.prepare("SELECT COUNT(*) AS n FROM comments WHERE state = 'inbox' AND snoozed_until > ?").get(at) as Row
+    ).n as number;
     const bySource: Record<number, number> = {};
     for (const s of db.prepare('SELECT id FROM sources').all() as Row[]) bySource[s.id] = 0;
     for (const r of db
       .prepare(
         `SELECT sv.source_id, COUNT(*) AS n FROM comments c JOIN source_videos sv ON sv.video_id = c.video_id
-         WHERE c.state = 'inbox' GROUP BY sv.source_id`,
+         WHERE c.state = 'inbox' AND ${NOT_SNOOZED} GROUP BY sv.source_id`,
       )
-      .all() as Row[]) {
+      .all({ now: at }) as Row[]) {
       bySource[r.source_id] = r.n;
     }
+    const byLabel: Record<number, number> = {};
+    for (const l of db.prepare('SELECT id FROM labels').all() as Row[]) byLabel[l.id] = 0;
+    for (const r of db
+      .prepare(
+        `SELECT cl.label_id, COUNT(*) AS n FROM comment_labels cl JOIN comments c ON c.id = cl.comment_id
+         WHERE c.state = 'inbox' AND ${NOT_SNOOZED} GROUP BY cl.label_id`,
+      )
+      .all({ now: at }) as Row[]) {
+      byLabel[r.label_id] = r.n;
+    }
     const all = [...by.entries()].reduce((a, [s, c]) => (s === 'own' ? a : a + c), 0);
-    return { inbox: n('inbox'), done: n('done') + n('replied') + n('auto_replied'), all, bySource };
+    return {
+      inbox: n('inbox') - snoozed,
+      done: n('done') + n('replied') + n('auto_replied'),
+      all,
+      snoozed,
+      bySource,
+      byLabel,
+    };
   }
 
   /* ---------------- triage ---------------- */
@@ -872,9 +929,15 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
       const set = db.prepare("UPDATE comments SET state = ?, state_source = 'user', state_changed_at = ? WHERE id = ?");
       const changes: { commentId: string; from: CommentState; to: CommentState }[] = [];
       const stored: { commentId: string; from: CommentState; fromSource: string }[] = [];
+      // Moving something back to the inbox must show it, so it also loses any snooze (even if already in 'inbox').
+      const unsnooze = db.prepare(
+        'UPDATE comments SET snoozed_until = NULL WHERE id = ? AND snoozed_until IS NOT NULL',
+      );
       for (const id of new Set(ids)) {
         const r = get.get(id) as Row | undefined;
-        if (!r || r.state === 'own' || r.state === to) continue;
+        if (!r || r.state === 'own') continue;
+        if (to === 'inbox') unsnooze.run(id);
+        if (r.state === to) continue;
         set.run(to, at, id);
         changes.push({ commentId: id, from: r.state, to });
         stored.push({ commentId: id, from: r.state, fromSource: r.state_source });
@@ -886,14 +949,20 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
     })();
   }
 
+  /** Fetch an undoable action row; snooze actions (to_state 'snoozed') and triage actions never cross over. */
+  function loadUndoable(actionId: number, snooze: boolean): Row {
+    const a = db.prepare('SELECT * FROM triage_actions WHERE id = ?').get(actionId) as Row | undefined;
+    if (!a || (a.to_state === 'snoozed') !== snooze) throw new UndoError('not_found', `No such action ${actionId}`);
+    if (a.undone_at) throw new UndoError('already_undone', `Action ${actionId} was already undone`);
+    if (clock().getTime() - new Date(a.created_at).getTime() >= UNDO_WINDOW_MS) {
+      throw new UndoError('expired', `Action ${actionId} is older than 24 hours`);
+    }
+    return a;
+  }
+
   function undo(actionId: number): TriageResult {
     return db.transaction(() => {
-      const a = db.prepare('SELECT * FROM triage_actions WHERE id = ?').get(actionId) as Row | undefined;
-      if (!a) throw new UndoError('not_found', `No such action ${actionId}`);
-      if (a.undone_at) throw new UndoError('already_undone', `Action ${actionId} was already undone`);
-      if (clock().getTime() - new Date(a.created_at).getTime() >= UNDO_WINDOW_MS) {
-        throw new UndoError('expired', `Action ${actionId} is older than 24 hours`);
-      }
+      const a = loadUndoable(actionId, false);
       const at = now();
       const stored = JSON.parse(a.changes) as { commentId: string; from: CommentState; fromSource?: string }[];
       const restore = db.prepare(
@@ -906,6 +975,156 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
       }
       db.prepare('UPDATE triage_actions SET undone_at = ? WHERE id = ?').run(at, actionId);
       return { actionId, changes, counts: counts() };
+    })();
+  }
+
+  /* ---------------- snooze ---------------- */
+  function snooze(ids: string[], until: string | null): SnoozeResult {
+    return db.transaction(() => {
+      const at = now();
+      const target = until === null ? null : iso(until);
+      const get = db.prepare('SELECT state, snoozed_until, woke_at FROM comments WHERE id = ?');
+      const set = db.prepare('UPDATE comments SET snoozed_until = ?, woke_at = ? WHERE id = ?');
+      const changes: SnoozeResult['changes'] = [];
+      const stored: { commentId: string; from: string | null; fromWoke: string | null; to: string | null }[] = [];
+      for (const id of new Set(ids)) {
+        const r = get.get(id) as Row | undefined;
+        if (!r || r.state !== 'inbox') continue;
+        // A past value is an already-ended snooze the waker has not swept yet: effectively not snoozed.
+        const from: string | null = r.snoozed_until && r.snoozed_until > at ? r.snoozed_until : null;
+        const fromWoke: string | null = r.woke_at ?? null;
+        if (target === null ? from === null : from === target && fromWoke === null) continue;
+        set.run(target, target === null ? fromWoke : null, id);
+        changes.push({ commentId: id, from, to: target });
+        stored.push({ commentId: id, from, fromWoke, to: target });
+      }
+      if (changes.length === 0) return { actionId: null, changes, counts: counts() };
+      const res = db
+        .prepare('INSERT INTO triage_actions (created_at, to_state, changes) VALUES (?, ?, ?)')
+        .run(at, 'snoozed', JSON.stringify(stored));
+      return { actionId: Number(res.lastInsertRowid), changes, counts: counts() };
+    })();
+  }
+
+  function undoSnooze(actionId: number): SnoozeResult {
+    return db.transaction(() => {
+      const a = loadUndoable(actionId, true);
+      const stored = JSON.parse(a.changes) as {
+        commentId: string;
+        from: string | null;
+        fromWoke: string | null;
+        to: string | null;
+      }[];
+      // Only restore comments still in the state this action left them in.
+      const restore = db.prepare(
+        `UPDATE comments SET snoozed_until = ?, woke_at = ?
+         WHERE id = ? AND state = 'inbox' AND snoozed_until IS ?`,
+      );
+      const changes: SnoozeResult['changes'] = [];
+      for (const c of stored) {
+        if (restore.run(c.from, c.fromWoke, c.commentId, c.to).changes) {
+          changes.push({ commentId: c.commentId, from: c.to, to: c.from });
+        }
+      }
+      db.prepare('UPDATE triage_actions SET undone_at = ? WHERE id = ?').run(now(), actionId);
+      return { actionId, changes, counts: counts() };
+    })();
+  }
+
+  function wakeSnoozed(): { woken: string[]; counts: Counts } {
+    return db.transaction(() => {
+      const at = now();
+      const due = db
+        .prepare('SELECT id, state FROM comments WHERE snoozed_until IS NOT NULL AND snoozed_until <= ?')
+        .all(at) as Row[];
+      if (due.length === 0) return { woken: [], counts: counts() };
+      db.prepare(
+        'UPDATE comments SET woke_at = snoozed_until, snoozed_until = NULL WHERE snoozed_until IS NOT NULL AND snoozed_until <= ?',
+      ).run(at);
+      // Only inbox comments change what the user sees; others are tidied silently.
+      return { woken: due.filter((r) => r.state === 'inbox').map((r) => r.id as string), counts: counts() };
+    })();
+  }
+
+  /* ---------------- labels ---------------- */
+  const labelDto = (r: Row): LabelDTO => ({ id: r.id, name: r.name, color: r.color, position: r.position });
+  const getLabel = (id: number): LabelDTO | null => {
+    const r = db.prepare('SELECT * FROM labels WHERE id = ?').get(id) as Row | undefined;
+    return r ? labelDto(r) : null;
+  };
+
+  function listLabels(): LabelDTO[] {
+    return (db.prepare('SELECT * FROM labels ORDER BY position, id').all() as Row[]).map(labelDto);
+  }
+
+  function cleanLabelName(name: string, exceptId?: number): string {
+    const clean = name.trim().replace(/\s+/g, ' ');
+    if (clean === '') throw new LabelError('bad_name', 'Label name must not be empty');
+    if ([...clean].length > MAX_LABEL_NAME) {
+      throw new LabelError('bad_name', `Label name must be at most ${MAX_LABEL_NAME} characters`);
+    }
+    const dup = db
+      .prepare('SELECT id FROM labels WHERE name = ? COLLATE NOCASE AND id IS NOT ?')
+      .get(clean, exceptId ?? null);
+    if (dup) throw new LabelError('duplicate_label', `A label named "${clean}" already exists`);
+    return clean;
+  }
+
+  function checkColor(color: string): LabelColor {
+    if (!(LABEL_COLORS as readonly string[]).includes(color)) throw new LabelError('bad_name', 'Unknown label colour');
+    return color as LabelColor;
+  }
+
+  function createLabel(name: string, color?: LabelColor): LabelDTO {
+    return db.transaction(() => {
+      const clean = cleanLabelName(name);
+      const stats = db.prepare('SELECT COUNT(*) AS n, COALESCE(MAX(position), 0) AS p FROM labels').get() as Row;
+      if (stats.n >= MAX_LABELS) throw new LabelError('too_many_labels', `At most ${MAX_LABELS} labels are allowed`);
+      const col = color === undefined ? LABEL_COLORS[stats.n % LABEL_COLORS.length]! : checkColor(color);
+      const res = db
+        .prepare('INSERT INTO labels (name, color, position, created_at) VALUES (?, ?, ?, ?)')
+        .run(clean, col, stats.p + 1, now());
+      return getLabel(Number(res.lastInsertRowid))!;
+    })();
+  }
+
+  function updateLabel(id: number, patch: { name?: string; color?: LabelColor; position?: number }): LabelDTO {
+    return db.transaction(() => {
+      const cur = getLabel(id);
+      if (!cur) throw new LabelError('not_found', `No such label ${id}`);
+      const name = patch.name === undefined ? cur.name : cleanLabelName(patch.name, id);
+      const color = patch.color === undefined ? cur.color : checkColor(patch.color);
+      const position = patch.position ?? cur.position;
+      db.prepare('UPDATE labels SET name = ?, color = ?, position = ? WHERE id = ?').run(name, color, position, id);
+      return getLabel(id)!;
+    })();
+  }
+
+  function deleteLabel(id: number): void {
+    // comment_labels rows go with it (ON DELETE CASCADE).
+    if (db.prepare('DELETE FROM labels WHERE id = ?').run(id).changes === 0) {
+      throw new LabelError('not_found', `No such label ${id}`);
+    }
+  }
+
+  function applyLabels(ids: string[], add: number[], remove: number[]): LabelApplyResult {
+    return db.transaction(() => {
+      const known = new Set((db.prepare('SELECT id FROM labels').all() as Row[]).map((r) => r.id as number));
+      const toAdd = [...new Set(add)].filter((l) => known.has(l));
+      const toRemove = [...new Set(remove)].filter((l) => known.has(l) && !toAdd.includes(l));
+      const exists = db.prepare('SELECT 1 FROM comments WHERE id = ?');
+      const current = db.prepare('SELECT label_id FROM comment_labels WHERE comment_id = ? ORDER BY label_id');
+      const ins = db.prepare('INSERT OR IGNORE INTO comment_labels (comment_id, label_id) VALUES (?, ?)');
+      const del = db.prepare('DELETE FROM comment_labels WHERE comment_id = ? AND label_id = ?');
+      const labels: Record<string, number[]> = {};
+      for (const id of new Set(ids)) {
+        if (!exists.get(id)) continue;
+        let changed = false;
+        for (const l of toAdd) changed = ins.run(id, l).changes > 0 || changed;
+        for (const l of toRemove) changed = del.run(id, l).changes > 0 || changed;
+        if (changed) labels[id] = (current.all(id) as Row[]).map((r) => r.label_id as number);
+      }
+      return { labels, counts: counts() };
     })();
   }
 
@@ -1188,6 +1407,14 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
     getComment,
     triage,
     undo,
+    snooze,
+    undoSnooze,
+    wakeSnoozed,
+    listLabels,
+    createLabel,
+    updateLabel,
+    deleteLabel,
+    applyLabels,
     markHandedOff,
     getDraft,
     putDraft: (commentId, body) => saveDraft(commentId, body, 'draft'),

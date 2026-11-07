@@ -115,4 +115,21 @@ CREATE INDEX idx_reply_posts_comment ON reply_posts(comment_id, created_at DESC)
 ALTER TABLE videos ADD COLUMN duration_seconds INTEGER;
 ALTER TABLE videos ADD COLUMN like_count INTEGER;
 `,
+  /* 005 snooze + labels */ `
+-- snoozed_until: ISO, in the future while snoozed (the comment stays state='inbox'); woke_at: when the last snooze
+-- ended, so woken comments sort back to the top. Plain ADD COLUMN: comments carries the FTS5 external-content index.
+ALTER TABLE comments ADD COLUMN snoozed_until TEXT;
+ALTER TABLE comments ADD COLUMN woke_at TEXT;
+CREATE INDEX idx_comments_snoozed ON comments(snoozed_until) WHERE snoozed_until IS NOT NULL;
+CREATE INDEX idx_comments_sort ON comments(state, COALESCE(woke_at, published_at) DESC);
+
+CREATE TABLE labels (
+  id INTEGER PRIMARY KEY, name TEXT NOT NULL, color TEXT NOT NULL, position INTEGER NOT NULL, created_at TEXT NOT NULL);
+CREATE UNIQUE INDEX idx_labels_name ON labels(name COLLATE NOCASE);
+CREATE TABLE comment_labels (
+  comment_id TEXT NOT NULL REFERENCES comments(id) ON DELETE CASCADE,
+  label_id INTEGER NOT NULL REFERENCES labels(id) ON DELETE CASCADE,
+  PRIMARY KEY (comment_id, label_id));
+CREATE INDEX idx_comment_labels_label ON comment_labels(label_id);
+`,
 ];

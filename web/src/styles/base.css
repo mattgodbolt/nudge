@@ -214,6 +214,58 @@ table.grid tr:last-child td {
   border-bottom: none;
 }
 
+/* Phone / touch: every control gets a >= 44px hit area. */
+@media (max-width: 899px), (pointer: coarse) {
+  button,
+  a,
+  input,
+  select,
+  textarea,
+  label,
+  [role='button'],
+  [role='option'] {
+    touch-action: manipulation;
+  }
+  .btn,
+  .btn.sm {
+    min-height: 44px;
+    min-width: 44px;
+    padding: 0 var(--s4);
+    font-size: var(--fs-base);
+  }
+  .input,
+  .select {
+    height: 44px;
+    font-size: 16px; /* >= 16px stops iOS zooming the page on focus */
+  }
+  textarea {
+    font-size: 16px;
+  }
+  .chip {
+    height: 36px;
+    padding: 0 6px 0 12px;
+  }
+  .chip button {
+    min-width: 44px;
+    min-height: 44px;
+    margin: -4px -6px -4px 0;
+  }
+  kbd {
+    display: none !important;
+  }
+  /* Links inside prose stay inline-looking but get a padded, finger-sized hit area. */
+  p a:not(.btn) {
+    display: inline-block;
+    padding: 13px 2px;
+    margin: -13px -2px;
+  }
+  td a {
+    display: flex;
+    align-items: center;
+    min-height: 48px;
+  }
+}
+
 /* Comment HTML */
 .comment-html a {
   color: var(--accent);

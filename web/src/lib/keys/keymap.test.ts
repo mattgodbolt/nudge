@@ -223,3 +223,17 @@ describe('keymap', () => {
     expect(all.filter((k) => k === 'u')).toHaveLength(1);
   });
 });
+
+describe('snooze and label bindings', () => {
+  const all = [...appBindings(), ...inboxBindings()];
+  it('b, l, g z and g l are each bound exactly once', () => {
+    for (const k of ['b', 'l', 'g z', 'g l']) {
+      expect(all.filter((b) => b.keys.includes(k)).map((b) => b.id)).toHaveLength(1);
+    }
+    expect(all.find((b) => b.keys.includes('b'))?.id).toBe('snooze.open');
+    expect(all.find((b) => b.keys.includes('l'))?.id).toBe('label.open');
+  });
+  it('binding ids are unique', () => {
+    expect(new Set(all.map((b) => b.id)).size).toBe(all.length);
+  });
+});

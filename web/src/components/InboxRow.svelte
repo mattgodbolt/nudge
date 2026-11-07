@@ -1,20 +1,39 @@
 <script lang="ts">
   import type { InboxItem } from '../../../shared/types';
   import { relativeTime } from '../lib/format';
+  import { formatSnoozeTime, recentlyWoken } from '../lib/snooze';
   import { inbox } from '../lib/stores/inbox.svelte';
+  import { ui } from '../lib/stores/ui.svelte';
+  import { phone } from '../lib/phone.svelte';
   import ActionButton from './ActionButton.svelte';
   import Avatar from './Avatar.svelte';
+  import LabelChips from './LabelChips.svelte';
 
   let {
     item,
     selected,
     checked = false,
     now,
+    showState = false,
+    snoozedView = false,
     onclick,
-  }: { item: InboxItem; selected: boolean; checked?: boolean; now: number; onclick: () => void } = $props();
+  }: {
+    item: InboxItem;
+    selected: boolean;
+    checked?: boolean;
+    now: number;
+    /** Label folders and All mix states, so each row says which one it is in. */
+    showState?: boolean;
+    snoozedView?: boolean;
+    onclick: () => void;
+  } = $props();
 
   const c = $derived(item.comment);
-  const unread = $derived(c.state === 'inbox');
+  const unread = $derived(c.state === 'inbox' && !item.snoozedUntil);
+  const woke = $derived(!item.snoozedUntil && c.state === 'inbox' && recentlyWoken(item.wokeAt, now));
+  const stateLabel = $derived(
+    c.state === 'done' ? 'Done' : c.state === 'replied' ? 'Replied' : c.state === 'auto_replied' ? 'Answered' : '',
+  );
 </script>
 
 <div
@@ -39,21 +58,65 @@
       <span class="time faint">{relativeTime(c.publishedAt, now)}</span>
       {#if item.parent}<span class="reply faint truncate">↳ reply to {item.parent.authorName}</span>{/if}
       <span class="spacer"></span>
+      {#if item.snoozedUntil}<span class="snz" data-testid="row-snoozed" title="Snoozed"
+          >⏰ until {formatSnoozeTime(item.snoozedUntil, new Date(now))}</span
+        >{:else if woke}<span class="snz" data-testid="row-woke">⏰ back from snooze</span>{/if}
       {#if item.hasDraft}<span class="draft" title="Draft saved">Draft</span>{/if}
       {#if c.state === 'auto_replied'}<span class="badge" title="Answered on YouTube">Answered</span
-        >{:else if c.state === 'replied'}<span class="badge">Replied</span>{/if}
+        >{:else if c.state === 'replied'}<span class="badge">Replied</span>{:else if showState && stateLabel}<span
+          class="badge"
+          data-testid="row-state">{stateLabel}</span
+        >{/if}
     </div>
     <div class="text">{c.textPlain}</div>
-    <div class="video faint truncate">{item.video.title}</div>
+    <div class="video">
+      <span class="vtitle faint truncate">{item.video.title}</span>
+      <LabelChips ids={item.labels} />
+    </div>
   </div>
   <!-- Positioned over the row's bottom-right, so it never changes row height; acts on THIS row. -->
   <div class="quick" role="group" aria-label="Quick actions">
+    {#if snoozedView}
+      <ActionButton
+        id="triage.inbox"
+        label="Unsnooze"
+        short="Inbox"
+        icon="inbox"
+        showLabel={false}
+        tile={phone.value}
+        tabindex={selected ? 0 : -1}
+        onclick={() => void inbox.unsnooze([c.id])}
+        testid="row-unsnooze"
+      />
+    {:else if c.state === 'inbox'}
+      <ActionButton
+        id="snooze.open"
+        label="Snooze"
+        icon="clock"
+        showLabel={false}
+        tile={phone.value}
+        tabindex={selected ? 0 : -1}
+        onclick={() => ui.openSnooze([c.id])}
+        testid="row-snooze"
+      />
+    {/if}
+    <ActionButton
+      id="label.open"
+      label="Label"
+      icon="tag"
+      showLabel={false}
+      tile={phone.value}
+      tabindex={selected ? 0 : -1}
+      onclick={() => ui.openLabelPicker([c.id])}
+      testid="row-label"
+    />
     {#if c.state !== 'done'}
       <ActionButton
         id="triage.done"
         label="Done"
         icon="check"
         showLabel={false}
+        tile={phone.value}
         tabindex={selected ? 0 : -1}
         onclick={() => void inbox.triage('done', [c.id])}
         testid="row-done"
@@ -63,8 +126,10 @@
       <ActionButton
         id="triage.replied"
         label="Mark replied"
+        short="Replied"
         icon="check-all"
         showLabel={false}
+        tile={phone.value}
         tabindex={selected ? 0 : -1}
         onclick={() => void inbox.triage('replied', [c.id])}
         testid="row-replied"
@@ -159,9 +224,23 @@
     color: var(--text-muted);
   }
   .video {
+    display: flex;
+    align-items: center;
+    gap: 6px;
     font-size: var(--fs-label);
     line-height: 14px;
-    padding-right: 56px; /* room for the quick actions */
+    padding-right: 104px; /* room for the quick actions */
+    min-width: 0;
+  }
+  .vtitle {
+    min-width: 0;
+    flex: 0 1 auto;
+  }
+  .snz {
+    flex: none;
+    font-size: 11px;
+    color: var(--secondary);
+    white-space: nowrap;
   }
   .quick {
     position: absolute;
@@ -192,9 +271,56 @@
       pointer-events: auto;
     }
   }
+  /* Phone: actions get their own full-width row of big equal tiles under the text, so nothing overlaps. */
+  @media (max-width: 899px) {
+    .row {
+      flex-wrap: wrap;
+      align-content: flex-start;
+      padding: 10px var(--s3) 8px;
+    }
+    .video {
+      padding-right: 0;
+    }
+    .author {
+      max-width: 45%;
+    }
+    .quick {
+      position: static;
+      order: 9;
+      flex: 1 0 100%;
+      gap: var(--s2);
+      margin-top: var(--s2);
+      padding: 0;
+      background: none;
+      box-shadow: none;
+    }
+    .quick :global(.btn.action.tile) {
+      height: auto;
+      flex: 1 1 0;
+      min-height: 52px;
+      flex-direction: row;
+      gap: 6px;
+    }
+    .quick :global(.btn.action .lbl) {
+      font-size: var(--fs-meta);
+    }
+  }
   @media (prefers-reduced-motion: reduce) {
     .quick {
       transition: none;
+    }
+  }
+  @media (max-width: 400px) {
+    .quick {
+      gap: 6px;
+    }
+    .quick :global(.btn.action.tile) {
+      padding: 0 2px;
+      gap: 4px;
+      min-width: 0;
+    }
+    .quick :global(.btn.action .lbl) {
+      font-size: var(--fs-label);
     }
   }
 </style>

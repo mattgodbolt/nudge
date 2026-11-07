@@ -1,6 +1,10 @@
 // Server-internal interfaces shared by the db / sync / http chunks.
 // Owned by the lead; implementers must conform to these and ask before changing them.
 import type {
+  LabelApplyResult,
+  LabelColor,
+  LabelDTO,
+  SnoozeResult,
   StatsDTO,
   GoogleAuthDTO,
   CommentDTO,
@@ -247,6 +251,19 @@ export interface Repo {
   getComment(id: string): CommentDTO | null;
   triage(ids: string[], to: CommentState): TriageResult;
   undo(actionId: number): TriageResult;
+  /**
+   * Snooze (until = future ISO) or unsnooze (null) the given comments; only state 'inbox' comments are affected.
+   * Snoozing clears wokeAt. triage(ids, 'inbox') also clears a snooze.
+   */
+  snooze(ids: string[], until: string | null): SnoozeResult;
+  undoSnooze(actionId: number): SnoozeResult;
+  /** Wake every snooze whose time has passed: snoozedUntil -> null, wokeAt = the old snoozedUntil. Returns woken ids. */
+  wakeSnoozed(): { woken: string[]; counts: Counts };
+  listLabels(): LabelDTO[];
+  createLabel(name: string, color?: LabelColor): LabelDTO;
+  updateLabel(id: number, patch: { name?: string; color?: LabelColor; position?: number }): LabelDTO;
+  deleteLabel(id: number): void;
+  applyLabels(ids: string[], add: number[], remove: number[]): LabelApplyResult;
   markHandedOff(commentId: string, body: string): TriageResult;
   getDraft(commentId: string): DraftDTO | null;
   putDraft(commentId: string, body: string): DraftDTO;
@@ -387,6 +404,17 @@ export interface ReplyPoster {
 }
 
 /** Everything the HTTP layer needs. */
+export type LabelErrorCode = 'duplicate_label' | 'bad_name' | 'not_found' | 'too_many_labels';
+export class LabelError extends Error {
+  constructor(
+    public code: LabelErrorCode,
+    message: string,
+  ) {
+    super(message);
+    this.name = 'LabelError';
+  }
+}
+
 export interface AppDeps {
   repo: Repo;
   engine: SyncEngine;

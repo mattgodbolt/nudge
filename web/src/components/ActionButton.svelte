@@ -19,6 +19,8 @@
     onclick,
     testid,
     tabindex,
+    tile = false,
+    short,
   }: {
     id: string;
     label: string;
@@ -29,6 +31,10 @@
     testid?: string;
     /** -1 keeps many-per-page buttons (list rows) out of the tab order. */
     tabindex?: number;
+    /** Phone layout: a big equal-width tile with the icon above (or beside) a short label. */
+    tile?: boolean;
+    /** Shorter label for tiles, where space is tight. */
+    short?: string;
   } = $props();
 
   function click(e: MouseEvent) {
@@ -43,15 +49,16 @@
 <button
   type="button"
   class="btn sm ghost action"
-  class:icon={!showLabel}
+  class:icon={!showLabel && !tile}
+  class:tile
   {disabled}
   {tabindex}
   onclick={click}
   data-testid={testid}
   {@attach tip({ id, label })}
 >
-  <Icon name={icon} size={14} />
-  {#if showLabel}<span class="lbl">{label}</span>{/if}
+  <Icon name={icon} size={tile ? 22 : 14} />
+  {#if tile}<span class="lbl">{short ?? label}</span>{:else if showLabel}<span class="lbl">{label}</span>{/if}
 </button>
 
 <style>
@@ -62,6 +69,22 @@
     width: 24px;
     padding: 0;
     justify-content: center;
+  }
+  .action.tile {
+    flex-direction: column;
+    justify-content: center;
+    gap: 4px;
+    min-height: 60px;
+    padding: 6px 4px;
+    border: 1px solid var(--border-strong);
+    background: var(--bg-elev);
+    color: var(--text);
+    font-size: var(--fs-label);
+    white-space: normal;
+    text-align: center;
+  }
+  .action.tile:active:not(:disabled) {
+    background: var(--bg-hover);
   }
   .action:focus-visible {
     box-shadow: var(--focus-ring);

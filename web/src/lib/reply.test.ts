@@ -6,7 +6,14 @@ import { inbox } from './stores/inbox.svelte';
 import { settings } from './stores/settings.svelte';
 import { toasts } from './stores/toasts.svelte';
 
-const counts = (inbox: number, done: number): Counts => ({ inbox, done, all: inbox + done, bySource: {} });
+const counts = (inbox: number, done: number): Counts => ({
+  inbox,
+  done,
+  all: inbox + done,
+  snoozed: 0,
+  bySource: {},
+  byLabel: {},
+});
 const json = (body: unknown, status = 200) =>
   Promise.resolve(new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } }));
 
@@ -35,6 +42,9 @@ function item(n: number): InboxItem {
     parent: null,
     threadReplyCount: 0,
     hasDraft: false,
+    labels: [],
+    snoozedUntil: null,
+    wokeAt: null,
   };
 }
 

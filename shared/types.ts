@@ -1,7 +1,20 @@
 // Shared domain + DTO types. This file is the contract between server and web.
 // Changes go through the lead only.
 export type CommentState = 'inbox' | 'done' | 'replied' | 'auto_replied' | 'own' | 'archived';
-export type InboxView = 'inbox' | 'done' | 'all';
+/** 'snoozed' = inbox comments hidden until their snoozedUntil; 'inbox' excludes them until they wake. */
+export type InboxView = 'inbox' | 'done' | 'all' | 'snoozed';
+/** Label colours are named tokens (the web maps them to CSS colours for light and dark themes). */
+export const LABEL_COLORS = ['red', 'orange', 'amber', 'green', 'teal', 'blue', 'violet', 'pink', 'gray'] as const;
+export type LabelColor = (typeof LABEL_COLORS)[number];
+export const MAX_LABEL_NAME = 40;
+export const MAX_LABELS = 100;
+export interface LabelDTO {
+  id: number;
+  name: string;
+  color: LabelColor;
+  /** Sidebar order, ascending. */
+  position: number;
+}
 export type SourceKind = 'channel' | 'playlist' | 'video';
 export type PollTier = 'hot' | 'warm' | 'cold' | 'frozen' | 'paused';
 export type ImportMode = 'none' | 'recent' | 'all';
@@ -51,6 +64,12 @@ export interface InboxItem {
   parent: Pick<CommentDTO, 'id' | 'authorName' | 'textPlain' | 'isOwn'> | null;
   threadReplyCount: number;
   hasDraft: boolean;
+  /** Ids of the labels on this comment. */
+  labels: number[];
+  /** ISO time the comment is snoozed until (future), or null. A past value never reaches the client: it is woken. */
+  snoozedUntil: string | null;
+  /** When the last snooze ended. Inbox ordering uses COALESCE(wokeAt, comment.publishedAt) so woken items resurface. */
+  wokeAt: string | null;
 }
 export interface ThreadDetail {
   threadId: string;
@@ -79,7 +98,11 @@ export interface Counts {
   inbox: number;
   done: number;
   all: number;
+  /** Inbox comments currently hidden by a snooze. `inbox` and `bySource` exclude these. */
+  snoozed: number;
   bySource: Record<number, number>;
+  /** Comments with each label that need attention (state inbox, not snoozed). Every label has an entry (0 if none). */
+  byLabel: Record<number, number>;
 }
 export interface StatsTotals {
   videos: number;
@@ -179,12 +202,25 @@ export interface TriageResult {
   changes: { commentId: string; from: CommentState; to: CommentState }[];
   counts: Counts;
 }
+export interface SnoozeResult {
+  /** Undo handle (POST /api/snooze/:actionId/undo); null when nothing changed. */
+  actionId: number | null;
+  /** Only comments that actually changed. `from`/`to` are snoozedUntil values (null = not snoozed). */
+  changes: { commentId: string; from: string | null; to: string | null }[];
+  counts: Counts;
+}
+export interface LabelApplyResult {
+  /** Full label-id list for every comment whose labels changed. */
+  labels: Record<string, number[]>;
+  counts: Counts;
+}
 export type ReplyResult =
   { mode: 'handoff'; url: string; actionId: number } | { mode: 'posted'; comment: CommentDTO; actionId: number };
 export interface Bootstrap {
   settings: SettingsDTO;
   capabilities: Capabilities;
   counts: Counts;
+  labels: LabelDTO[];
   sources: SourceDTO[];
   quota: QuotaDTO;
   sync: SyncStatus;
@@ -195,6 +231,7 @@ export type ServerEvent =
   | { type: 'sync.done'; summary: SyncRunSummary }
   | { type: 'quota.update'; quota: QuotaDTO }
   | { type: 'sources.changed'; sources: SourceDTO[] }
+  | { type: 'labels.changed'; labels: LabelDTO[] }
   | { type: 'settings.changed'; settings: SettingsDTO }
   | { type: 'capabilities.changed'; capabilities: Capabilities }
   | { type: 'error'; message: string; sourceId?: number; videoId?: string };

@@ -4,10 +4,13 @@
   import { thread } from '../lib/stores/thread.svelte';
   import { ui } from '../lib/stores/ui.svelte';
   import { pluralize } from '../lib/format';
+  import { phone } from '../lib/phone.svelte';
+  import { formatSnoozeTime, recentlyWoken } from '../lib/snooze';
   import CommentCard from './CommentCard.svelte';
   import Composer from './Composer.svelte';
   import ActionButton from './ActionButton.svelte';
   import Icon from './Icon.svelte';
+  import LabelChips from './LabelChips.svelte';
   import { tick, untrack } from 'svelte';
 
   let { item, now }: { item: InboxItem; now: number } = $props();
@@ -16,11 +19,14 @@
   // Actions share the title row only in a roomy pane; otherwise they take a row of their own,
   // and drop their labels (still tooltipped) when even that row is too narrow.
   const inline = $derived(headerWidth >= 1000);
-  const wide = $derived(headerWidth >= 500);
+  // Seven labelled buttons need ~700px; below that they collapse to icons (tooltipped), except as phone tiles.
+  const wide = $derived(headerWidth >= 760);
+  const tile = $derived(phone.value);
   let scroller: HTMLDivElement | undefined = $state();
   const detail = $derived(thread.current && thread.current.threadId === item.comment.threadId ? thread.current : null);
   const notFetched = $derived(detail ? Math.max(0, detail.totalReplyCount - (detail.comments.length - 1)) : 0);
   const video = $derived(detail?.video ?? null);
+  const woke = $derived(!item.snoozedUntil && item.comment.state === 'inbox' && recentlyWoken(item.wokeAt, now));
 
   // Bring the focused comment into view whenever the thread or focus changes.
   $effect(() => {
@@ -46,7 +52,7 @@
 <section class="thread" data-testid="thread-view" class:focus={ui.pane === 'thread'} aria-label="Thread">
   <header bind:clientWidth={headerWidth}>
     <button class="btn ghost sm back" onclick={() => (ui.pane = 'list')} aria-label="Back to list"
-      ><Icon name="chevron-left" size={15} /> Back</button
+      ><Icon name="chevron-left" size={phone.value ? 22 : 15} /> Back</button
     >
     {#if item.video.thumbnailUrl}
       <img class="thumb" src={item.video.thumbnailUrl} alt="" loading="lazy" referrerpolicy="no-referrer" />
@@ -65,6 +71,18 @@
         {video?.channelTitle ?? ''}
         {#if video?.commentsDisabled}<span class="badge warn">Comments disabled</span>{/if}
       </div>
+      {#if item.snoozedUntil || item.labels.length > 0 || woke}
+        <div class="tags">
+          {#if item.snoozedUntil}
+            <span class="snz" data-testid="thread-snoozed"
+              >⏰ Snoozed until {formatSnoozeTime(item.snoozedUntil, new Date(now))}</span
+            >
+          {:else if woke}
+            <span class="snz" data-testid="thread-woke">⏰ back from snooze</span>
+          {/if}
+          <LabelChips ids={item.labels} max={5} />
+        </div>
+      {/if}
     </div>
     <div
       class="actions"
@@ -73,21 +91,51 @@
       aria-label="Comment actions"
       data-testid="thread-actions"
     >
-      <ActionButton id="reply.open" label="Reply" icon="reply" showLabel={wide} testid="act-reply" />
-      <ActionButton id="triage.done" label="Done" icon="check" showLabel={wide} testid="act-done" />
-      <ActionButton id="triage.replied" label="Mark replied" icon="check-all" showLabel={wide} testid="act-replied" />
-      {#if item.comment.state !== 'inbox'}
-        <ActionButton id="triage.inbox" label="Move back to inbox" icon="inbox" showLabel={wide} testid="act-inbox" />
+      <ActionButton id="reply.open" label="Reply" icon="reply" showLabel={wide} {tile} testid="act-reply" />
+      <ActionButton id="triage.done" label="Done" icon="check" showLabel={wide} {tile} testid="act-done" />
+      <ActionButton
+        id="triage.replied"
+        label="Mark replied"
+        short="Replied"
+        icon="check-all"
+        showLabel={wide}
+        {tile}
+        testid="act-replied"
+      />
+      {#if item.snoozedUntil}
+        <ActionButton id="triage.inbox" label="Unsnooze" icon="inbox" showLabel={wide} {tile} testid="act-unsnooze" />
+      {:else if item.comment.state !== 'inbox'}
+        <ActionButton
+          id="triage.inbox"
+          label="Move back to inbox"
+          short="Inbox"
+          icon="inbox"
+          showLabel={wide}
+          {tile}
+          testid="act-inbox"
+        />
+      {:else}
+        <ActionButton id="snooze.open" label="Snooze" icon="clock" showLabel={wide} {tile} testid="act-snooze" />
       {/if}
+      <ActionButton id="label.open" label="Label" icon="tag" showLabel={wide} {tile} testid="act-label" />
       <ActionButton
         id="triage.undo"
         label="Undo"
         icon="undo"
         showLabel={wide}
+        {tile}
         disabled={inbox.undoDepth === 0}
         testid="act-undo"
       />
-      <ActionButton id="open.comment" label="Open on YouTube" icon="external" showLabel={wide} testid="act-open" />
+      <ActionButton
+        id="open.comment"
+        label="Open on YouTube"
+        short="Open"
+        icon="external"
+        showLabel={wide}
+        {tile}
+        testid="act-open"
+      />
     </div>
   </header>
 
@@ -149,6 +197,8 @@
   .actions {
     display: flex;
     flex: none;
+    max-width: 100%;
+    flex-wrap: wrap;
     gap: 2px;
     padding: 2px;
     border: 1px solid var(--border);
@@ -162,6 +212,17 @@
     padding: 0;
     background: none;
     margin-top: calc(var(--s1) * -1);
+  }
+  .tags {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--s2);
+    margin-top: 3px;
+  }
+  .snz {
+    font-size: var(--fs-label);
+    color: var(--secondary);
   }
   .title {
     display: block;
@@ -197,8 +258,43 @@
     display: none;
   }
   @media (max-width: 899px) {
+    header {
+      padding: var(--s2) var(--s3) var(--s3);
+      gap: var(--s2) var(--s3);
+    }
     .back {
       display: inline-flex;
+      flex-basis: calc(100% + var(--s5));
+      height: 52px;
+      justify-content: flex-start;
+      gap: var(--s2);
+      margin: calc(var(--s2) * -1) calc(var(--s3) * -1) 0;
+      width: calc(100% + var(--s5));
+      border-radius: 0;
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--text);
+      border-bottom: 1px solid var(--border);
+    }
+    .title {
+      white-space: normal;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      line-clamp: 2;
+      -webkit-box-orient: vertical;
+      padding: 12px 0;
+      font-size: 16px;
+    }
+    .actions.own-row {
+      gap: var(--s2);
+      margin-top: var(--s1);
+    }
+    .actions.own-row :global(.action) {
+      flex: 1 0 calc(25% - 8px);
+      min-width: 72px;
+    }
+    .scroll {
+      padding: var(--s3) var(--s1);
     }
   }
 </style>

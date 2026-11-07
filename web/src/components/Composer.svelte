@@ -228,4 +228,40 @@
   .count {
     font-variant-numeric: tabular-nums;
   }
+  @media (max-width: 899px) {
+    .composer {
+      padding: var(--s3) var(--s3) calc(var(--s3) + env(safe-area-inset-bottom));
+    }
+    .closed {
+      height: 52px;
+      font-size: 16px;
+    }
+    .ta {
+      min-height: 96px;
+      font-size: 16px;
+    }
+    .bar {
+      flex-wrap: wrap;
+      gap: var(--s2);
+      margin-top: var(--s3);
+    }
+    .hint,
+    .grow {
+      display: none;
+    }
+    .bar :global(.btn) {
+      flex: 1 1 auto;
+      justify-content: center;
+      min-height: 52px;
+    }
+    .bar :global(.btn.primary) {
+      flex: 2 1 40%;
+      font-weight: 600;
+    }
+    .count {
+      order: 9;
+      flex-basis: 100%;
+      text-align: right;
+    }
+  }
 </style>

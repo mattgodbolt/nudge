@@ -76,4 +76,26 @@
   .close:hover {
     opacity: 1;
   }
+  @media (max-width: 899px) {
+    .stack {
+      bottom: calc(var(--s3) + env(safe-area-inset-bottom));
+      width: calc(100vw - 24px);
+      max-width: none;
+    }
+    .toast {
+      padding: 4px 4px 4px var(--s4);
+      min-height: 56px;
+      font-size: var(--fs-base);
+    }
+    .act,
+    .close {
+      min-width: 56px;
+      min-height: 48px;
+      padding: 0 var(--s3);
+      touch-action: manipulation;
+    }
+    .close {
+      font-size: 22px;
+    }
+  }
 </style>

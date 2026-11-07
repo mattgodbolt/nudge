@@ -64,7 +64,9 @@ function stubRepo() {
       inbox: all.filter((c) => c.state === 'inbox').length,
       done: all.filter((c) => ['done', 'replied', 'auto_replied'].includes(c.state)).length,
       all: all.length,
+      snoozed: 0,
       bySource: {},
+      byLabel: {},
     };
   };
   const move = (ids: string[], to: CommentState): TriageResult => {
@@ -121,6 +123,7 @@ function stubRepo() {
     },
     deleteDraft: (id: string) => void drafts.delete(id),
     counts,
+    listLabels: () => [],
   };
   sources.push({
     id: 1,

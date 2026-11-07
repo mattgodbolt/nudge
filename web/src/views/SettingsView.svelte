@@ -1,6 +1,10 @@
 <script lang="ts">
   import { api } from '../lib/api';
   import { settings } from '../lib/stores/settings.svelte';
+  import { inbox } from '../lib/stores/inbox.svelte';
+  import { labels, labelColorVar } from '../lib/stores/labels.svelte';
+  import { LABEL_COLORS, MAX_LABEL_NAME, type LabelDTO } from '../../../shared/types';
+  import Icon from '../components/Icon.svelte';
   import { sources } from '../lib/stores/sources.svelte';
   import Avatar from '../components/Avatar.svelte';
   import { sync } from '../lib/stores/sync.svelte';
@@ -112,6 +116,50 @@
     } catch {
       toasts.error('Could not copy');
     }
+  }
+
+  // ---- Labels ----
+  let newLabel = $state('');
+  let colorOpenFor = $state<number | null>(null);
+  const nextColor = () =>
+    LABEL_COLORS.find((c) => !labels.list.some((l) => l.color === c)) ??
+    LABEL_COLORS[labels.list.length % LABEL_COLORS.length]!;
+
+  async function addLabel(e: Event) {
+    e.preventDefault();
+    const name = newLabel.trim();
+    if (!name) return;
+    if (await labels.create(name, nextColor())) newLabel = '';
+  }
+  function renameLabel(l: LabelDTO, e: Event & { currentTarget: HTMLInputElement }) {
+    const name = e.currentTarget.value.trim();
+    if (!name || name === l.name) e.currentTarget.value = l.name;
+    else void labels.patch(l.id, { name }).then((ok) => !ok && (e.currentTarget.value = l.name));
+  }
+  function labelKey(l: LabelDTO, e: KeyboardEvent & { currentTarget: HTMLInputElement }) {
+    if (e.key === 'Enter') e.currentTarget.blur();
+    else if (e.key === 'Escape') {
+      e.stopPropagation();
+      e.currentTarget.value = l.name;
+      e.currentTarget.blur();
+    }
+  }
+  async function deleteLabel(l: LabelDTO) {
+    // Counts only cover comments needing attention, so ask the server for the true total across every state.
+    let total: number | null = null;
+    try {
+      total = (await api.inbox({ view: 'all', labelId: l.id, limit: 1 })).total;
+    } catch {
+      /* fall back to a generic message */
+    }
+    const what =
+      total === null
+        ? 'it will be removed from every comment'
+        : total === 0
+          ? 'no comments have it'
+          : `${total} comment${total === 1 ? '' : 's'} will lose it`;
+    if (!window.confirm(`Delete the label “${l.name}”? ${what[0]!.toUpperCase()}${what.slice(1)}.`)) return;
+    if (await labels.remove(l.id)) inbox.pruneLabels(new Set(labels.list.map((x) => x.id)));
   }
 
   const sourceLabel = {
@@ -336,6 +384,87 @@
       {/if}
     </section>
 
+    <section class="panel sec" data-testid="settings-labels">
+      <h2>Labels</h2>
+      <p class="muted meta">
+        Tag comments with <kbd class="mono">l</kbd>. Labels are separate from Inbox and Done, so a comment can carry
+        several, and each one gets its own folder in the sidebar.
+      </p>
+      <ul class="lbls">
+        {#each labels.list as l, i (l.id)}
+          <li class="lbl" data-testid="label-row">
+            <button
+              type="button"
+              class="swatch"
+              style:background={labelColorVar(l.color)}
+              aria-label="Colour: {l.color}"
+              aria-expanded={colorOpenFor === l.id}
+              onclick={() => (colorOpenFor = colorOpenFor === l.id ? null : l.id)}
+            ></button>
+            <input
+              class="input grow"
+              value={l.name}
+              maxlength={MAX_LABEL_NAME}
+              aria-label="Label name"
+              data-testid="label-name"
+              onchange={(e) => renameLabel(l, e)}
+              onkeydown={(e) => labelKey(l, e)}
+            />
+            <button
+              class="btn ghost sm"
+              aria-label="Move up"
+              disabled={i === 0}
+              onclick={() => void labels.move(l.id, -1)}><Icon name="chevron-up" size={14} /></button
+            >
+            <button
+              class="btn ghost sm"
+              aria-label="Move down"
+              disabled={i === labels.list.length - 1}
+              onclick={() => void labels.move(l.id, 1)}><Icon name="chevron-down" size={14} /></button
+            >
+            <button
+              class="btn ghost sm danger"
+              aria-label="Delete label"
+              data-testid="label-delete"
+              onclick={() => void deleteLabel(l)}><Icon name="trash" size={14} /></button
+            >
+            {#if colorOpenFor === l.id}
+              <div class="swatches" role="radiogroup" aria-label="Label colour">
+                {#each LABEL_COLORS as c (c)}
+                  <button
+                    type="button"
+                    class="swatch pick"
+                    class:on={l.color === c}
+                    style:background={labelColorVar(c)}
+                    role="radio"
+                    aria-checked={l.color === c}
+                    aria-label={c}
+                    onclick={() => {
+                      void labels.patch(l.id, { color: c });
+                      colorOpenFor = null;
+                    }}
+                  ></button>
+                {/each}
+              </div>
+            {/if}
+          </li>
+        {:else}
+          <li class="faint meta">No labels yet.</li>
+        {/each}
+      </ul>
+      <form class="line" onsubmit={addLabel}>
+        <input
+          class="input grow"
+          bind:value={newLabel}
+          maxlength={MAX_LABEL_NAME}
+          placeholder="New label name"
+          aria-label="New label name"
+          data-testid="label-new"
+        />
+        <button class="btn" disabled={!newLabel.trim()} data-testid="label-add">Add label</button>
+      </form>
+    </section>
+
     <section class="panel sec">
       <h2>Appearance</h2>
       <div class="seg" role="group" aria-label="Theme">
@@ -461,6 +590,39 @@
   .num {
     width: 110px;
     text-align: right;
+  }
+  .lbls {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--s2);
+  }
+  .lbl {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--s2);
+  }
+  .swatch {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    border: 2px solid var(--bg-elev);
+    box-shadow: 0 0 0 1px var(--border-strong);
+    cursor: pointer;
+    flex: none;
+    padding: 0;
+  }
+  .swatches {
+    flex-basis: 100%;
+    display: flex;
+    gap: var(--s2);
+    padding-left: 30px;
+  }
+  .swatch.pick.on {
+    box-shadow: 0 0 0 2px var(--text);
   }
   .ok {
     color: var(--success);

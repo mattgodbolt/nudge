@@ -74,15 +74,21 @@ Notes:
 
 ## Keys (press `?` in the app for the full list)
 
-| Key                                      | Action                                           | Key         | Action                          |
-| ---------------------------------------- | ------------------------------------------------ | ----------- | ------------------------------- |
-| `j` / `k`                                | next / previous                                  | `e` / `d`   | done                            |
-| `m`                                      | mark replied (no reply)                          | `u`         | back to list (from the thread)  |
-| `z`                                      | undo                                             | `r`         | reply                           |
-| `x`, `J`/`K`                             | multi-select                                     | `* a` `* n` | select all / none               |
-| `Shift+U`                                | move back to inbox                               | `v` / `V`   | open comment / video on YouTube |
-| `Shift+N` / `S`                          | sync now / deep-sync video                       | `/`         | search                          |
-| `g i`, `g d`, `g a`, `g s`, `g t`, `g ,` | go to Inbox, Done, All, Sources, Stats, Settings | `Ctrl+K`    | command palette                 |
+| Key                                      | Action                                           | Key         | Action                               |
+| ---------------------------------------- | ------------------------------------------------ | ----------- | ------------------------------------ |
+| `j` / `k`                                | next / previous                                  | `e` / `d`   | done                                 |
+| `m`                                      | mark replied (no reply)                          | `u`         | back to list (from the thread)       |
+| `z`                                      | undo                                             | `r`         | reply                                |
+| `x`, `J`/`K`                             | multi-select                                     | `* a` `* n` | select all / none                    |
+| `Shift+U`                                | move back to inbox                               | `v` / `V`   | open comment / video on YouTube      |
+| `Shift+N` / `S`                          | sync now / deep-sync video                       | `/`         | search                               |
+| `b`                                      | snooze… (`1`-`4` presets, `5` pick a time)       | `l`         | label as… (type to filter or create) |
+| `g i`, `g d`, `g a`, `g s`, `g t`, `g ,` | go to Inbox, Done, All, Sources, Stats, Settings | `Ctrl+K`    | command palette                      |
+| `g z`                                    | go to Snoozed                                    | `g l`       | go to label… (picker)                |
+
+Snoozing hides a comment until the time you pick; it returns to the top of the Inbox (a "back from snooze" marker
+shows for a day), and `z` undoes it. In the Snoozed view `Shift+U` unsnoozes. Labels (managed in Settings) are
+orthogonal to Inbox/Done: each gets a sidebar folder showing every comment carrying it, in any state.
 
 Every triage action also has a button (thread header, row hover, multi-select bar, sidebar sync) whose tooltip
 shows the hotkey, read from the same keymap registry.

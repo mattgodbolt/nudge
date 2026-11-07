@@ -22,3 +22,33 @@ export function nonDemoSources(repo: Repo): string[] {
     .filter((s) => !demo.has(s.ytId))
     .map((s) => s.title ?? s.ytId);
 }
+
+const DEMO_LABELS = [
+  { name: 'Question', color: 'blue', every: 7, offset: 3 },
+  { name: 'Follow up', color: 'amber', every: 9, offset: 4 },
+  { name: 'Bug report', color: 'red', every: 13, offset: 5 },
+] as const;
+/** Inbox positions (newest first) that start out snoozed; deep in the list so the top rows stay untouched. */
+const DEMO_SNOOZED_AT = [12, 27, 41];
+const DEMO_SNOOZE_DAYS = [300, 330, 360];
+const DEMO_DECORATE_MIN_INBOX = 60;
+
+/**
+ * Give a freshly seeded demo a few labels and snoozed comments so the UI has something to show. Runs after the
+ * first sync has produced comments (returns false until there are enough) and picks comments by position, never
+ * touching the world's rng, so the generated data and the done/all counts are unchanged.
+ */
+export function decorateDemo(repo: Repo, now: Date = new Date()): boolean {
+  const items = repo.listInbox({ view: 'inbox', limit: 500 }).items;
+  if (items.length < DEMO_DECORATE_MIN_INBOX) return false;
+  const ids = DEMO_LABELS.map((def) => repo.createLabel(def.name, def.color).id);
+  DEMO_LABELS.forEach((def, li) => {
+    const picked = items.filter((_, i) => i % def.every === def.offset).map((it) => it.comment.id);
+    repo.applyLabels(picked, [ids[li]!], []);
+  });
+  DEMO_SNOOZED_AT.forEach((at, i) => {
+    const until = new Date(now.getTime() + DEMO_SNOOZE_DAYS[i]! * 24 * 60 * 60 * 1000).toISOString();
+    repo.snooze([items[at]!.comment.id], until);
+  });
+  return true;
+}

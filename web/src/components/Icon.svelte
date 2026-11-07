@@ -24,9 +24,17 @@
     | 'trash'
     | 'undo'
     | 'check-all'
-    | 'chart';
+    | 'chart'
+    | 'clock'
+    | 'tag'
+    | 'chevron-up'
+    | 'chevron-down';
   let { name, size = 16 }: { name: Name; size?: number } = $props();
   const paths: Record<Name, string> = {
+    clock: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 7v5l3 2',
+    tag: 'M20.6 13.4l-7.2 7.2a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8zM7.5 7.5h.01',
+    'chevron-up': 'M5 15l7-7 7 7',
+    'chevron-down': 'M5 9l7 7 7-7',
     chart: 'M4 20V10m6 10V4m6 16v-7m4 7H2',
     inbox:
       'M3 13l2.5-7.5A2 2 0 0 1 7.4 4h9.2a2 2 0 0 1 1.9 1.5L21 13v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-5zm0 0h5l1 2h6l1-2h5',

@@ -1,3 +1,5 @@
+import { inbox } from './inbox.svelte';
+
 /** Ephemeral UI state shared between bindings and components. */
 function load<T>(key: string, fallback: T): T {
   try {
@@ -28,6 +30,10 @@ class UiStore {
   searchFocusTick = $state(0);
   addSourceFocusTick = $state(0);
   threadScroll = $state({ delta: 0, tick: 0 });
+  /** Comment ids the open snooze menu will act on (null = closed). */
+  snoozeFor = $state<string[] | null>(null);
+  /** The label picker: 'apply' toggles labels on `ids`, 'goto' jumps to a label folder. */
+  labelPicker = $state<{ mode: 'apply'; ids: string[] } | { mode: 'goto' } | null>(null);
 
   dismissOwnBanner() {
     this.ownBannerDismissed = true;
@@ -48,6 +54,24 @@ class UiStore {
   }
   focusSearch() {
     this.searchFocusTick++;
+  }
+  /** Open the snooze menu for `ids`, or the multi-selection / cursor row. Ignored when there is nothing to act on. */
+  openSnooze(ids = inbox.targetIds()) {
+    if (ids.length === 0) return;
+    this.helpOpen = false;
+    this.paletteOpen = false;
+    this.snoozeFor = ids;
+  }
+  openLabelPicker(ids = inbox.targetIds()) {
+    if (ids.length === 0) return;
+    this.helpOpen = false;
+    this.paletteOpen = false;
+    this.labelPicker = { mode: 'apply', ids };
+  }
+  openLabelGoto() {
+    this.helpOpen = false;
+    this.paletteOpen = false;
+    this.labelPicker = { mode: 'goto' };
   }
   scrollThread(delta: number) {
     this.threadScroll = { delta, tick: this.threadScroll.tick + 1 };

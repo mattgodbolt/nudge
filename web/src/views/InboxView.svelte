@@ -1,10 +1,12 @@
 <script lang="ts">
+  import { phone } from '../lib/phone.svelte';
   import { keymap } from '../lib/keys/keymap.svelte';
   import { inboxBindings } from '../lib/keys/bindings';
   import { router } from '../lib/router.svelte';
   import { inbox } from '../lib/stores/inbox.svelte';
   import { thread } from '../lib/stores/thread.svelte';
   import { settings } from '../lib/stores/settings.svelte';
+  import { labels, labelColorVar } from '../lib/stores/labels.svelte';
   import OwnChannelForm from '../components/OwnChannelForm.svelte';
   import { sources } from '../lib/stores/sources.svelte';
   import { sync } from '../lib/stores/sync.svelte';
@@ -19,9 +21,21 @@
   import ActionButton from '../components/ActionButton.svelte';
   import Icon from '../components/Icon.svelte';
   import { onMount, untrack } from 'svelte';
+  import type { InboxView } from '../../../shared/types';
 
-  const view = $derived(router.route === 'done' ? 'done' : router.route === 'all' ? 'all' : 'inbox');
-  const title = $derived({ inbox: 'Inbox', done: 'Done', all: 'All' }[view]);
+  // A label folder is the 'all' view restricted to one label, so done things show up too.
+  const view = $derived<InboxView>(
+    router.route === 'done'
+      ? 'done'
+      : router.route === 'all' || router.route === 'label'
+        ? 'all'
+        : router.route === 'snoozed'
+          ? 'snoozed'
+          : 'inbox',
+  );
+  const labelId = $derived(router.route === 'label' && router.params.id ? Number(router.params.id) : undefined);
+  const label = $derived(labelId !== undefined ? labels.get(labelId) : undefined);
+  const title = $derived(label ? label.name : { inbox: 'Inbox', done: 'Done', all: 'All', snoozed: 'Snoozed' }[view]);
   const sourceId = $derived(router.query.source ? Number(router.query.source) : undefined);
   const videoId = $derived(router.query.video || undefined);
   const q = $derived(router.query.q || '');
@@ -32,10 +46,18 @@
     const filters = {
       sourceId: Number.isFinite(sourceId) ? sourceId : undefined,
       videoId,
+      labelId,
       q: q || undefined,
     };
     const c = router.query.c;
     untrack(() => void inbox.configure(view, filters, c));
+  });
+
+  // A label folder whose label was deleted (here or elsewhere) has nothing left to show.
+  $effect(() => {
+    if (labelId !== undefined && labels.loaded && !labels.get(labelId)) {
+      untrack(() => router.navigate('inbox', {}, { replace: true }));
+    }
   });
 
   // Keymap: list scope bindings + scope stack while mounted.
@@ -117,6 +139,7 @@
     ui.setListWidth(e.clientX - left);
   }
 
+  const tile = $derived(phone.value);
   const filtered = $derived(!!(sourceId || videoId || q));
   const noSources = $derived(sources.loaded && sources.list.length === 0);
   const filterVideoTitle = $derived(
@@ -127,6 +150,7 @@
 <div class="inbox" class:thread-open={ui.pane === 'thread'}>
   <section class="list" style:width="{ui.listWidth}px" aria-label="{title} list">
     <header>
+      {#if label}<i class="ldot" style:background={labelColorVar(label.color)}></i>{/if}
       <h1>{title}</h1>
       <span class="faint meta count">{pluralize(inbox.total || inbox.items.length, 'comment')}</span>
       <span class="grow"></span>
@@ -162,10 +186,16 @@
     {#if inbox.selectedIds.size > 0}
       <div class="bulk" role="toolbar" aria-label="Selected comments" data-testid="bulk-bar">
         <span class="badge accent">{inbox.selectedIds.size} selected</span>
-        <ActionButton id="triage.done" label="Done" icon="check" testid="bulk-done" />
-        <ActionButton id="triage.replied" label="Replied" icon="check-all" testid="bulk-replied" />
+        <ActionButton id="triage.done" label="Done" icon="check" {tile} testid="bulk-done" />
+        <ActionButton id="triage.replied" label="Replied" icon="check-all" {tile} testid="bulk-replied" />
+        {#if view === 'snoozed'}
+          <ActionButton id="triage.inbox" label="Unsnooze" icon="inbox" {tile} testid="bulk-unsnooze" />
+        {:else}
+          <ActionButton id="snooze.open" label="Snooze" icon="clock" {tile} testid="bulk-snooze" />
+        {/if}
+        <ActionButton id="label.open" label="Label" icon="tag" {tile} testid="bulk-label" />
         <span class="grow"></span>
-        <ActionButton id="list.escape" label="Clear" icon="x" testid="bulk-clear" />
+        <ActionButton id="list.escape" label="Clear" icon="x" {tile} testid="bulk-clear" />
       </div>
     {/if}
 
@@ -206,6 +236,16 @@
             >Clear filters <Kbd label="g" /><Kbd label="c" /></button
           >
         </EmptyState>
+      {:else if view === 'snoozed'}
+        <EmptyState
+          title="Nothing snoozed"
+          body="Press b on a comment to hide it until later. It comes back to the top of your inbox."
+        />
+      {:else if labelId !== undefined}
+        <EmptyState
+          title="No comments with this label"
+          body="Press l on a comment to add {label ? `“${label.name}”` : 'it'}."
+        />
       {:else if view === 'inbox'}
         <EmptyState
           title="All caught up"
@@ -221,7 +261,7 @@
     {:else}
       <VirtualList
         items={inbox.items}
-        rowHeight={84}
+        rowHeight={phone.value ? 156 : 84}
         selectedIndex={inbox.selectedIndex}
         onNearEnd={() => void inbox.loadMore()}
         key={(i) => i.comment.id}
@@ -232,6 +272,8 @@
             now={sync.now}
             selected={item.comment.id === inbox.selectedId}
             checked={inbox.selectedIds.has(item.comment.id)}
+            showState={view === 'all'}
+            snoozedView={view === 'snoozed'}
             onclick={() => {
               inbox.select(item.comment.id);
               ui.pane = 'thread';
@@ -297,6 +339,13 @@
     align-items: baseline;
     gap: var(--s2);
     padding: var(--s3) var(--s4) var(--s2);
+  }
+  .ldot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex: none;
+    align-self: center;
   }
   h1 {
     font-size: 15px;
@@ -424,6 +473,50 @@
     }
     .resizer {
       display: none;
+    }
+    header {
+      padding: var(--s3) var(--s4) var(--s2);
+    }
+    h1 {
+      font-size: 18px;
+    }
+    .filters {
+      padding: 0 var(--s3) var(--s3);
+      gap: var(--s2);
+    }
+    .search {
+      height: 48px;
+      flex-basis: 100%;
+      padding: 0 var(--s3);
+      gap: var(--s3);
+    }
+    .search input {
+      font-size: 16px;
+      height: 100%;
+    }
+    .bulk {
+      flex-wrap: wrap;
+      gap: var(--s2);
+      padding: var(--s2) var(--s3);
+    }
+    .bulk .badge {
+      height: 28px;
+      font-size: var(--fs-meta);
+      padding: 0 var(--s3);
+    }
+    .bulk :global(.action.tile) {
+      flex: 1 0 calc(20% - 8px);
+      min-width: 60px;
+      min-height: 52px;
+    }
+    .bulk .grow {
+      display: none;
+    }
+    .pill {
+      min-height: 48px;
+      padding: 0 var(--s5);
+      font-size: var(--fs-base);
+      top: 150px;
     }
     .inbox:not(.thread-open) .detail {
       display: none;

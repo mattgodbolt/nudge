@@ -3,7 +3,7 @@ import { createRepo } from '../db/repo.js';
 import { openDb } from '../db/db.js';
 import { parseSourceInput } from '../../shared/youtube-urls.js';
 import { createFakeClient } from './fake-client.js';
-import { seedDemo } from './seed.js';
+import { decorateDemo, seedDemo } from './seed.js';
 import {
   DEMO_COMMENTS_DISABLED_VIDEO,
   DEMO_MISSING_VIDEO,
@@ -170,6 +170,14 @@ describe('seedDemo + engine integration (real in-memory repo)', () => {
     const items = repo.listInbox({ view: 'done', limit: 500 }).items;
     expect(items.some((i) => i.comment.state === 'auto_replied')).toBe(true);
     expect(repo.lastRun()?.error).toBeNull();
+
+    // decorating adds labels and 3 far-future snoozes without touching done/all
+    const before = repo.counts();
+    expect(decorateDemo(repo, NOW)).toBe(true);
+    const after = repo.counts();
+    expect(repo.listLabels().map((l) => l.name)).toEqual(['Question', 'Follow up', 'Bug report']);
+    expect(after).toMatchObject({ snoozed: 3, inbox: before.inbox - 3, done: before.done, all: before.all });
+    expect(Object.values(after.byLabel).every((n) => n > 0)).toBe(true);
 
     // idempotent: a second seed is a no-op
     await seedDemo(repo, addSource);

@@ -7,7 +7,7 @@ import { createGoogleAuth } from './auth/google.js';
 import { loadConfig, migrateLegacyDb, resolveApiKey, resolveGoogleClient } from './config.js';
 import { openRepo } from './db/repo.js';
 import { createFakeClient } from './demo/fake-client.js';
-import { nonDemoSources, seedDemo } from './demo/seed.js';
+import { decorateDemo, nonDemoSources, seedDemo } from './demo/seed.js';
 import { createDemoPosting } from './demo/post.js';
 import { createWorld } from './demo/world.js';
 import { createEventBus } from './events/bus.js';
@@ -15,6 +15,7 @@ import { createHttpPostGateway } from './reply/gateway.js';
 import { createHandoffPoster, createReplyPoster } from './reply/poster.js';
 import { buildSettingsDto } from './routes/util.js';
 import { backfillVideoDetails } from './sync/membership.js';
+import { createSnoozeWaker } from './sync/snooze.js';
 import { createSyncEngine } from './sync/engine.js';
 import { createQuotaTracker } from './sync/quota.js';
 import { createScheduler } from './sync/scheduler.js';
@@ -76,7 +77,21 @@ async function main(): Promise<void> {
     hasApiKey: () => resolveKey().key !== null,
   });
 
-  if (config.demo) await seedDemo(repo, addSource); // no-op unless the DB is empty
+  const snoozeWaker = createSnoozeWaker({ repo, bus });
+
+  if (config.demo) {
+    const fresh = repo.listSources().length === 0;
+    await seedDemo(repo, addSource); // no-op unless the DB is empty
+    if (fresh) {
+      // Labels and snoozes need comments, which arrive with the first syncs: decorate once there are enough.
+      const stop = bus.subscribe((e) => {
+        if (e.type !== 'sync.done' || !decorateDemo(repo)) return;
+        stop();
+        bus.emit({ type: 'labels.changed', labels: repo.listLabels() });
+        bus.emit({ type: 'inbox.changed', counts: repo.counts(), addedIds: [], changedIds: [] });
+      });
+    }
+  }
 
   // The listening port is only known after listen() (NUDGE_PORT=0 in tests), so the redirect URI is a getter.
   let listenPort = config.port;
@@ -135,6 +150,7 @@ async function main(): Promise<void> {
   const port = (app.server.address() as { port: number }).port;
   listenPort = port;
   scheduler.start();
+  snoozeWaker.start();
   // Videos stored before duration/likes were tracked: fill them in once, quietly (best effort; the Stats page can retry).
   if (resolveKey().key) {
     backfillVideoDetails(repo, yt).catch((e: unknown) =>
@@ -152,6 +168,7 @@ async function main(): Promise<void> {
     stopping = true;
     console.log(`\n${signal} received, shutting down`);
     scheduler.stop();
+    snoozeWaker.stop();
     await app.close();
     repo.close();
     process.exit(0);

@@ -7,37 +7,81 @@ import { toasts } from './toasts.svelte';
 export interface InboxFilters {
   sourceId?: number;
   videoId?: string;
+  labelId?: number;
   q?: string;
 }
 
+/** One item's optimistic transition. The same shape serves triage, snooze and their undo. */
 export interface Change {
-  item: InboxItem;
-  from: CommentState;
-  to: CommentState;
+  before: InboxItem;
+  after: InboxItem;
 }
 
 interface UndoEntry {
   changes: Change[];
-  actionId: Promise<number>;
+  /** Null when the server reported that nothing changed. */
+  actionId: Promise<number | null>;
+  kind: 'triage' | 'snooze';
+}
+
+interface CommitResult {
+  actionId: number | null;
+  counts?: Counts;
 }
 
 const PAGE = 100;
 
 export function emptyCounts(): Counts {
-  return { inbox: 0, done: 0, all: 0, bySource: {} };
-}
-
-export function viewIncludes(view: InboxView, state: CommentState): boolean {
-  if (view === 'inbox') return state === 'inbox';
-  if (view === 'done') return state === 'done' || state === 'replied' || state === 'auto_replied';
-  return state !== 'own';
+  return { inbox: 0, done: 0, all: 0, snoozed: 0, bySource: {}, byLabel: {} };
 }
 
 const isDone = (s: CommentState) => s === 'done' || s === 'replied' || s === 'auto_replied';
 
-/** Mirrors the server sort: published_at DESC, id ASC. */
+export function viewIncludes(view: InboxView, item: InboxItem, labelId?: number): boolean {
+  if (labelId !== undefined && !item.labels.includes(labelId)) return false;
+  const { state } = item.comment;
+  if (view === 'inbox') return state === 'inbox' && !item.snoozedUntil;
+  if (view === 'snoozed') return state === 'inbox' && !!item.snoozedUntil;
+  if (view === 'done') return isDone(state);
+  return state !== 'own';
+}
+
+/** The sidebar-count buckets an item contributes to (mirrors the server's Counts). */
+function tally(item: InboxItem) {
+  const { state } = item.comment;
+  const awake = state === 'inbox' && !item.snoozedUntil;
+  return {
+    inbox: awake ? 1 : 0,
+    snoozed: state === 'inbox' && item.snoozedUntil ? 1 : 0,
+    done: isDone(state) ? 1 : 0,
+    labels: awake ? item.labels : [],
+  };
+}
+
+/** Add `sign` * (tally(to) - tally(from)) to `counts`, returning a new object. */
+function shiftCounts(counts: Counts, from: InboxItem, to: InboxItem, sign: 1 | -1 = 1): Counts {
+  const a = tally(from);
+  const b = tally(to);
+  const byLabel = { ...counts.byLabel };
+  for (const l of a.labels) byLabel[l] = Math.max(0, (byLabel[l] ?? 0) - sign);
+  for (const l of b.labels) byLabel[l] = (byLabel[l] ?? 0) + sign;
+  return {
+    ...counts,
+    inbox: counts.inbox + sign * (b.inbox - a.inbox),
+    snoozed: counts.snoozed + sign * (b.snoozed - a.snoozed),
+    done: counts.done + sign * (b.done - a.done),
+    byLabel,
+  };
+}
+
+/** Mirrors the server sort: COALESCE(woke_at, published_at) DESC, id ASC. */
+function sortKey(i: InboxItem): string {
+  return i.wokeAt ?? i.comment.publishedAt;
+}
 export function compareItems(a: InboxItem, b: InboxItem): number {
-  if (a.comment.publishedAt !== b.comment.publishedAt) return a.comment.publishedAt < b.comment.publishedAt ? 1 : -1;
+  const ka = sortKey(a);
+  const kb = sortKey(b);
+  if (ka !== kb) return ka < kb ? 1 : -1;
   return a.comment.id < b.comment.id ? -1 : a.comment.id > b.comment.id ? 1 : 0;
 }
 
@@ -84,6 +128,7 @@ export class InboxStore {
       view === this.view &&
       filters.sourceId === this.filters.sourceId &&
       filters.videoId === this.filters.videoId &&
+      filters.labelId === this.filters.labelId &&
       (filters.q ?? '') === (this.filters.q ?? '');
     if (same) {
       if (selectId && this.items.some((i) => i.comment.id === selectId)) this.selectedId = selectId;
@@ -219,11 +264,16 @@ export class InboxStore {
     this.items = items;
   }
 
-  /* ---------- triage ---------- */
+  /* ---------- triage, snooze and labels ---------- */
+
+  /** The ids an action applies to: explicit `only`, else the multi-selection, else the cursor row. */
+  targetIds(only?: string[]): string[] {
+    return only ?? (this.selectedIds.size > 0 ? [...this.selectedIds] : this.selectedId ? [this.selectedId] : []);
+  }
 
   /** Triage `ids` (e.g. a row's own quick action), defaulting to the multi-selection or the cursor row. */
   triage(to: 'done' | 'replied' | 'inbox', only?: string[]): Promise<boolean> {
-    const ids = only ?? (this.selectedIds.size > 0 ? [...this.selectedIds] : this.selectedId ? [this.selectedId] : []);
+    const ids = this.targetIds(only);
     const message = to === 'done' ? 'Marked done' : to === 'replied' ? 'Marked replied' : 'Moved back to inbox';
     return this.applyOptimistic(ids, to, () => api.triage(ids, to), {
       message: ids.length > 1 ? `${ids.length} items: ${message.toLowerCase()}` : message,
@@ -234,7 +284,7 @@ export class InboxStore {
    * Apply a state change locally right away, then confirm with the server. `request` performs the call;
    * on failure everything is rolled back.
    */
-  async applyOptimistic(
+  applyOptimistic(
     ids: string[],
     to: CommentState,
     request: () => Promise<{ actionId: number; counts?: Counts }>,
@@ -243,25 +293,64 @@ export class InboxStore {
     const wanted = new Set(ids);
     const changes: Change[] = this.items
       .filter((i) => wanted.has(i.comment.id) && i.comment.state !== to)
-      .map((item) => ({ item, from: item.comment.state, to }));
+      .map((before) => ({ before, after: { ...before, comment: { ...before.comment, state: to } } }));
+    return this.#commit(changes, 'triage', request, opts);
+  }
+
+  /**
+   * Snooze (a Date) or unsnooze (null) `ids`. Only inbox-state comments can be snoozed, so other rows are
+   * left alone. The row leaves the list like a triage would, and the action is undoable.
+   */
+  snooze(until: Date | null, only?: string[], label?: string): Promise<boolean> {
+    const wanted = new Set(this.targetIds(only));
+    const iso = until ? until.toISOString() : null;
+    const changes: Change[] = this.items
+      .filter((i) => wanted.has(i.comment.id) && (iso ? i.comment.state === 'inbox' : i.snoozedUntil !== null))
+      .map((before) => ({ before, after: { ...before, snoozedUntil: iso } }));
+    const ids = changes.map((c) => c.before.comment.id);
+    const n = ids.length;
+    const message = iso
+      ? n > 1
+        ? `${n} items snoozed until ${label ?? 'later'}`
+        : `Snoozed until ${label ?? 'later'}`
+      : n > 1
+        ? `${n} items: unsnoozed`
+        : 'Unsnoozed';
+    return this.#commit(changes, 'snooze', () => api.snooze(ids, iso), { message });
+  }
+
+  unsnooze(only?: string[]): Promise<boolean> {
+    return this.snooze(null, only);
+  }
+
+  async #commit(
+    changes: Change[],
+    kind: UndoEntry['kind'],
+    request: () => Promise<CommitResult>,
+    opts: { message?: string | null; onError?: (e: unknown) => void } = {},
+  ): Promise<boolean> {
     if (changes.length === 0) return false;
 
     const prevCounts = $state.snapshot(this.counts) as Counts;
     const prevSelected = this.selectedId;
     const prevMulti = this.selectedIds;
-    this.#setStates(changes, 'to');
+    this.#setItems(changes, 'after');
     this.selectedIds = new Set();
-    for (const c of changes) this.#inflight.add(c.item.comment.id);
+    for (const c of changes) this.#inflight.add(c.before.comment.id);
 
     const promise = request();
-    const entry: UndoEntry = { changes, actionId: promise.then((r) => r.actionId) };
+    const entry: UndoEntry = { changes, kind, actionId: promise.then((r) => r.actionId) };
     entry.actionId.catch(() => {});
     this.#undoStack.push(entry);
     this.undoDepth = this.#undoStack.length;
     try {
       const result = await promise;
       if (result.counts) this.counts = result.counts;
-      if (opts.message !== null) {
+      if (result.actionId === null) {
+        // Nothing changed server-side: there is nothing to undo.
+        this.#undoStack = this.#undoStack.filter((x) => x !== entry);
+        this.undoDepth = this.#undoStack.length;
+      } else if (opts.message !== null) {
         toasts.push({
           message: `${opts.message ?? 'Done'} · z to undo`,
           action: { label: 'Undo', run: () => void this.undo() },
@@ -271,7 +360,7 @@ export class InboxStore {
     } catch (e) {
       this.#undoStack = this.#undoStack.filter((x) => x !== entry);
       this.undoDepth = this.#undoStack.length;
-      this.#setStates(changes, 'from');
+      this.#setItems(changes, 'before');
       this.counts = prevCounts;
       if (prevSelected && this.items.some((i) => i.comment.id === prevSelected)) this.selectedId = prevSelected;
       this.selectedIds = prevMulti;
@@ -279,7 +368,7 @@ export class InboxStore {
       else toasts.error(`Could not update: ${e instanceof Error ? e.message : 'unknown error'}`);
       return false;
     } finally {
-      for (const c of changes) this.#inflight.delete(c.item.comment.id);
+      for (const c of changes) this.#inflight.delete(c.before.comment.id);
     }
   }
 
@@ -291,34 +380,117 @@ export class InboxStore {
       return false;
     }
     const prevCounts = $state.snapshot(this.counts) as Counts;
-    this.#setStates(entry.changes, 'from');
-    const first = entry.changes.find((c) => viewIncludes(this.view, c.from));
-    if (first) this.selectedId = first.item.comment.id;
+    this.#setItems(entry.changes, 'before');
+    const first = entry.changes.find((c) => viewIncludes(this.view, c.before, this.filters.labelId));
+    if (first) this.selectedId = first.before.comment.id;
     try {
       const actionId = await entry.actionId;
-      const result = await api.undo(actionId);
+      if (actionId === null) throw new Error('nothing to undo');
+      const result = entry.kind === 'snooze' ? await api.undoSnooze(actionId) : await api.undo(actionId);
       this.counts = result.counts;
       toasts.push({ message: 'Undone', timeoutMs: 2500 });
       return true;
     } catch (e) {
-      this.#setStates(entry.changes, 'to');
+      this.#setItems(entry.changes, 'after');
       this.counts = prevCounts;
       toasts.error(`Could not undo: ${e instanceof Error ? e.message : 'unknown error'}`);
       return false;
     }
   }
 
-  /** Apply `target` state of each change to the list and counts, moving the cursor sensibly when rows vanish. */
-  #setStates(changes: Change[], target: 'to' | 'from') {
-    const byId = new Map(changes.map((c) => [c.item.comment.id, c]));
-    const counts: Counts = { ...this.counts, bySource: { ...this.counts.bySource } };
-    for (const c of changes) {
-      const [oldS, newS] = target === 'to' ? [c.from, c.to] : [c.to, c.from];
-      counts.inbox += (newS === 'inbox' ? 1 : 0) - (oldS === 'inbox' ? 1 : 0);
-      counts.done += (isDone(newS) ? 1 : 0) - (isDone(oldS) ? 1 : 0);
+  /**
+   * Add/remove labels on `ids` (default: selection or cursor row). Rows stay where they are (a label folder
+   * does not drop a row you just un-labelled); counts follow. Rolled back with an error toast on failure.
+   */
+  async applyLabels(add: number[], remove: number[], only?: string[]): Promise<boolean> {
+    const wanted = new Set(this.targetIds(only));
+    const ids = this.items.filter((i) => wanted.has(i.comment.id)).map((i) => i.comment.id);
+    if (ids.length === 0) return false;
+    const change = (item: InboxItem): InboxItem => {
+      const labels = [...item.labels.filter((l) => !remove.includes(l) || add.includes(l))];
+      for (const l of add) if (!labels.includes(l)) labels.push(l);
+      return labels.length === item.labels.length && labels.every((l, i) => l === item.labels[i])
+        ? item
+        : { ...item, labels };
+    };
+    const changed = this.items.map((i) => ({ before: i, after: wanted.has(i.comment.id) ? change(i) : i }));
+    const moved = changed.filter((c) => c.before !== c.after);
+    if (moved.length === 0) return true;
+
+    const rollback = new Map(moved.map((c) => [c.before.comment.id, c.before.labels]));
+    this.#replaceLabels(new Map(moved.map((c) => [c.before.comment.id, c.after.labels])));
+    for (const c of moved) this.counts = shiftCounts(this.counts, c.before, c.after);
+    for (const id of ids) this.#labelsPending.set(id, (this.#labelsPending.get(id) ?? 0) + 1);
+    // Requests go out one at a time so the server applies them in the order the user made them, and a response only
+    // overwrites a comment when no newer change to it is still outstanding (else a stale answer would undo a toggle).
+    const run = this.#labelQueue.then(async () => {
+      try {
+        const result = await api.applyLabels(ids, add, remove);
+        const settled = this.#settleLabels(ids);
+        this.#replaceLabels(new Map(Object.entries(result.labels).filter(([id]) => settled.has(id))));
+        if (this.#labelsPending.size === 0) this.counts = result.counts;
+        return true;
+      } catch (e) {
+        const settled = this.#settleLabels(ids);
+        this.#replaceLabels(new Map([...rollback].filter(([id]) => settled.has(id))));
+        if (this.#labelsPending.size === 0) {
+          for (const c of moved) this.counts = shiftCounts(this.counts, c.after, c.before);
+        }
+        toasts.error(`Could not update labels: ${e instanceof Error ? e.message : 'unknown error'}`);
+        return false;
+      }
+    });
+    this.#labelQueue = run.then(() => undefined);
+    return run;
+  }
+
+  #labelQueue: Promise<void> = Promise.resolve();
+  #labelsPending = new Map<string, number>();
+
+  /** Mark one outstanding label request finished for these ids; returns those with nothing else outstanding. */
+  #settleLabels(ids: string[]): Set<string> {
+    const settled = new Set<string>();
+    for (const id of ids) {
+      const n = (this.#labelsPending.get(id) ?? 1) - 1;
+      if (n <= 0) {
+        this.#labelsPending.delete(id);
+        settled.add(id);
+      } else this.#labelsPending.set(id, n);
     }
+    return settled;
+  }
+
+  /** Overwrite the label list of the given items in place. */
+  #replaceLabels(byId: Map<string, number[]>) {
+    if (byId.size === 0) return;
+    this.items = this.items.map((i) => {
+      const labels = byId.get(i.comment.id);
+      return labels ? { ...i, labels } : i;
+    });
+  }
+
+  /** Drop label ids that no longer exist (a label was deleted). */
+  pruneLabels(valid: ReadonlySet<number>) {
+    if (this.items.some((i) => i.labels.some((l) => !valid.has(l)))) {
+      this.items = this.items.map((i) =>
+        i.labels.every((l) => valid.has(l)) ? i : { ...i, labels: i.labels.filter((l) => valid.has(l)) },
+      );
+    }
+    const byLabel = Object.fromEntries(Object.entries(this.counts.byLabel).filter(([k]) => valid.has(Number(k))));
+    if (Object.keys(byLabel).length !== Object.keys(this.counts.byLabel).length) {
+      this.counts = { ...this.counts, byLabel };
+    }
+  }
+
+  /** Move every change to its `target` side, keeping the list sorted, counts in step and the cursor sensible. */
+  #setItems(changes: Change[], target: 'before' | 'after') {
+    const other = target === 'after' ? 'before' : 'after';
+    const byId = new Map(changes.map((c) => [c.before.comment.id, c]));
+    let counts = this.counts;
+    for (const c of changes) counts = shiftCounts(counts, c[other], c[target]);
     this.counts = counts;
 
+    const labelId = this.filters.labelId;
     const oldItems = this.items;
     const selIdx = this.selectedIndex;
     const next: InboxItem[] = [];
@@ -330,14 +502,12 @@ export class InboxStore {
         continue;
       }
       present.add(item.comment.id);
-      const state = target === 'to' ? c.to : c.from;
-      if (viewIncludes(this.view, state)) next.push({ ...item, comment: { ...item.comment, state } });
+      // Keep the freshest label list: it may have changed since the change was recorded.
+      const updated = { ...c[target], labels: item.labels };
+      if (viewIncludes(this.view, updated, labelId)) next.push(updated);
     }
     for (const c of changes) {
-      const state = target === 'to' ? c.to : c.from;
-      if (!present.has(c.item.comment.id) && viewIncludes(this.view, state)) {
-        next.push({ ...c.item, comment: { ...c.item.comment, state } });
-      }
+      if (!present.has(c.before.comment.id) && viewIncludes(this.view, c[target], labelId)) next.push(c[target]);
     }
     next.sort(compareItems);
     this.items = next;
@@ -364,7 +534,7 @@ export class InboxStore {
     this.counts = e.counts;
     thread.invalidate();
     const touched = e.changedIds.some((id) => this.items.some((i) => i.comment.id === id));
-    const relevantAdds = this.view === 'done' ? [] : e.addedIds;
+    const relevantAdds = this.view === 'done' || this.view === 'snoozed' ? [] : e.addedIds;
     if (relevantAdds.length === 0 && !touched) return;
     const atTop = this.selectedIndex <= 0;
     if (atTop && !this.composing) {

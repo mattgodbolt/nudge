@@ -1,5 +1,6 @@
 import { api } from '../api';
 import { inbox } from './inbox.svelte';
+import { labels } from './labels.svelte';
 import { settings } from './settings.svelte';
 import { sources } from './sources.svelte';
 import { sync } from './sync.svelte';
@@ -15,6 +16,7 @@ class AppStore {
       settings.value = b.settings;
       settings.capabilities = b.capabilities;
       inbox.counts = b.counts;
+      labels.set(b.labels);
       sources.set(b.sources);
       sync.quota = b.quota;
       sync.status = b.sync;

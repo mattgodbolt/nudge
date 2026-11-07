@@ -3,6 +3,7 @@
   import { router } from '../lib/router.svelte';
   import { fuzzyFilter } from '../lib/fuzzy';
   import { inbox } from '../lib/stores/inbox.svelte';
+  import { labels } from '../lib/stores/labels.svelte';
   import { sources } from '../lib/stores/sources.svelte';
   import { ui } from '../lib/stores/ui.svelte';
   import { fade } from 'svelte/transition';
@@ -70,6 +71,14 @@
         label: `Go to source: ${s.title ?? s.ytId}`,
         group: 'Go to',
         run: () => router.navigate('inbox', { source: String(s.id) }),
+      });
+    }
+    for (const l of labels.list) {
+      out.push({
+        id: `lbl.${l.id}`,
+        label: `Go to label: ${l.name}`,
+        group: 'Go to',
+        run: () => router.navigate('label', {}, { id: l.id }),
       });
     }
     const seenVideos = new Set<string>();
@@ -219,5 +228,21 @@
     padding: var(--s4);
     text-align: center;
     font-size: var(--fs-meta);
+  }
+  @media (max-width: 899px) {
+    .scrim {
+      padding: calc(env(safe-area-inset-top) + 8px) var(--s2) 0;
+    }
+    .q {
+      min-height: 56px;
+      font-size: 16px;
+    }
+    .list {
+      max-height: 60vh;
+    }
+    .opt {
+      min-height: 52px;
+      padding: 8px var(--s3);
+    }
   }
 </style>

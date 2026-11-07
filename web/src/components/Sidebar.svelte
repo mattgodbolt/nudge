@@ -1,8 +1,11 @@
 <script lang="ts">
+  import { tick } from 'svelte';
   import { router, type RouteName } from '../lib/router.svelte';
   import { inbox } from '../lib/stores/inbox.svelte';
+  import { labels, labelColorVar } from '../lib/stores/labels.svelte';
   import { sources } from '../lib/stores/sources.svelte';
   import { ui } from '../lib/stores/ui.svelte';
+  import { phone } from '../lib/phone.svelte';
   import { formatNumber } from '../lib/format';
   import Icon from './Icon.svelte';
   import SyncIndicator from './SyncIndicator.svelte';
@@ -17,6 +20,14 @@
       count: inbox.counts.inbox,
       testid: 'sidebar-count-inbox',
       keys: 'g i',
+    },
+    {
+      route: 'snoozed' as RouteName,
+      label: 'Snoozed',
+      icon: 'clock' as const,
+      count: inbox.counts.snoozed,
+      testid: 'sidebar-count-snoozed',
+      keys: 'g z',
     },
     {
       route: 'done' as RouteName,
@@ -36,6 +47,17 @@
     },
   ]);
 
+  let navEl: HTMLElement | undefined = $state();
+  // On phones the views form a horizontal strip: keep the current one scrolled into view.
+  $effect(() => {
+    void router.route;
+    void router.params.id;
+    void activeSource;
+    void tick().then(() => {
+      const el = navEl?.querySelector<HTMLElement>('.item.active');
+      if (el && phone.value) el.scrollIntoView({ inline: 'center', block: 'nearest' });
+    });
+  });
   const activeSource = $derived(router.route === 'inbox' ? router.query.source : undefined);
   const sourceIcon = (k: string) => (k === 'channel' ? 'channel' : k === 'playlist' ? 'playlist' : 'video');
 </script>
@@ -57,53 +79,83 @@
     </button>
   </div>
 
-  <button class="btn ghost search" onclick={() => (ui.paletteOpen = true)}>
-    <Icon name="search" size={14} /><span class="grow">Jump to…</span><Kbd keys="$mod+k" />
+  <button
+    class="btn ghost search"
+    onclick={() => (ui.paletteOpen = true)}
+    aria-label="Jump to… (search commands and views)"
+  >
+    <Icon name="search" size={phone.value ? 22 : 14} /><span class="grow">Jump to…</span><Kbd keys="$mod+k" />
   </button>
 
-  <div class="group">
-    {#each views as v (v.route)}
-      <a
-        class="item"
-        class:active={router.route === v.route && !activeSource}
-        href="/{v.route}"
-        onclick={(e) => {
-          e.preventDefault();
-          router.navigate(v.route);
-          ui.pane = 'list';
-        }}
-      >
-        <Icon name={v.icon} />
-        <span class="grow">{v.label}</span>
-        <span class="count" class:strong={v.route === 'inbox' && v.count > 0} data-testid={v.testid}
-          >{formatNumber(v.count)}</span
+  <div class="nav" bind:this={navEl}>
+    <div class="group">
+      {#each views as v (v.route)}
+        <a
+          class="item"
+          class:active={router.route === v.route && !activeSource}
+          href="/{v.route}"
+          onclick={(e) => {
+            e.preventDefault();
+            router.navigate(v.route);
+            ui.pane = 'list';
+          }}
         >
-      </a>
-    {/each}
-  </div>
+          <Icon name={v.icon} />
+          <span class="grow">{v.label}</span>
+          <span
+            class="count"
+            class:strong={v.route === 'inbox' && v.count > 0}
+            class:zero={v.route === 'snoozed' && v.count === 0}
+            data-testid={v.testid}>{formatNumber(v.count)}</span
+          >
+        </a>
+      {/each}
+    </div>
 
-  <div class="group scroll">
-    <div class="label head">Sources</div>
-    {#each sources.list as s (s.id)}
-      {@const n = inbox.counts.bySource[s.id] ?? s.inboxCount}
-      <a
-        class="item sub"
-        class:active={activeSource === String(s.id)}
-        class:off={!s.enabled}
-        href="/inbox?source={s.id}"
-        onclick={(e) => {
-          e.preventDefault();
-          router.navigate('inbox', { source: String(s.id) });
-          ui.pane = 'list';
-        }}
-      >
-        <Icon name={sourceIcon(s.kind)} size={14} />
-        <span class="grow truncate">{s.title ?? s.ytId}</span>
-        {#if n > 0}<span class="count">{formatNumber(n)}</span>{/if}
-      </a>
-    {:else}
-      <div class="faint meta pad">No sources yet</div>
-    {/each}
+    <div class="group scroll">
+      {#if labels.list.length > 0}
+        <div class="label head">Labels</div>
+        {#each labels.list as l (l.id)}
+          {@const n = inbox.counts.byLabel[l.id] ?? 0}
+          <a
+            class="item sub"
+            class:active={router.route === 'label' && router.params.id === String(l.id)}
+            href="/label/{l.id}"
+            data-testid="sidebar-label"
+            onclick={(e) => {
+              e.preventDefault();
+              router.navigate('label', {}, { id: l.id });
+              ui.pane = 'list';
+            }}
+          >
+            <i class="dot" style:background={labelColorVar(l.color)}></i>
+            <span class="grow truncate">{l.name}</span>
+            {#if n > 0}<span class="count" data-testid="sidebar-label-count">{formatNumber(n)}</span>{/if}
+          </a>
+        {/each}
+      {/if}
+      <div class="label head">Sources</div>
+      {#each sources.list as s (s.id)}
+        {@const n = inbox.counts.bySource[s.id] ?? s.inboxCount}
+        <a
+          class="item sub"
+          class:active={activeSource === String(s.id)}
+          class:off={!s.enabled}
+          href="/inbox?source={s.id}"
+          onclick={(e) => {
+            e.preventDefault();
+            router.navigate('inbox', { source: String(s.id) });
+            ui.pane = 'list';
+          }}
+        >
+          <Icon name={sourceIcon(s.kind)} size={14} />
+          <span class="grow truncate">{s.title ?? s.ytId}</span>
+          {#if n > 0}<span class="count">{formatNumber(n)}</span>{/if}
+        </a>
+      {:else}
+        <div class="faint meta pad">No sources yet</div>
+      {/each}
+    </div>
   </div>
 
   <div class="group foot">
@@ -111,6 +163,7 @@
       class="item"
       class:active={router.route === 'sources' || router.route === 'source'}
       href="/sources"
+      aria-label="Manage sources"
       onclick={(e) => {
         e.preventDefault();
         router.navigate('sources');
@@ -120,6 +173,7 @@
       class="item"
       class:active={router.route === 'stats'}
       href="/stats"
+      aria-label="Stats"
       onclick={(e) => {
         e.preventDefault();
         router.navigate('stats');
@@ -129,6 +183,7 @@
       class="item"
       class:active={router.route === 'settings'}
       href="/settings"
+      aria-label="Settings"
       onclick={(e) => {
         e.preventDefault();
         router.navigate('settings');
@@ -234,28 +289,141 @@
     font-variant-numeric: tabular-nums;
     color: var(--text-faint);
   }
+  .dot {
+    width: 9px;
+    height: 9px;
+    margin: 0 2.5px;
+    border-radius: 50%;
+    flex: none;
+  }
+  .count.zero {
+    opacity: 0.45;
+  }
   .count.strong {
     color: var(--text);
     font-weight: 600;
   }
+  .nav {
+    display: contents;
+  }
+  /* Phone: row 1 = brand + big icon buttons (search, sources, stats, settings); row 2 = a swipeable strip
+     of every view (Inbox, Snoozed, Done, All, each label, each source) as 44px+ chips. */
   @media (max-width: 899px) {
     .sidebar {
       width: 100%;
       height: auto;
+      flex-direction: row;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: var(--s1) var(--s2);
+      padding: calc(env(safe-area-inset-top) + var(--s1)) calc(var(--s2) + env(safe-area-inset-right)) var(--s2)
+        calc(var(--s2) + env(safe-area-inset-left));
       border-right: 0;
       border-bottom: 1px solid var(--border);
     }
-    .group.scroll,
-    .search,
-    .collapse {
+    .collapse,
+    .head,
+    .foot :global(.sync),
+    .foot > :global(:not(a)) {
       display: none;
     }
-    .group {
-      flex-direction: row;
-      flex-wrap: wrap;
+    .brand {
+      order: 0;
+      flex: 1;
+      min-width: 0;
+    }
+    .name {
+      font-size: 16px;
+    }
+    .search {
+      order: 1;
+      flex: none;
+      width: 48px;
+      height: 48px;
+      padding: 0;
+      justify-content: center;
+    }
+    .search .grow {
+      display: none;
     }
     .foot {
+      order: 2;
+      display: flex;
+      flex-direction: row;
+      gap: var(--s2);
+      border-top: 0;
+      padding: 0;
+    }
+    .foot .item {
+      width: 48px;
+      height: 48px;
+      padding: 0;
+      justify-content: center;
+      border: 1px solid var(--border);
+      background: var(--bg-elev);
+    }
+    .foot .item .grow {
       display: none;
+    }
+    .foot .item :global(svg) {
+      width: 22px;
+      height: 22px;
+    }
+    .nav {
+      order: 3;
+      flex: 1 0 100%;
+      display: flex;
+      flex-direction: row;
+      align-items: center;
+      gap: var(--s2);
+      overflow-x: auto;
+      overscroll-behavior-x: contain;
+      scroll-snap-type: x proximity;
+      scrollbar-width: none;
+      margin: 0 calc(var(--s2) * -1);
+      padding: var(--s1) var(--s2);
+    }
+    .nav::-webkit-scrollbar {
+      display: none;
+    }
+    .group,
+    .group.scroll {
+      display: contents;
+    }
+    .nav .item,
+    .nav .item.sub {
+      flex: none;
+      height: 48px;
+      padding: 0 var(--s4);
+      gap: var(--s2);
+      font-size: 15px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: var(--bg-elev);
+      scroll-snap-align: center;
+      white-space: nowrap;
+    }
+    .nav .item .grow {
+      flex: none;
+      max-width: 160px;
+    }
+    .nav .item.active {
+      background: var(--text);
+      color: var(--bg);
+      border-color: var(--text);
+      box-shadow: none;
+    }
+    .nav .item.active .count {
+      color: var(--bg);
+      opacity: 0.8;
+    }
+    .nav .pad {
+      flex: none;
+      padding: 0 var(--s3);
+    }
+    .foot .item.active {
+      border-color: var(--text);
+      box-shadow: none;
     }
   }
 </style>

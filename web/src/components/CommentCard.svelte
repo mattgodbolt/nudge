@@ -5,6 +5,7 @@
   import { deleteReply } from '../lib/reply';
   import Avatar from './Avatar.svelte';
   import Icon from './Icon.svelte';
+  import { phone } from '../lib/phone.svelte';
 
   let {
     comment,
@@ -62,7 +63,7 @@
         title="Open on YouTube (v)"
         aria-label="Open on YouTube"
       >
-        <Icon name="external" size={13} />
+        <Icon name="external" size={phone.value ? 20 : 13} />
       </a>
     </header>
     <!-- eslint-disable-next-line svelte/no-at-html-tags -- sanitized by DOMPurify -->
@@ -123,5 +124,19 @@
   }
   .comment-html {
     line-height: 1.55;
+  }
+  @media (max-width: 899px), (hover: none) {
+    .ext {
+      opacity: 1;
+      min-width: 48px;
+      justify-content: center;
+      margin: -8px -8px -8px 0;
+    }
+    .card.reply {
+      margin-left: var(--s4);
+    }
+    header {
+      flex-wrap: wrap;
+    }
   }
 </style>
