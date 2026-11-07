@@ -4,6 +4,8 @@ import { svelte } from '@sveltejs/vite-plugin-svelte';
 export default defineConfig({
   plugins: [svelte()],
   test: {
+    // Tests that create real SQLite files can take many seconds on slow storage (e.g. Docker on ZFS) under load.
+    testTimeout: 30_000,
     projects: [
       {
         extends: false,

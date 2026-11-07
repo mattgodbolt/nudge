@@ -12,7 +12,8 @@ RUN npm ci
 
 FROM deps AS test
 COPY . .
-RUN npx vitest run && touch /tests-passed
+# Fewer workers than cores: parallel file-creating tests contend badly for I/O on some storage drivers.
+RUN npx vitest run --maxWorkers=2 && touch /tests-passed
 
 FROM deps AS build
 COPY . .
