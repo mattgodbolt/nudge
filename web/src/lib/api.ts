@@ -13,7 +13,33 @@ export class ApiRequestError extends Error {
   }
 }
 
+/**
+ * Waits between retries of a read. The server restarts for an auto-update in 10-20 seconds, during which the proxy
+ * answers 502 (or the connection drops); reads ride that out quietly instead of surfacing an error. Tests shorten it.
+ */
+export const retry = { delaysMs: [1000, 2000, 4000, 8000] };
+const TRANSIENT = new Set([0, 502, 503, 504]);
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
 async function request<R>(method: string, path: string, body?: unknown, opts: { allow404?: boolean } = {}): Promise<R> {
+  // Only reads are retried: repeating a write that may have reached the server could do it twice.
+  const delays = method === 'GET' ? retry.delaysMs : [];
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await requestOnce<R>(method, path, body, opts);
+    } catch (e) {
+      if (!(e instanceof ApiRequestError) || !TRANSIENT.has(e.status) || attempt >= delays.length) throw e;
+      await sleep(delays[attempt] ?? 0);
+    }
+  }
+}
+
+async function requestOnce<R>(
+  method: string,
+  path: string,
+  body?: unknown,
+  opts: { allow404?: boolean } = {},
+): Promise<R> {
   const headers: Record<string, string> = { [CLIENT_HEADER]: '1' };
   let payload: string | undefined;
   if (body !== undefined) {
