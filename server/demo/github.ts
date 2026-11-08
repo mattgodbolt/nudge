@@ -1,5 +1,5 @@
 import type { GithubAssociation } from '../../shared/types.js';
-import type { GithubClient, GithubItemUpsert } from '../contracts.js';
+import { GithubError, type GithubClient, type GithubItemUpsert } from '../contracts.js';
 import { githubItemId } from '../db/feeds.js';
 
 export const DEMO_GITHUB_OWNER = 'demo-org';
@@ -84,13 +84,16 @@ export function createFakeGithubClient(now: () => number = Date.now) {
         return owner === DEMO_GITHUB_OWNER ? 'org' : null;
       },
       async search(q, page) {
+        // Like the real API: a search must say which kind it wants.
+        if (!/\bis:(pr|issue)\b/.test(q)) {
+          throw new GithubError("GitHub said 422: Query must include 'is:issue' or 'is:pull-request'", 422);
+        }
         const m = /updated:>=(\S+)/.exec(q);
         const since = m ? Date.parse(m[1]!) : 0;
         const wantsPr = /\bis:pr\b/.test(q);
-        const wantsIssue = /\bis:issue\b/.test(q);
         const hits = items
           .filter((i) => Date.parse(i.updatedAt) >= since)
-          .filter((i) => (wantsPr ? i.kind === 'pr' : wantsIssue ? i.kind === 'issue' : true))
+          .filter((i) => (wantsPr ? i.kind === 'pr' : i.kind === 'issue'))
           .sort((a, b) => a.updatedAt.localeCompare(b.updatedAt));
         return { items: hits.slice((page - 1) * 100, page * 100), total: hits.length, rate: null };
       },

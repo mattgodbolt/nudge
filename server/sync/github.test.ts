@@ -47,8 +47,14 @@ function fakeClient(s: Script): GithubClient {
     },
     async search(q, page) {
       s.queries.push(`${page}:${q}`);
+      // Like the real API: a search must be for pull requests or for issues, never "both".
+      if (!/\bis:(pr|issue)\b/.test(q)) {
+        throw new GithubError("GitHub said 422: Query must include 'is:issue' or 'is:pull-request'", 422);
+      }
       if (s.fail) throw s.fail;
-      return { items: s.pages[page - 1] ?? [], total: 0, rate: { limit: 30, remaining: 28, resetAt: T(1) } };
+      const kind = /\bis:pr\b/.test(q) ? 'pr' : 'issue';
+      const items = (s.pages[page - 1] ?? []).filter((i) => i.kind === kind);
+      return { items, total: 0, rate: { limit: 30, remaining: 28, resetAt: T(1) } };
     },
     async latestCommenter() {
       return s.commenter;
@@ -75,12 +81,13 @@ describe('GitHub poller', () => {
   it('searches the owner since the baseline, files arrivals, announces them, and schedules the next poll', async () => {
     script.pages = [[item(1), item(2, { kind: 'issue' })]];
     await poller().pollNow();
-    expect(script.queries[0]).toBe(
-      `1:org:org updated:>=${clock
-        .now()
-        .toISOString()
-        .replace(/\.\d{3}Z$/, 'Z')}`,
-    );
+    // Pull requests and issues are separate queries (GitHub rejects a search that is neither is:pr nor is:issue).
+    const since = clock
+      .now()
+      .toISOString()
+      .replace(/\.\d{3}Z$/, 'Z');
+    expect(script.queries).toEqual([`1:org:org is:pr updated:>=${since}`, `1:org:org is:issue updated:>=${since}`]);
+    expect(repo.getFeedRow(feedId)!.lastError).toBeNull();
     expect(repo.listInbox({ view: 'inbox' }).total).toBe(2);
     const ev = bus.of('inbox.changed').at(-1)!;
     expect(ev.addedIds).toHaveLength(2);
@@ -96,7 +103,8 @@ describe('GitHub poller', () => {
     await poller().pollNow();
     clock.advance(10 * 60_000);
     await poller().pollNow();
-    expect(script.queries[0]).toMatch(/ is:pr$/);
+    expect(script.queries).toHaveLength(2); // one is:pr query per poll, and no is:issue one
+    expect(script.queries.every((q) => / is:pr /.test(q) && !/is:issue/.test(q))).toBe(true);
     const second = script.queries[1]!;
     // Cursor = first poll time (12:00); the window starts 15 minutes earlier.
     expect(second).toContain('updated:>=2026-11-08T11:45:00Z');
@@ -106,7 +114,8 @@ describe('GitHub poller', () => {
     repo.deleteFeed(feedId);
     feedId = repo.addFeed({ owner: 'org', prs: true, issues: true, importMode: 'all' }).id;
     await poller().pollNow();
-    expect(script.queries[0]).toMatch(/updated:>=1970-01-01T00:00:00Z is:open$/);
+    expect(script.queries[0]).toMatch(/is:pr updated:>=1970-01-01T00:00:00Z is:open$/);
+    expect(script.queries[1]).toMatch(/is:issue updated:>=1970-01-01T00:00:00Z is:open$/);
   });
 
   it('only polls feeds that are due, and skips disabled ones', async () => {
@@ -117,7 +126,7 @@ describe('GitHub poller', () => {
     expect(script.queries).toEqual([]);
     clock.advance(6 * 60_000);
     await p.tick();
-    expect(script.queries).toHaveLength(1);
+    expect(script.queries).toHaveLength(2); // is:pr and is:issue
     repo.updateFeed(feedId, { enabled: false });
     clock.advance(10 * 60_000);
     script.queries.length = 0;
@@ -134,6 +143,16 @@ describe('GitHub poller', () => {
     const f = repo.getFeedRow(feedId)!;
     expect(f.cursor).toBe(T(200));
     expect(f.nextPollAt).toBe(clock.now().toISOString()); // due again immediately
+  });
+
+  it('merges pull requests and issues, and resumes from the truncated kind when only one hits the page cap', async () => {
+    const prs = Array.from({ length: 100 }, (_, i) => item(1 + i, { updatedAt: T(1 + i) }));
+    script.pages = [[...prs, item(500, { kind: 'issue', updatedAt: T(50) })]];
+    // Page 1 holds a full page of PRs and one issue: with one page allowed, the PR query is truncated, the issue one not.
+    await poller({ maxPages: 1 }).pollNow();
+    expect(repo.listInbox({ view: 'all' }).total).toBe(101);
+    expect(repo.listInbox({ view: 'all', kind: 'issue' }).total).toBe(1);
+    expect(repo.getFeedRow(feedId)!.cursor).toBe(T(100)); // the truncated kind's newest item, not the issue's
   });
 
   it('asks who commented last only for Done items that gained comments, and respects that answer', async () => {
