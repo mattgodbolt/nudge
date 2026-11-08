@@ -259,7 +259,7 @@
             ? `Last synced ${ago(sync.status.lastRun.finishedAt ?? sync.status.lastRun.startedAt, sync.now)}.`
             : 'Nothing needs your attention.'}
         >
-          <span class="muted meta">Press <Kbd id="sync.now" /> to sync now</span>
+          <ActionButton id="sync.now" label="Sync now" icon="refresh" testid="empty-sync" />
         </EmptyState>
       {:else}
         <EmptyState title="Nothing here yet" body="Triaged comments will show up in this view." />

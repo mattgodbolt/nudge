@@ -138,3 +138,12 @@ test('on a phone, an inbox emptied while a thread is open shows the list, not a 
   await expect(page.getByTestId('refresh')).toBeVisible();
   await expect(page.getByTestId('thread-view')).toBeHidden();
 });
+
+test('the "All caught up" screen has a real Sync now button that starts a sync', async ({ page }) => {
+  await page.setViewportSize({ width: 449, height: 900 });
+  await page.route('**/api/inbox?**', (route) => route.fulfill({ json: { items: [], nextCursor: null, total: 0 } }));
+  await page.goto('/inbox');
+  const posted = page.waitForRequest((r) => r.method() === 'POST' && r.url().endsWith('/api/sync'));
+  await page.getByTestId('empty-sync').click();
+  await posted;
+});
