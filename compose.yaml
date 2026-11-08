@@ -2,7 +2,10 @@
 # host's loopback only; Tailscale (HTTPS, tailnet-only) is the sole way in.
 services:
   nudge:
-    build: .
+    build:
+      context: .
+      args:
+        GIT_SHA: ${GIT_SHA:-}
     image: nudge:latest
     container_name: nudge
     restart: unless-stopped

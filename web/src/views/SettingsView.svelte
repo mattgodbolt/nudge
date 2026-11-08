@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { BUILD_VERSION } from '../lib/version';
   import { api } from '../lib/api';
   import { settings } from '../lib/stores/settings.svelte';
   import { inbox } from '../lib/stores/inbox.svelte';
@@ -545,6 +546,17 @@
         {/each}
       </div>
       <p class="faint meta">Press <kbd class="mono">t</kbd> anywhere to cycle.</p>
+    </section>
+
+    <section class="panel sec" data-testid="settings-about">
+      <h2>About</h2>
+      <p class="meta muted">
+        Nudge <code class="mono" data-testid="about-server">{s.version}</code>
+        {#if s.version !== BUILD_VERSION && s.version !== 'dev' && BUILD_VERSION !== 'dev'}
+          · this page is <code class="mono" data-testid="about-page">{BUILD_VERSION}</code>, so it is out of date. Use
+          Refresh to reload.
+        {/if}
+      </p>
     </section>
 
     {#if s.demo}

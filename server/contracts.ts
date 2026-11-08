@@ -459,6 +459,8 @@ export interface AppDeps {
   push?: PushService;
   resolveApiKey(): { key: string | null; source: 'env' | 'settings' | 'file' | null };
   demo: boolean;
+  /** Short commit SHA of this server, shown in Settings. */
+  version?: string;
   /** Demo mode only: force new comments to appear. */
   demoTick?: () => void;
   staticDir?: string;

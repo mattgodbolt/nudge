@@ -43,3 +43,9 @@ test('push API: config is served and bad subscriptions are refused', async ({ re
   });
   expect(bad.status()).toBe(400);
 });
+
+test('Settings > About shows the running commit, and the page matches the server', async ({ page }) => {
+  await page.goto('/settings');
+  await expect(page.getByTestId('about-server')).toHaveText(/^([0-9a-f]{7,8}|dev)$/);
+  await expect(page.getByTestId('about-page')).toHaveCount(0);
+});

@@ -16,6 +16,8 @@ COPY . .
 RUN npx vitest run --maxWorkers=2 && touch /tests-passed
 
 FROM deps AS build
+ARG GIT_SHA=
+ENV GIT_SHA=$GIT_SHA
 COPY . .
 RUN npm run build
 
@@ -25,8 +27,9 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
 
 FROM node:22-bookworm-slim
+ARG GIT_SHA=
 WORKDIR /app
-ENV NODE_ENV=production NUDGE_HOST=0.0.0.0
+ENV NODE_ENV=production NUDGE_HOST=0.0.0.0 GIT_SHA=$GIT_SHA
 COPY --from=prod-deps /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY package.json ./

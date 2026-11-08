@@ -189,6 +189,8 @@ export interface SettingsDTO {
   backfillDays: number;
   theme: 'system' | 'light' | 'dark';
   demo: boolean;
+  /** Commit of the running server (short SHA), or 'dev'. */
+  version: string;
   google: GoogleAuthDTO;
 }
 export interface Capabilities {

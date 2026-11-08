@@ -21,6 +21,8 @@ deploy/backup.sh || log "WARN: pre-update backup failed (continuing)"
 
 docker tag nudge:latest nudge:prev 2>/dev/null || true
 # A stalled download (e.g. compiling better-sqlite3) must not block every later update, so the build has a deadline.
+# The image has no .git, so hand it the commit for Settings > About.
+export GIT_SHA=$(git rev-parse --short=8 HEAD)
 if ! timeout 25m docker compose build; then
   log "build or tests FAILED (or timed out) for ${remote:0:8}; keeping the running version"
   echo "$remote" > data/.failed-sha

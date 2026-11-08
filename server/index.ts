@@ -23,6 +23,7 @@ import { createQuotaTracker } from './sync/quota.js';
 import { createScheduler } from './sync/scheduler.js';
 import { createAddSource } from './sync/sources.js';
 import { createHttpClient, testKey } from './youtube/client.js';
+import { resolveVersion } from './version.js';
 
 /** dist/web sits next to server/ (tsx) or three levels up from dist/server/server/ (compiled). */
 function findStaticDir(): string | undefined {
@@ -148,6 +149,7 @@ async function main(): Promise<void> {
     push,
     resolveApiKey: resolveKey,
     demo: config.demo,
+    version: resolveVersion(),
     demoTick,
     staticDir,
   };
