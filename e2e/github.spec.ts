@@ -279,3 +279,50 @@ test.describe('on a phone', () => {
     await expect(menu).toBeHidden();
   });
 });
+
+test.describe('on a phone, the top of the inbox leaves the room to the list', () => {
+  test.use({ viewport: { width: 390, height: 844 }, hasTouch: true });
+
+  test('nav is one row, filters are one scrolling line, and the list starts near the top', async ({ page }) => {
+    await page.goto('/inbox');
+    await expect(rows(page).first()).toBeVisible();
+    const nav = (await page.getByRole('navigation', { name: 'Main' }).boundingBox())!;
+    expect(nav.height).toBeLessThan(64);
+    const filters = (await page.getByTestId('gh-filters').boundingBox())!;
+    expect(filters.height).toBeLessThan(64);
+    // "Who" and "kind" share a line (it scrolls sideways) instead of wrapping onto two.
+    const who = (await page.getByTestId('who-all').boundingBox())!;
+    const kind = (await page.getByTestId('kind-any').boundingBox())!;
+    expect(Math.abs(who.y - kind.y)).toBeLessThan(2);
+    expect(who.height).toBeGreaterThanOrEqual(40);
+    // Includes the demo banner (about 50px); it used to start at ~370.
+    expect((await rows(page).first().boundingBox())!.y).toBeLessThan(260);
+    for (const id of ['refresh', 'search-toggle', 'nav-more']) {
+      const b = (await page.getByTestId(id).boundingBox())!;
+      expect(b.width).toBeGreaterThanOrEqual(44);
+      expect(b.height).toBeGreaterThanOrEqual(44);
+    }
+  });
+
+  test('search hides behind a magnifier; Manage sources, Stats and Settings sit behind the menu button', async ({
+    page,
+  }) => {
+    await page.goto('/inbox');
+    await expect(rows(page).first()).toBeVisible();
+    await expect(page.getByTestId('search')).toBeHidden();
+    await page.getByTestId('search-toggle').tap();
+    await expect(page.getByTestId('search')).toBeFocused();
+    await page.getByTestId('search').fill('zzzz-no-such-thing');
+    await expect(page.getByText('Nothing matches')).toBeVisible();
+    // Closing the box clears the search, so the list comes back.
+    await page.getByTestId('search-toggle').tap();
+    await expect(page.getByTestId('search')).toBeHidden();
+    await expect(rows(page).first()).toBeVisible();
+
+    await expect(page.getByRole('link', { name: 'Settings' })).toBeHidden();
+    await page.getByTestId('nav-more').tap();
+    await page.getByRole('link', { name: 'Settings' }).tap();
+    await expect(page).toHaveURL(/\/settings/);
+    await expect(page.getByRole('link', { name: 'Settings' })).toBeHidden();
+  });
+});

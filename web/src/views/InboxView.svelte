@@ -25,7 +25,7 @@
   import Kbd from '../components/Kbd.svelte';
   import ActionButton from '../components/ActionButton.svelte';
   import Icon from '../components/Icon.svelte';
-  import { onMount, untrack } from 'svelte';
+  import { onMount, tick, untrack } from 'svelte';
   import type { InboxView } from '../../../shared/types';
 
   // A label folder is the 'all' view restricted to one label, so done things show up too.
@@ -129,12 +129,26 @@
   $effect(() => {
     searchText = q;
   });
+  // Phone only: the search box hides behind a magnifier in the header until asked for (or while it has text).
+  let searchOpen = $state(false);
+  const searchShown = $derived(searchOpen || !!searchText);
   $effect(() => {
     if (ui.searchFocusTick > 0) {
-      searchInput?.focus();
-      searchInput?.select();
+      searchOpen = true;
+      void tick().then(() => {
+        searchInput?.focus();
+        searchInput?.select();
+      });
     }
   });
+  function toggleSearch() {
+    searchOpen = !searchOpen;
+    if (searchOpen) void tick().then(() => searchInput?.focus());
+    else if (searchText) {
+      searchText = '';
+      onSearchInput();
+    }
+  }
   function onSearchInput() {
     clearTimeout(searchTimer);
     searchTimer = setTimeout(() => router.setQuery({ q: searchText.trim() || undefined, c: undefined }), 200);
@@ -198,8 +212,18 @@
           <option value="source">By source</option>
         </select>
       </label>
+      <button
+        class="btn ghost searchbtn"
+        class:on={searchShown}
+        onclick={toggleSearch}
+        aria-label="Search"
+        aria-expanded={searchShown}
+        data-testid="search-toggle"
+      >
+        <Icon name="search" size={22} />
+      </button>
     </header>
-    <div class="filters">
+    <div class="filters" class:bare={!feed && !source && !filterVideoTitle} class:searching={searchShown}>
       <label class="search">
         <Icon name="search" size={14} />
         <input
@@ -450,6 +474,9 @@
   .grow {
     flex: 1;
   }
+  .searchbtn {
+    display: none;
+  }
   .count {
     font-variant-numeric: tabular-nums;
   }
@@ -570,20 +597,53 @@
       display: none;
     }
     header {
-      padding: var(--s3) var(--s4) var(--s2);
+      align-items: center;
+      padding: 0 var(--s2) 0 var(--s4);
     }
     h1 {
       font-size: 18px;
     }
+    .searchbtn {
+      display: inline-flex;
+      justify-content: center;
+      flex: none;
+      width: 44px;
+      height: 44px;
+      padding: 0;
+    }
+    .searchbtn.on {
+      color: var(--accent);
+    }
+    /* Active filter chips scroll sideways rather than wrapping onto a second line. */
     .filters {
-      padding: 0 var(--s3) var(--s3);
+      flex-wrap: nowrap;
+      overflow-x: auto;
+      scrollbar-width: none;
+      padding: 0 var(--s3) var(--s2);
       gap: var(--s2);
     }
+    .filters::-webkit-scrollbar,
+    .ghfilters::-webkit-scrollbar {
+      display: none;
+    }
+    .filters > :global(.chip) {
+      flex: none;
+    }
+    .filters.bare:not(.searching) {
+      display: none;
+    }
     .search {
-      height: 48px;
+      display: none;
+      height: 44px;
       flex-basis: 100%;
       padding: 0 var(--s3);
       gap: var(--s3);
+    }
+    .searching .search {
+      display: flex;
+    }
+    .searching:not(.bare) {
+      flex-wrap: wrap;
     }
     .search input {
       font-size: 16px;
@@ -611,7 +671,7 @@
       min-height: 48px;
       padding: 0 var(--s5);
       font-size: var(--fs-base);
-      top: 150px;
+      top: 100px;
     }
     .inbox:not(.thread-open) .detail {
       display: none;
@@ -668,9 +728,19 @@
     color: var(--accent);
   }
   @media (max-width: 899px) {
+    /* One scrollable line: who, a gap, then kind. */
+    .ghfilters {
+      flex-wrap: nowrap;
+      overflow-x: auto;
+      scrollbar-width: none;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: var(--s2);
+    }
     .seg {
-      min-height: 36px;
+      flex: none;
+      min-height: 40px;
       padding: 4px 14px;
+      white-space: nowrap;
     }
   }
 </style>

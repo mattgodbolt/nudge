@@ -93,9 +93,24 @@
       if (el && phone.value) el.scrollIntoView({ inline: 'center', block: 'nearest' });
     });
   });
+  // Phone only: Manage sources / Stats / Settings fold into a popover so the top bar stays a single row.
+  let moreOpen = $state(false);
+  $effect(() => {
+    void router.route;
+    moreOpen = false;
+  });
   const activeSource = $derived(router.route === 'inbox' ? router.query.source : undefined);
   const sourceIcon = (k: string) => (k === 'channel' ? 'channel' : k === 'playlist' ? 'playlist' : 'video');
 </script>
+
+<svelte:window
+  onkeydown={(e) => {
+    if (moreOpen && e.key === 'Escape') moreOpen = false;
+  }}
+  onpointerdown={(e) => {
+    if (moreOpen && !(e.target as Element).closest('.more, .foot')) moreOpen = false;
+  }}
+/>
 
 <nav class="sidebar" aria-label="Main">
   <div class="brand">
@@ -130,7 +145,8 @@
     onclick={() => (ui.paletteOpen = true)}
     aria-label="Jump to… (search commands and views)"
   >
-    <Icon name="search" size={phone.value ? 22 : 14} /><span class="grow">Jump to…</span><Kbd keys="$mod+k" />
+    <Icon name={phone.value ? 'command' : 'search'} size={phone.value ? 22 : 14} /><span class="grow">Jump to…</span
+    ><Kbd keys="$mod+k" />
   </button>
 
   <button class="btn ghost search tell" data-testid="tell-nudge" onclick={() => assistant.show()}>
@@ -284,7 +300,18 @@
     </div>
   </div>
 
-  <div class="group foot">
+  <button
+    class="btn ghost more"
+    class:open={moreOpen}
+    onclick={() => (moreOpen = !moreOpen)}
+    aria-label="More: sources, stats, settings"
+    aria-expanded={moreOpen}
+    data-testid="nav-more"
+  >
+    <Icon name="list" size={22} />
+  </button>
+
+  <div class="group foot" class:open={moreOpen}>
     <a
       class="item"
       class:active={router.route === 'sources' || router.route === 'source'}
@@ -441,8 +468,6 @@
   .nav {
     display: contents;
   }
-  /* Phone: row 1 = brand + big icon buttons (search, sources, stats, settings); row 2 = a swipeable strip
-     of every view (Inbox, Snoozed, Done, All, each label, each source) as 44px+ chips. */
   .subhead {
     padding: var(--s2) var(--s2) 2px var(--s3);
     font-size: var(--fs-meta);
@@ -474,6 +499,12 @@
   .repo-empty {
     padding-left: 34px;
   }
+  .more {
+    display: none;
+  }
+  /* Phone: the whole top bar is ONE row. A swipeable strip of every view (Inbox, Snoozed, Done, All, each label,
+     each source) as 44px chips, then fixed icon buttons: jump/search, refresh, and "more" which opens a popover
+     with Manage sources, Stats and Settings. The brand is dropped: the page title below says where you are. */
   @media (max-width: 899px) {
     .chev {
       width: 32px;
@@ -483,77 +514,81 @@
       display: none;
     }
     .sidebar {
+      position: relative;
       width: 100%;
       height: auto;
       flex-direction: row;
-      flex-wrap: wrap;
       align-items: center;
-      gap: var(--s1) var(--s2);
-      padding: calc(env(safe-area-inset-top) + var(--s1)) calc(var(--s2) + env(safe-area-inset-right)) var(--s2)
+      gap: var(--s2);
+      padding: calc(env(safe-area-inset-top) + var(--s1)) calc(var(--s2) + env(safe-area-inset-right)) var(--s1)
         calc(var(--s2) + env(safe-area-inset-left));
       border-right: 0;
       border-bottom: 1px solid var(--border);
     }
     .collapse,
+    .logo,
+    .name,
     .head,
     .foot :global(.sync),
     .foot > :global(:not(a)) {
       display: none;
     }
     .brand {
-      order: 0;
-      flex: 1;
-      min-width: 0;
+      display: contents;
     }
-    .name {
-      font-size: 16px;
-    }
-    .refresh {
+    .refresh,
+    .search,
+    .more {
+      order: 1;
       flex: none;
-      width: 48px;
-      height: 48px;
+      width: 44px;
+      height: 44px;
       padding: 0;
       justify-content: center;
       border: 1px solid var(--border);
       background: var(--bg-elev);
     }
-    .search {
-      order: 1;
-      flex: none;
-      width: 48px;
-      height: 48px;
-      padding: 0;
-      justify-content: center;
+    .refresh {
+      order: 2;
+    }
+    .more {
+      display: inline-flex;
+      order: 3;
+    }
+    .more.open {
+      border-color: var(--text);
     }
     .search .grow {
       display: none;
     }
-    .foot {
-      order: 2;
-      display: flex;
-      flex-direction: row;
-      gap: var(--s2);
-      border-top: 0;
-      padding: 0;
-    }
-    .foot .item {
-      width: 48px;
-      height: 48px;
-      padding: 0;
-      justify-content: center;
-      border: 1px solid var(--border);
-      background: var(--bg-elev);
-    }
-    .foot .item .grow {
+    .search :global(kbd) {
       display: none;
     }
-    .foot .item :global(svg) {
-      width: 22px;
-      height: 22px;
+    .group.foot {
+      display: none;
+      position: absolute;
+      top: 100%;
+      right: calc(var(--s2) + env(safe-area-inset-right));
+      z-index: 70;
+      min-width: 220px;
+      padding: var(--s1);
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius);
+      background: var(--bg-elev);
+      box-shadow: var(--shadow-pop);
+    }
+    .group.foot.open {
+      display: flex;
+    }
+    .foot .item {
+      height: 48px;
+      padding: 0 var(--s3);
+      font-size: 15px;
     }
     .nav {
-      order: 3;
-      flex: 1 0 100%;
+      order: 0;
+      flex: 1;
+      min-width: 0;
       display: flex;
       flex-direction: row;
       align-items: center;
@@ -562,8 +597,6 @@
       overscroll-behavior-x: contain;
       scroll-snap-type: x proximity;
       scrollbar-width: none;
-      margin: 0 calc(var(--s2) * -1);
-      padding: var(--s1) var(--s2);
     }
     .nav::-webkit-scrollbar {
       display: none;
@@ -575,7 +608,7 @@
     .nav .item,
     .nav .item.sub {
       flex: none;
-      height: 48px;
+      height: 44px;
       padding: 0 var(--s4);
       gap: var(--s2);
       font-size: 15px;
@@ -604,7 +637,7 @@
       padding: 0 var(--s3);
     }
     .foot .item.active {
-      border-color: var(--text);
+      background: var(--bg-hover);
       box-shadow: none;
     }
   }
