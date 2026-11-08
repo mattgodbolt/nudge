@@ -161,7 +161,8 @@ How it works:
   comment itself if there is one). A sync only finds comments as often as it polls the YouTube API, so that is how
   fresh a notification can be. Comments older than 48 hours are never announced (a new source's history, or a slow
   video's old finds). Snooze wake-ups go out immediately.
-- If Nudge is open and in view on the device, the notification is skipped.
+- If Nudge is open and in view on the device, the notification is dismissed as soon as it appears (Chrome requires every
+  push to show one, or it posts a generic "Tap to copy the URL for this app"). **Send a test** always stays visible.
 - A device is dropped automatically when its push service says it is gone. `NUDGE_PUSH_SUBJECT` (default
   `mailto:nudge@example.invalid`) is the contact URL sent to push services; set it to a real `mailto:` if you like.
 - Restoring a database backup keeps your subscriptions only if the backup is recent; otherwise a device re-registers

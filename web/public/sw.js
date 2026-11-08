@@ -11,9 +11,8 @@ self.addEventListener('push', (event) => {
   }
   event.waitUntil(
     (async () => {
-      // If Nudge is open and in view the user is already looking at the new comment arriving: stay quiet.
-      const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
-      if (windows.some((c) => c.visibilityState === 'visible' && c.focused)) return;
+      // Chrome insists every push produces a visible notification; if we show none it posts its own generic
+      // "Tap to copy the URL for this app". So never return without calling showNotification.
       await self.registration.showNotification(data.title || 'Nudge', {
         body: data.body || '',
         tag: data.tag,
@@ -22,6 +21,13 @@ self.addEventListener('push', (event) => {
         badge: '/badge-96.png',
         data: { url: typeof data.url === 'string' && data.url.startsWith('/') ? data.url : '/inbox' },
       });
+      // If Nudge is open and in view the user is already watching the comment arrive, so dismiss it again. The test
+      // push stays up, otherwise pressing "Send a test" with the app open would appear to do nothing.
+      if (data.tag === 'nudge-test') return;
+      const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+      if (windows.some((c) => c.visibilityState === 'visible' && c.focused)) {
+        for (const n of await self.registration.getNotifications({ tag: data.tag })) n.close();
+      }
     })(),
   );
 });
