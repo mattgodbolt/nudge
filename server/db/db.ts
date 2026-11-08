@@ -5,8 +5,23 @@ import { MIGRATIONS } from './migrations.js';
 
 export type Db = Database.Database;
 
+export class SchemaTooNewError extends Error {
+  constructor(
+    public dbVersion: number,
+    public codeVersion: number,
+  ) {
+    super(
+      `The database is at schema version ${dbVersion} but this build only understands up to ${codeVersion}. ` +
+        'Refusing to start: running older code against a newer schema can silently read stale data. ' +
+        'Restore a backup taken before the upgrade, or run the newer version.',
+    );
+    this.name = 'SchemaTooNewError';
+  }
+}
+
 export function migrate(db: Db): void {
   const current = db.pragma('user_version', { simple: true }) as number;
+  if (current > MIGRATIONS.length) throw new SchemaTooNewError(current, MIGRATIONS.length);
   for (let v = current; v < MIGRATIONS.length; v++) {
     const sql = MIGRATIONS[v]!;
     db.transaction(() => {

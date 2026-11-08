@@ -138,4 +138,107 @@ CREATE TABLE push_subscriptions (
   new_comments INTEGER NOT NULL DEFAULT 1, snooze_wake INTEGER NOT NULL DEFAULT 1,
   label TEXT, created_at TEXT NOT NULL, last_success_at TEXT, failure_count INTEGER NOT NULL DEFAULT 0);
 `,
+  /* 007 items: one triage table for every provider (YouTube comments today) */ `
+-- items is the shared triage layer: state, snooze, labels, drafts and search live here, keyed by id. A YouTube item's
+-- id is its comment id, so links, drafts, undo history and push tags keep working. comments/threads/videos stay as
+-- YouTube's detail tables. Other providers (GitHub, ...) add rows here with prefixed ids and their own detail.
+CREATE TABLE items (
+  id TEXT PRIMARY KEY,
+  provider TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  container_key TEXT,
+  container_title TEXT,
+  title TEXT,
+  author TEXT,
+  author_avatar_url TEXT,
+  is_own INTEGER NOT NULL DEFAULT 0,
+  body_plain TEXT NOT NULL DEFAULT '',
+  url TEXT,
+  occurred_at TEXT NOT NULL,
+  available_at TEXT,
+  due_at TEXT,
+  source_state TEXT,
+  reason TEXT,
+  data TEXT,
+  state TEXT NOT NULL CHECK (state IN ('inbox','done','replied','auto_replied','resolved','own','archived')),
+  state_source TEXT NOT NULL CHECK (state_source IN ('sync','user','auto')),
+  state_changed_at TEXT NOT NULL,
+  snoozed_until TEXT,
+  woke_at TEXT,
+  first_seen_at TEXT NOT NULL);
+CREATE INDEX idx_items_sort ON items(state, COALESCE(woke_at, occurred_at) DESC);
+CREATE INDEX idx_items_snoozed ON items(snoozed_until) WHERE snoozed_until IS NOT NULL;
+CREATE INDEX idx_items_container ON items(provider, container_key);
+
+INSERT INTO items (id, provider, kind, container_key, container_title, author, author_avatar_url, is_own, body_plain,
+                   occurred_at, state, state_source, state_changed_at, snoozed_until, woke_at, first_seen_at)
+SELECT c.id, 'youtube', 'comment', c.video_id, v.title, c.author_name, c.author_avatar_url, c.is_own, c.text_plain,
+       c.published_at, c.state, c.state_source, c.state_changed_at, c.snoozed_until, c.woke_at, c.first_seen_at
+FROM comments c LEFT JOIN videos v ON v.id = c.video_id;
+
+CREATE TABLE item_labels (
+  item_id TEXT NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+  label_id INTEGER NOT NULL REFERENCES labels(id) ON DELETE CASCADE,
+  PRIMARY KEY (item_id, label_id));
+CREATE INDEX idx_item_labels_label ON item_labels(label_id);
+INSERT INTO item_labels (item_id, label_id) SELECT comment_id, label_id FROM comment_labels;
+DROP TABLE comment_labels;
+
+CREATE TABLE drafts_new (
+  item_id TEXT PRIMARY KEY REFERENCES items(id) ON DELETE CASCADE,
+  body TEXT NOT NULL, updated_at TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','handed_off','posted')));
+INSERT INTO drafts_new (item_id, body, updated_at, status) SELECT comment_id, body, updated_at, status FROM drafts;
+DROP TABLE drafts;
+ALTER TABLE drafts_new RENAME TO drafts;
+
+-- The old comment-level search index is replaced by one over items. Nothing references comments now, so it can be
+-- rebuilt without the state columns: any code still reading comments.state fails loudly instead of reading stale data.
+DROP TRIGGER comments_ai;
+DROP TRIGGER comments_ad;
+DROP TRIGGER comments_au;
+DROP TABLE comments_fts;
+
+CREATE TABLE comments_new (
+  id TEXT PRIMARY KEY, thread_id TEXT NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
+  parent_id TEXT,
+  video_id TEXT NOT NULL,
+  author_name TEXT NOT NULL, author_channel_id TEXT, author_avatar_url TEXT,
+  text_html TEXT NOT NULL, text_plain TEXT NOT NULL,
+  like_count INTEGER NOT NULL DEFAULT 0, published_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+  first_seen_at TEXT NOT NULL,
+  is_own INTEGER NOT NULL DEFAULT 0);
+INSERT INTO comments_new (id, thread_id, parent_id, video_id, author_name, author_channel_id, author_avatar_url,
+    text_html, text_plain, like_count, published_at, updated_at, first_seen_at, is_own)
+  SELECT id, thread_id, parent_id, video_id, author_name, author_channel_id, author_avatar_url,
+    text_html, text_plain, like_count, published_at, updated_at, first_seen_at, is_own FROM comments;
+DROP TABLE comments;
+ALTER TABLE comments_new RENAME TO comments;
+CREATE INDEX idx_comments_thread ON comments(thread_id, published_at);
+CREATE INDEX idx_comments_video ON comments(video_id, published_at DESC);
+
+-- Deleting a YouTube comment (purge, a deleted reply, a thread cascade) deletes its item.
+CREATE TRIGGER comments_item_ad AFTER DELETE ON comments BEGIN
+  DELETE FROM items WHERE id = old.id;
+END;
+
+-- External-content FTS keyed on items.rowid. Never VACUUM this database: rowids of tables without an INTEGER
+-- PRIMARY KEY may be renumbered, which would desync the index.
+CREATE VIRTUAL TABLE items_fts USING fts5(
+  title, body_plain, author, content='items', content_rowid='rowid',
+  tokenize='unicode61 remove_diacritics 2');
+CREATE TRIGGER items_ai AFTER INSERT ON items BEGIN
+  INSERT INTO items_fts(rowid, title, body_plain, author) VALUES (new.rowid, new.title, new.body_plain, new.author);
+END;
+CREATE TRIGGER items_ad AFTER DELETE ON items BEGIN
+  INSERT INTO items_fts(items_fts, rowid, title, body_plain, author)
+    VALUES ('delete', old.rowid, old.title, old.body_plain, old.author);
+END;
+CREATE TRIGGER items_au AFTER UPDATE OF title, body_plain, author ON items BEGIN
+  INSERT INTO items_fts(items_fts, rowid, title, body_plain, author)
+    VALUES ('delete', old.rowid, old.title, old.body_plain, old.author);
+  INSERT INTO items_fts(rowid, title, body_plain, author) VALUES (new.rowid, new.title, new.body_plain, new.author);
+END;
+INSERT INTO items_fts(items_fts) VALUES ('rebuild');
+`,
 ];

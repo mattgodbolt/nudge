@@ -199,7 +199,7 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
     void putSetting.run('vapidKeys', JSON.stringify(k));
 
   /* ---------------- videos ---------------- */
-  const VIDEO_SELECT = `SELECT v.*, (SELECT COUNT(*) FROM comments c WHERE c.video_id = v.id AND c.state = 'inbox') AS inbox_count
+  const VIDEO_SELECT = `SELECT v.*, (SELECT COUNT(*) FROM items i WHERE i.provider = 'youtube' AND i.container_key = v.id AND i.state = 'inbox') AS inbox_count
     FROM videos v`;
 
   function videoDto(r: Row, at: Date): VideoDTO {
@@ -266,8 +266,9 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
         like_count = COALESCE(excluded.like_count, like_count),
         meta_refreshed_at = excluded.meta_refreshed_at`);
     const at = now();
+    const retitle = db.prepare("UPDATE items SET container_title = ? WHERE provider = 'youtube' AND container_key = ?");
     db.transaction(() => {
-      for (const v of vs)
+      for (const v of vs) {
         stmt.run({
           durationSeconds: null,
           likeCount: null,
@@ -275,6 +276,8 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
           publishedAt: v.publishedAt ? iso(v.publishedAt) : null,
           at,
         });
+        retitle.run(v.title, v.id);
+      }
     })();
   }
 
@@ -296,8 +299,9 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
       .prepare(
         `SELECT COALESCE(SUM(c.is_own = 0), 0) AS synced, COALESCE(SUM(CASE WHEN c.is_own = 0 THEN c.like_count END), 0) AS likes,
            COALESCE(SUM(c.is_own = 1 AND c.parent_id IS NOT NULL), 0) AS ownReplies,
-           COALESCE(SUM(c.state = 'inbox'), 0) AS inbox
-         FROM (${TRACKED}) t JOIN videos v ON v.id = t.id JOIN comments c ON c.video_id = v.id WHERE ${where}`,
+           COALESCE(SUM(i.state = 'inbox'), 0) AS inbox
+         FROM (${TRACKED}) t JOIN videos v ON v.id = t.id JOIN comments c ON c.video_id = v.id
+         JOIN items i ON i.id = c.id WHERE ${where}`,
       )
       .get() as Row;
     return {
@@ -482,8 +486,8 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
       (
         db
           .prepare(
-            `SELECT sv.source_id, COUNT(*) AS n FROM comments c JOIN source_videos sv ON sv.video_id = c.video_id
-             WHERE c.state = 'inbox' GROUP BY sv.source_id`,
+            `SELECT sv.source_id, COUNT(*) AS n FROM items i JOIN source_videos sv ON sv.video_id = i.container_key
+             WHERE i.provider = 'youtube' AND i.state = 'inbox' GROUP BY sv.source_id`,
           )
           .all() as Row[]
       ).map((r) => [r.source_id, r.n]),
@@ -653,15 +657,20 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
         `UPDATE comments SET text_html = ?, text_plain = ?, like_count = ?, updated_at = ?, author_name = ?,
            author_avatar_url = ? WHERE id = ?`,
       ).run(c.textHtml, htmlToPlain(c.textHtml), c.likeCount, updated, c.authorName, c.authorAvatarUrl, c.id);
+      db.prepare('UPDATE items SET body_plain = ?, author = ?, author_avatar_url = ? WHERE id = ?').run(
+        htmlToPlain(c.textHtml),
+        c.authorName,
+        c.authorAvatarUrl,
+        c.id,
+      );
       return textChanged ? 'changed' : 'same';
     }
     const isOwn = c.authorChannelId != null && ctx.own.includes(c.authorChannelId);
     const state: CommentState = isOwn ? 'own' : ctx.baseline && published < ctx.baseline ? 'archived' : 'inbox';
     db.prepare(
       `INSERT INTO comments (id, thread_id, parent_id, video_id, author_name, author_channel_id, author_avatar_url,
-         text_html, text_plain, like_count, published_at, updated_at, first_seen_at, is_own, state, state_changed_at,
-         state_source)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'sync')`,
+         text_html, text_plain, like_count, published_at, updated_at, first_seen_at, is_own)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       c.id,
       threadId,
@@ -677,7 +686,22 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
       updated,
       ctx.at,
       isOwn ? 1 : 0,
+    );
+    db.prepare(
+      `INSERT INTO items (id, provider, kind, container_key, container_title, author, author_avatar_url, is_own,
+         body_plain, occurred_at, state, state_source, state_changed_at, first_seen_at)
+       VALUES (?, 'youtube', 'comment', ?, (SELECT title FROM videos WHERE id = ?), ?, ?, ?, ?, ?, ?, 'sync', ?, ?)`,
+    ).run(
+      c.id,
+      videoId,
+      videoId,
+      c.authorName,
+      c.authorAvatarUrl,
+      isOwn ? 1 : 0,
+      htmlToPlain(c.textHtml),
+      published,
       state,
+      ctx.at,
       ctx.at,
     );
     return 'new';
@@ -694,15 +718,16 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
     const ids = (
       db
         .prepare(
-          `SELECT id FROM comments WHERE thread_id = ? AND state = 'inbox' AND state_source != 'user'
-             AND published_at < ?`,
+          `SELECT i.id FROM items i JOIN comments c ON c.id = i.id
+           WHERE c.thread_id = ? AND i.state = 'inbox' AND i.state_source != 'user' AND c.published_at < ?`,
         )
         .all(threadId, lastOwn) as Row[]
     ).map((x) => x.id as string);
     if (ids.length) {
       db.prepare(
-        `UPDATE comments SET state = 'auto_replied', state_source = 'auto', state_changed_at = ?
-         WHERE thread_id = ? AND state = 'inbox' AND state_source != 'user' AND published_at < ?`,
+        `UPDATE items SET state = 'auto_replied', state_source = 'auto', state_changed_at = ?
+         WHERE state = 'inbox' AND state_source != 'user'
+           AND id IN (SELECT id FROM comments WHERE thread_id = ? AND published_at < ?)`,
       ).run(now(), threadId, lastOwn);
     }
     return ids;
@@ -786,49 +811,55 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
         `UPDATE comments SET is_own = CASE WHEN author_channel_id IN (SELECT value FROM json_each(?)) THEN 1 ELSE 0 END`,
       ).run(json);
       db.prepare(
+        "UPDATE items SET is_own = (SELECT is_own FROM comments WHERE id = items.id) WHERE provider = 'youtube'",
+      ).run();
+      db.prepare(
         `UPDATE threads SET own_last_reply_at =
            (SELECT MAX(published_at) FROM comments c WHERE c.thread_id = threads.id AND c.is_own = 1)`,
       ).run();
-      const fallback = `CASE WHEN published_at < (SELECT baseline_at FROM videos WHERE id = comments.video_id)
+      const fallback = `CASE WHEN occurred_at < (SELECT baseline_at FROM videos WHERE id = items.container_key)
                          THEN 'archived' ELSE 'inbox' END`;
+      const ownLastReply =
+        '(SELECT own_last_reply_at FROM threads WHERE id = (SELECT thread_id FROM comments WHERE id = items.id))';
       // Newly-own comments leave whatever (non-user) state they had.
       db.prepare(
-        `UPDATE comments SET state = 'own', state_source = 'sync', state_changed_at = ?
-         WHERE is_own = 1 AND state != 'own' AND state_source != 'user'`,
+        `UPDATE items SET state = 'own', state_source = 'sync', state_changed_at = ?
+         WHERE provider = 'youtube' AND is_own = 1 AND state != 'own' AND state_source != 'user'`,
       ).run(at);
       // No-longer-own comments go back to inbox/archived.
       db.prepare(
-        `UPDATE comments SET state = ${fallback}, state_source = 'sync', state_changed_at = ?
-         WHERE is_own = 0 AND state = 'own'`,
+        `UPDATE items SET state = ${fallback}, state_source = 'sync', state_changed_at = ?
+         WHERE provider = 'youtube' AND is_own = 0 AND state = 'own'`,
       ).run(at);
       // Auto-cleared rows whose justifying own reply has vanished go back.
       db.prepare(
-        `UPDATE comments SET state = ${fallback}, state_source = 'sync', state_changed_at = ?
-         WHERE state = 'auto_replied' AND state_source = 'auto' AND NOT COALESCE(published_at <
-           (SELECT own_last_reply_at FROM threads WHERE id = comments.thread_id), 0)`,
+        `UPDATE items SET state = ${fallback}, state_source = 'sync', state_changed_at = ?
+         WHERE provider = 'youtube' AND state = 'auto_replied' AND state_source = 'auto'
+           AND NOT COALESCE(occurred_at < ${ownLastReply}, 0)`,
       ).run(at);
       // Re-run auto-clear everywhere.
       db.prepare(
-        `UPDATE comments SET state = 'auto_replied', state_source = 'auto', state_changed_at = ?
-         WHERE state = 'inbox' AND state_source != 'user' AND published_at <
-           (SELECT own_last_reply_at FROM threads WHERE id = comments.thread_id)`,
+        `UPDATE items SET state = 'auto_replied', state_source = 'auto', state_changed_at = ?
+         WHERE provider = 'youtube' AND state = 'inbox' AND state_source != 'user' AND occurred_at < ${ownLastReply}`,
       ).run(at);
     })();
   }
 
   /* ---------------- reading ---------------- */
-  const INBOX_SELECT = `SELECT c.*, v.title AS v_title, v.thumbnail_url AS v_thumb,
+  const INBOX_SELECT = `SELECT c.*, i.state, i.state_source, i.state_changed_at, i.snoozed_until, i.woke_at,
+      v.title AS v_title, v.thumbnail_url AS v_thumb,
       p.id AS p_id, p.author_name AS p_author, p.text_plain AS p_text, p.is_own AS p_own,
       t.total_reply_count AS t_total,
-      EXISTS (SELECT 1 FROM drafts d WHERE d.comment_id = c.id AND d.status = 'draft') AS has_draft
-    FROM comments c
+      EXISTS (SELECT 1 FROM drafts d WHERE d.item_id = c.id AND d.status = 'draft') AS has_draft
+    FROM items i
+    JOIN comments c ON c.id = i.id
     JOIN videos v ON v.id = c.video_id
     JOIN threads t ON t.id = c.thread_id
     LEFT JOIN comments p ON p.id = c.parent_id`;
 
   /** SQL fragments for "needs attention now" (inbox state and not currently snoozed); bind @now. */
-  const NOT_SNOOZED = '(c.snoozed_until IS NULL OR c.snoozed_until <= @now)';
-  const SORT_VALUE = 'COALESCE(c.woke_at, c.published_at)';
+  const NOT_SNOOZED = '(i.snoozed_until IS NULL OR i.snoozed_until <= @now)';
+  const SORT_VALUE = 'COALESCE(i.woke_at, c.published_at)';
 
   function inboxItem(r: Row, labels: number[], at: string): InboxItem {
     return {
@@ -849,12 +880,12 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
     if (ids.length === 0) return out;
     for (const r of db
       .prepare(
-        'SELECT comment_id, label_id FROM comment_labels WHERE comment_id IN (SELECT value FROM json_each(?)) ORDER BY label_id',
+        'SELECT item_id, label_id FROM item_labels WHERE item_id IN (SELECT value FROM json_each(?)) ORDER BY label_id',
       )
       .all(JSON.stringify(ids)) as Row[]) {
-      const list = out.get(r.comment_id);
+      const list = out.get(r.item_id);
       if (list) list.push(r.label_id);
-      else out.set(r.comment_id, [r.label_id]);
+      else out.set(r.item_id, [r.label_id]);
     }
     return out;
   }
@@ -863,10 +894,10 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
     const where: string[] = [];
     const at = now();
     const args: Record<string, unknown> = { now: at };
-    if (q.view === 'inbox') where.push(`c.state = 'inbox' AND ${NOT_SNOOZED}`);
-    else if (q.view === 'snoozed') where.push("c.state = 'inbox' AND c.snoozed_until > @now");
-    else if (q.view === 'done') where.push("c.state IN ('done','replied','auto_replied')");
-    else where.push("c.state != 'own'");
+    if (q.view === 'inbox') where.push(`i.state = 'inbox' AND ${NOT_SNOOZED}`);
+    else if (q.view === 'snoozed') where.push("i.state = 'inbox' AND i.snoozed_until > @now");
+    else if (q.view === 'done') where.push("i.state IN ('done','replied','auto_replied','resolved')");
+    else where.push("i.state != 'own'");
     if (q.sourceId !== undefined) {
       where.push('c.video_id IN (SELECT video_id FROM source_videos WHERE source_id = @sourceId)');
       args.sourceId = q.sourceId;
@@ -876,17 +907,19 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
       args.videoId = q.videoId;
     }
     if (q.labelId !== undefined) {
-      where.push('c.id IN (SELECT comment_id FROM comment_labels WHERE label_id = @labelId)');
+      where.push('i.id IN (SELECT item_id FROM item_labels WHERE label_id = @labelId)');
       args.labelId = q.labelId;
     }
     if (q.q && q.q.trim()) {
       const fts = ftsQuery(q.q);
       if (!fts) return { items: [], nextCursor: null, total: 0 };
-      where.push('c.rowid IN (SELECT rowid FROM comments_fts WHERE comments_fts MATCH @fts)');
+      where.push('i.rowid IN (SELECT rowid FROM items_fts WHERE items_fts MATCH @fts)');
       args.fts = fts;
     }
     const base = where.join(' AND ');
-    const total = (db.prepare(`SELECT COUNT(*) AS n FROM comments c WHERE ${base}`).get(args) as Row).n as number;
+    const total = (
+      db.prepare(`SELECT COUNT(*) AS n FROM items i JOIN comments c ON c.id = i.id WHERE ${base}`).get(args) as Row
+    ).n as number;
 
     const pageWhere = [base];
     const sep = q.cursor ? q.cursor.indexOf('|') : -1;
@@ -916,8 +949,10 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
     const v = db.prepare(`${VIDEO_SELECT} WHERE v.id = ?`).get(t.video_id) as Row;
     const rows = db
       .prepare(
-        `SELECT comments.*, (SELECT 1 FROM reply_posts rp WHERE rp.posted_comment_id = comments.id AND rp.status = 'posted') IS NOT NULL AS posted_by_app FROM comments WHERE thread_id = ?
-         ORDER BY (parent_id IS NOT NULL), published_at, id`,
+        `SELECT comments.*, i.state, i.state_source,
+           (SELECT 1 FROM reply_posts rp WHERE rp.posted_comment_id = comments.id AND rp.status = 'posted') IS NOT NULL AS posted_by_app
+         FROM comments JOIN items i ON i.id = comments.id WHERE thread_id = ?
+         ORDER BY (parent_id IS NOT NULL), published_at, comments.id`,
       )
       .all(threadId) as Row[];
     return {
@@ -932,7 +967,9 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
   function getComment(id: string): CommentDTO | null {
     const r = db
       .prepare(
-        "SELECT comments.*, (SELECT 1 FROM reply_posts rp WHERE rp.posted_comment_id = comments.id AND rp.status = 'posted') IS NOT NULL AS posted_by_app FROM comments WHERE id = ?",
+        `SELECT comments.*, i.state, i.state_source,
+           (SELECT 1 FROM reply_posts rp WHERE rp.posted_comment_id = comments.id AND rp.status = 'posted') IS NOT NULL AS posted_by_app
+         FROM comments JOIN items i ON i.id = comments.id WHERE comments.id = ?`,
       )
       .get(id) as Row | undefined;
     return r ? commentDto(r) : null;
@@ -941,21 +978,18 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
   function counts(): Counts {
     const at = now();
     const by = new Map<string, number>(
-      (db.prepare('SELECT state, COUNT(*) AS n FROM comments GROUP BY state').all() as Row[]).map((r) => [
-        r.state,
-        r.n,
-      ]),
+      (db.prepare('SELECT state, COUNT(*) AS n FROM items GROUP BY state').all() as Row[]).map((r) => [r.state, r.n]),
     );
     const n = (s: string) => by.get(s) ?? 0;
     const snoozed = (
-      db.prepare("SELECT COUNT(*) AS n FROM comments WHERE state = 'inbox' AND snoozed_until > ?").get(at) as Row
+      db.prepare("SELECT COUNT(*) AS n FROM items WHERE state = 'inbox' AND snoozed_until > ?").get(at) as Row
     ).n as number;
     const bySource: Record<number, number> = {};
     for (const s of db.prepare('SELECT id FROM sources').all() as Row[]) bySource[s.id] = 0;
     for (const r of db
       .prepare(
-        `SELECT sv.source_id, COUNT(*) AS n FROM comments c JOIN source_videos sv ON sv.video_id = c.video_id
-         WHERE c.state = 'inbox' AND ${NOT_SNOOZED} GROUP BY sv.source_id`,
+        `SELECT sv.source_id, COUNT(*) AS n FROM items i JOIN source_videos sv ON sv.video_id = i.container_key
+         WHERE i.provider = 'youtube' AND i.state = 'inbox' AND ${NOT_SNOOZED} GROUP BY sv.source_id`,
       )
       .all({ now: at }) as Row[]) {
       bySource[r.source_id] = r.n;
@@ -964,8 +998,8 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
     for (const l of db.prepare('SELECT id FROM labels').all() as Row[]) byLabel[l.id] = 0;
     for (const r of db
       .prepare(
-        `SELECT cl.label_id, COUNT(*) AS n FROM comment_labels cl JOIN comments c ON c.id = cl.comment_id
-         WHERE c.state = 'inbox' AND ${NOT_SNOOZED} GROUP BY cl.label_id`,
+        `SELECT il.label_id, COUNT(*) AS n FROM item_labels il JOIN items i ON i.id = il.item_id
+         WHERE i.state = 'inbox' AND ${NOT_SNOOZED} GROUP BY il.label_id`,
       )
       .all({ now: at }) as Row[]) {
       byLabel[r.label_id] = r.n;
@@ -973,7 +1007,7 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
     const all = [...by.entries()].reduce((a, [s, c]) => (s === 'own' ? a : a + c), 0);
     return {
       inbox: n('inbox') - snoozed,
-      done: n('done') + n('replied') + n('auto_replied'),
+      done: n('done') + n('replied') + n('auto_replied') + n('resolved'),
       all,
       snoozed,
       bySource,
@@ -985,14 +1019,12 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
   function triage(ids: string[], to: CommentState): TriageResult {
     return db.transaction(() => {
       const at = now();
-      const get = db.prepare('SELECT state, state_source FROM comments WHERE id = ?');
-      const set = db.prepare("UPDATE comments SET state = ?, state_source = 'user', state_changed_at = ? WHERE id = ?");
+      const get = db.prepare('SELECT state, state_source FROM items WHERE id = ?');
+      const set = db.prepare("UPDATE items SET state = ?, state_source = 'user', state_changed_at = ? WHERE id = ?");
       const changes: { commentId: string; from: CommentState; to: CommentState }[] = [];
       const stored: { commentId: string; from: CommentState; fromSource: string }[] = [];
       // Moving something back to the inbox must show it, so it also loses any snooze (even if already in 'inbox').
-      const unsnooze = db.prepare(
-        'UPDATE comments SET snoozed_until = NULL WHERE id = ? AND snoozed_until IS NOT NULL',
-      );
+      const unsnooze = db.prepare('UPDATE items SET snoozed_until = NULL WHERE id = ? AND snoozed_until IS NOT NULL');
       for (const id of new Set(ids)) {
         const r = get.get(id) as Row | undefined;
         if (!r || r.state === 'own') continue;
@@ -1026,7 +1058,7 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
       const at = now();
       const stored = JSON.parse(a.changes) as { commentId: string; from: CommentState; fromSource?: string }[];
       const restore = db.prepare(
-        `UPDATE comments SET state = ?, state_source = ?, state_changed_at = ? WHERE id = ? AND state = ?`,
+        `UPDATE items SET state = ?, state_source = ?, state_changed_at = ? WHERE id = ? AND state = ?`,
       );
       const changes: TriageResult['changes'] = [];
       for (const c of stored) {
@@ -1043,8 +1075,8 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
     return db.transaction(() => {
       const at = now();
       const target = until === null ? null : iso(until);
-      const get = db.prepare('SELECT state, snoozed_until, woke_at FROM comments WHERE id = ?');
-      const set = db.prepare('UPDATE comments SET snoozed_until = ?, woke_at = ? WHERE id = ?');
+      const get = db.prepare('SELECT state, snoozed_until, woke_at FROM items WHERE id = ?');
+      const set = db.prepare('UPDATE items SET snoozed_until = ?, woke_at = ? WHERE id = ?');
       const changes: SnoozeResult['changes'] = [];
       const stored: { commentId: string; from: string | null; fromWoke: string | null; to: string | null }[] = [];
       for (const id of new Set(ids)) {
@@ -1077,7 +1109,7 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
       }[];
       // Only restore comments still in the state this action left them in.
       const restore = db.prepare(
-        `UPDATE comments SET snoozed_until = ?, woke_at = ?
+        `UPDATE items SET snoozed_until = ?, woke_at = ?
          WHERE id = ? AND state = 'inbox' AND snoozed_until IS ?`,
       );
       const changes: SnoozeResult['changes'] = [];
@@ -1095,11 +1127,11 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
     return db.transaction(() => {
       const at = now();
       const due = db
-        .prepare('SELECT id, state FROM comments WHERE snoozed_until IS NOT NULL AND snoozed_until <= ?')
+        .prepare('SELECT id, state FROM items WHERE snoozed_until IS NOT NULL AND snoozed_until <= ?')
         .all(at) as Row[];
       if (due.length === 0) return { woken: [], counts: counts() };
       db.prepare(
-        'UPDATE comments SET woke_at = snoozed_until, snoozed_until = NULL WHERE snoozed_until IS NOT NULL AND snoozed_until <= ?',
+        'UPDATE items SET woke_at = snoozed_until, snoozed_until = NULL WHERE snoozed_until IS NOT NULL AND snoozed_until <= ?',
       ).run(at);
       // Only inbox comments change what the user sees; others are tidied silently.
       return { woken: due.filter((r) => r.state === 'inbox').map((r) => r.id as string), counts: counts() };
@@ -1161,7 +1193,7 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
   }
 
   function deleteLabel(id: number): void {
-    // comment_labels rows go with it (ON DELETE CASCADE).
+    // item_labels rows go with it (ON DELETE CASCADE).
     if (db.prepare('DELETE FROM labels WHERE id = ?').run(id).changes === 0) {
       throw new LabelError('not_found', `No such label ${id}`);
     }
@@ -1172,10 +1204,10 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
       const known = new Set((db.prepare('SELECT id FROM labels').all() as Row[]).map((r) => r.id as number));
       const toAdd = [...new Set(add)].filter((l) => known.has(l));
       const toRemove = [...new Set(remove)].filter((l) => known.has(l) && !toAdd.includes(l));
-      const exists = db.prepare('SELECT 1 FROM comments WHERE id = ?');
-      const current = db.prepare('SELECT label_id FROM comment_labels WHERE comment_id = ? ORDER BY label_id');
-      const ins = db.prepare('INSERT OR IGNORE INTO comment_labels (comment_id, label_id) VALUES (?, ?)');
-      const del = db.prepare('DELETE FROM comment_labels WHERE comment_id = ? AND label_id = ?');
+      const exists = db.prepare('SELECT 1 FROM items WHERE id = ?');
+      const current = db.prepare('SELECT label_id FROM item_labels WHERE item_id = ? ORDER BY label_id');
+      const ins = db.prepare('INSERT OR IGNORE INTO item_labels (item_id, label_id) VALUES (?, ?)');
+      const del = db.prepare('DELETE FROM item_labels WHERE item_id = ? AND label_id = ?');
       const labels: Record<string, number[]> = {};
       for (const id of new Set(ids)) {
         if (!exists.get(id)) continue;
@@ -1193,13 +1225,13 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
     return { body: r.body, updatedAt: r.updated_at, status: r.status };
   }
   function getDraft(commentId: string): DraftDTO | null {
-    const r = db.prepare('SELECT * FROM drafts WHERE comment_id = ?').get(commentId) as Row | undefined;
+    const r = db.prepare('SELECT * FROM drafts WHERE item_id = ?').get(commentId) as Row | undefined;
     return r ? draftDto(r) : null;
   }
   function saveDraft(commentId: string, body: string, status: DraftDTO['status']): DraftDTO {
     db.prepare(
-      `INSERT INTO drafts (comment_id, body, updated_at, status) VALUES (?, ?, ?, ?)
-       ON CONFLICT(comment_id) DO UPDATE SET body = excluded.body, updated_at = excluded.updated_at,
+      `INSERT INTO drafts (item_id, body, updated_at, status) VALUES (?, ?, ?, ?)
+       ON CONFLICT(item_id) DO UPDATE SET body = excluded.body, updated_at = excluded.updated_at,
          status = excluded.status`,
     ).run(commentId, body, now(), status);
     return getDraft(commentId)!;
@@ -1485,7 +1517,7 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
     markHandedOff,
     getDraft,
     putDraft: (commentId, body) => saveDraft(commentId, body, 'draft'),
-    deleteDraft: (commentId) => void db.prepare('DELETE FROM drafts WHERE comment_id = ?').run(commentId),
+    deleteDraft: (commentId) => void db.prepare('DELETE FROM drafts WHERE item_id = ?').run(commentId),
     counts,
     recordQuota(dayPt, endpoint, units) {
       db.prepare(
