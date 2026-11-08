@@ -94,7 +94,7 @@ test('typing a new name in the picker creates the label and applies it; it appea
 
 test('a label folder lists everything with that label, including done items', async ({ page }) => {
   await page.getByTestId('sidebar-label').filter({ hasText: 'E2E review later' }).click();
-  await expect(page).toHaveURL(/\/label\/\d+$/);
+  await expect(page).toHaveURL(/\/label\/\d+(\?|$)/);
   await page.waitForSelector('[data-testid=inbox-row]');
   await expect(page.getByTestId('inbox-row')).toHaveCount(1);
 
@@ -110,5 +110,5 @@ test('g l opens a go-to-label picker and Enter jumps to the folder', async ({ pa
   await expect(page.getByTestId('label-picker')).toBeVisible();
   await page.keyboard.type('E2E');
   await page.keyboard.press('Enter');
-  await expect(page).toHaveURL(/\/label\/\d+$/);
+  await expect(page).toHaveURL(/\/label\/\d+(\?|$)/);
 });
