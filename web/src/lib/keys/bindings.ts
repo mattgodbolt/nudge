@@ -12,6 +12,10 @@ function open(url: string) {
 }
 
 /** App-wide bindings; registered once from App.svelte. */
+/** Replying and marking replied only make sense for YouTube comments. */
+const isYoutube = (i: { item: { provider: string } } | undefined | null): boolean =>
+  !!i && i.item.provider === 'youtube';
+
 export function appBindings(): Binding[] {
   return [
     {
@@ -238,7 +242,7 @@ export function inboxBindings(): Binding[] {
       keys: ['m'],
       group: 'Triage',
       description: 'Mark replied (without replying)',
-      when: () => !!inbox.selected,
+      when: () => isYoutube(inbox.selected),
       run: () => void inbox.triage('replied'),
     }),
     list({
@@ -277,14 +281,14 @@ export function inboxBindings(): Binding[] {
       keys: ['r'],
       group: 'Reply',
       description: 'Reply',
-      when: () => !!inbox.selected,
+      when: () => isYoutube(inbox.selected),
       run: () => ui.openComposer(),
     }),
     list({
       id: 'open.comment',
       keys: ['v'],
       group: 'Reply',
-      description: 'Open comment on YouTube',
+      description: 'Open comment on YouTube (or the item on GitHub)',
       when: () => !!inbox.selected,
       run: () => open(inbox.selected!.comment.permalink),
     }),
@@ -292,9 +296,24 @@ export function inboxBindings(): Binding[] {
       id: 'open.video',
       keys: ['V'],
       group: 'Reply',
-      description: 'Open video on YouTube',
+      description: 'Open video on YouTube (or the repository on GitHub)',
       when: () => !!inbox.selected,
-      run: () => open(`https://www.youtube.com/watch?v=${encodeURIComponent(inbox.selected!.video.id)}`),
+      run: () => {
+        const sel = inbox.selected!;
+        open(
+          sel.item.provider === 'github' && sel.item.containerUrl
+            ? sel.item.containerUrl
+            : `https://www.youtube.com/watch?v=${encodeURIComponent(sel.video.id)}`,
+        );
+      },
+    }),
+    list({
+      id: 'mute.open',
+      keys: ['Shift+M'],
+      group: 'Triage',
+      description: 'Mute… (a repository, an author, bots, or this item)',
+      when: () => inbox.selected?.item.provider === 'github',
+      run: () => ui.openMute(),
     }),
     list({ id: 'search.focus', keys: ['/'], group: 'Navigation', description: 'Search', run: () => ui.focusSearch() }),
     list({

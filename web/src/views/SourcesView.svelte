@@ -9,6 +9,7 @@
   import { ago, formatNumber } from '../lib/format';
   import AddSourceForm from '../components/AddSourceForm.svelte';
   import EmptyState from '../components/EmptyState.svelte';
+  import GithubFeeds from '../components/GithubFeeds.svelte';
   import Icon from '../components/Icon.svelte';
 
   const detailId = $derived(router.route === 'source' ? Number(router.params.id) : null);
@@ -218,6 +219,7 @@
         </table>
       </div>
     {/if}
+    <GithubFeeds />
   {/if}
 </div>
 

@@ -1,5 +1,6 @@
 import { api } from '../api';
 import { inbox } from './inbox.svelte';
+import { feeds } from './feeds.svelte';
 import { labels } from './labels.svelte';
 import { settings } from './settings.svelte';
 import { sources } from './sources.svelte';
@@ -18,6 +19,7 @@ class AppStore {
       inbox.counts = b.counts;
       labels.set(b.labels);
       sources.set(b.sources);
+      feeds.set(b.feeds, b.mutes);
       sync.quota = b.quota;
       sync.status = b.sync;
       theme.adopt(b.settings.theme);

@@ -1,5 +1,6 @@
 import type { ServerEvent } from '../../../shared/types';
 import { app } from './stores/app.svelte';
+import { feeds } from './stores/feeds.svelte';
 import { inbox } from './stores/inbox.svelte';
 import { labels } from './stores/labels.svelte';
 import { settings } from './stores/settings.svelte';
@@ -14,6 +15,7 @@ const TYPES: ServerEvent['type'][] = [
   'sync.done',
   'quota.update',
   'sources.changed',
+  'feeds.changed',
   'labels.changed',
   'settings.changed',
   'capabilities.changed',
@@ -36,6 +38,9 @@ export function dispatch(e: ServerEvent) {
       break;
     case 'sources.changed':
       sources.set(e.sources);
+      break;
+    case 'feeds.changed':
+      feeds.set(e.feeds, e.mutes);
       break;
     case 'labels.changed':
       labels.set(e.labels);

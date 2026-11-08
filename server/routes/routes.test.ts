@@ -88,6 +88,8 @@ function stubRepo() {
     getSettings: () => settings,
     updateSettings: (p: Partial<StoredSettings>) => (settings = { ...settings, ...p }),
     listSources: () => sources,
+    listFeeds: () => [],
+    listMuteRules: () => [],
     getSourceRow: (id: number) => (sources.find((s) => s.id === id) ? ({ id } as never) : null),
     updateSource: (id: number, p: Partial<SourceDTO>) =>
       Object.assign(

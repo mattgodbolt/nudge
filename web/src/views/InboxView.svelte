@@ -15,6 +15,8 @@
   import { ago, pluralize } from '../lib/format';
   import InboxRow from '../components/InboxRow.svelte';
   import ThreadView from '../components/ThreadView.svelte';
+  import GithubThread from '../components/GithubThread.svelte';
+  import { feeds } from '../lib/stores/feeds.svelte';
   import VirtualList from '../components/VirtualList.svelte';
   import EmptyState from '../components/EmptyState.svelte';
   import AddSourceForm from '../components/AddSourceForm.svelte';
@@ -40,6 +42,13 @@
   const sourceId = $derived(router.query.source ? Number(router.query.source) : undefined);
   const videoId = $derived(router.query.video || undefined);
   const q = $derived(router.query.q || '');
+  const feedId = $derived(router.query.feed ? Number(router.query.feed) : undefined);
+  const feed = $derived(feedId !== undefined ? feeds.get(feedId) : undefined);
+  const kind = $derived<'pr' | 'issue' | undefined>(
+    router.query.kind === 'pr' ? 'pr' : router.query.kind === 'issue' ? 'issue' : undefined,
+  );
+  const AUDIENCES = ['outside', 'team', 'contributors', 'bots'] as const;
+  const audience = $derived(AUDIENCES.find((a) => a === router.query.who));
   const source = $derived(sourceId !== undefined ? sources.get(sourceId) : undefined);
 
   // URL is the source of truth for view + filters.
@@ -48,6 +57,9 @@
       sourceId: Number.isFinite(sourceId) ? sourceId : undefined,
       videoId,
       labelId,
+      feedId: Number.isFinite(feedId) ? feedId : undefined,
+      kind,
+      audience,
       q: q || undefined,
     };
     const c = router.query.c;
@@ -79,11 +91,14 @@
   const selected = $derived(inbox.selected);
   $effect(() => {
     const s = selected;
-    untrack(() => void thread.show(s?.comment.threadId ?? null, s?.comment.id));
+    // Only YouTube comments have a thread to fetch; GitHub items render from the list row alone.
+    const yt = (i: { item: { provider: string }; comment: { threadId: string } } | undefined) =>
+      i?.item.provider === 'youtube' ? i.comment.threadId : undefined;
+    untrack(() => void thread.show(s && yt(s) ? s.comment.threadId : null, s?.comment.id));
     if (s) {
       const i = inbox.selectedIndex;
-      thread.prefetch(inbox.items[i + 1]?.comment.threadId);
-      thread.prefetch(inbox.items[i - 1]?.comment.threadId);
+      thread.prefetch(yt(inbox.items[i + 1]));
+      thread.prefetch(yt(inbox.items[i - 1]));
     }
   });
   // On a phone the thread pane replaces the list (and hides the nav). With nothing left to show it would be a blank
@@ -147,7 +162,7 @@
 
   const tile = $derived(phone.value);
   const filtered = $derived(!!(sourceId || videoId || q));
-  const noSources = $derived(sources.loaded && sources.list.length === 0);
+  const noSources = $derived(sources.loaded && sources.list.length === 0 && feeds.loaded && feeds.list.length === 0);
   const filterVideoTitle = $derived(
     videoId ? (inbox.items.find((i) => i.video.id === videoId)?.video.title ?? videoId) : null,
   );
@@ -158,7 +173,9 @@
     <header>
       {#if label}<i class="ldot" style:background={labelColorVar(label.color)}></i>{/if}
       <h1>{title}</h1>
-      <span class="faint meta count">{pluralize(inbox.total || inbox.items.length, 'comment')}</span>
+      <span class="faint meta count"
+        >{pluralize(inbox.total || inbox.items.length, feeds.list.length > 0 ? 'item' : 'comment')}</span
+      >
       <span class="grow"></span>
     </header>
     <div class="filters">
@@ -169,12 +186,18 @@
           bind:value={searchText}
           oninput={onSearchInput}
           onkeydown={onSearchKey}
-          placeholder="Search comments"
-          aria-label="Search comments"
+          placeholder={feeds.list.length > 0 ? 'Search' : 'Search comments'}
+          aria-label="Search"
           data-testid="search"
         />
         {#if !searchText}<Kbd label="/" />{/if}
       </label>
+      {#if feed}<span class="chip" data-testid="feed-chip"
+          >{feed.owner}<button
+            aria-label="Clear feed filter"
+            onclick={() => router.setQuery({ feed: undefined, c: undefined }, { replace: false })}>×</button
+          ></span
+        >{/if}
       {#if source}<span class="chip"
           >{source.title ?? source.ytId}<button
             aria-label="Clear source filter"
@@ -188,6 +211,32 @@
           ></span
         >{/if}
     </div>
+
+    {#if feeds.list.length > 0}
+      <div class="ghfilters" role="group" aria-label="Filter GitHub items" data-testid="gh-filters">
+        {#each [['', 'All'], ['outside', 'Outside'], ['team', 'Team'], ['contributors', 'Contributors'], ['bots', 'Bots']] as [value, text] (value)}
+          <button
+            class="seg"
+            class:on={(audience ?? '') === value}
+            aria-pressed={(audience ?? '') === value}
+            data-testid="who-{value || 'all'}"
+            onclick={() => router.setQuery({ who: value || undefined, c: undefined }, { replace: false })}
+            >{text}</button
+          >
+        {/each}
+        <span class="sep"></span>
+        {#each [['', 'Any'], ['pr', 'PRs'], ['issue', 'Issues']] as [value, text] (value)}
+          <button
+            class="seg"
+            class:on={(kind ?? '') === value}
+            aria-pressed={(kind ?? '') === value}
+            data-testid="kind-{value || 'any'}"
+            onclick={() => router.setQuery({ kind: value || undefined, c: undefined }, { replace: false })}
+            >{text}</button
+          >
+        {/each}
+      </div>
+    {/if}
 
     {#if inbox.selectedIds.size > 0}
       <div class="bulk" role="toolbar" aria-label="Selected comments" data-testid="bulk-bar">
@@ -305,7 +354,11 @@
   <div class="detail">
     {#if selected}
       {#key selected.comment.threadId}
-        <ThreadView item={selected} now={sync.now} />
+        {#if selected.item.provider === 'github'}
+          <GithubThread item={selected} now={sync.now} />
+        {:else}
+          <ThreadView item={selected} now={sync.now} />
+        {/if}
       {/key}
     {:else}
       <EmptyState
@@ -530,6 +583,36 @@
     }
     .inbox.thread-open .list {
       display: none;
+    }
+  }
+  .ghfilters {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+    padding: 0 var(--s3) var(--s2);
+  }
+  .ghfilters .sep {
+    width: var(--s3);
+  }
+  .seg {
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text-muted);
+    border-radius: 999px;
+    padding: 2px 10px;
+    font-size: var(--fs-meta);
+    cursor: pointer;
+  }
+  .seg.on {
+    background: var(--accent-soft);
+    border-color: transparent;
+    color: var(--accent);
+  }
+  @media (max-width: 899px) {
+    .seg {
+      min-height: 36px;
+      padding: 4px 14px;
     }
   }
 </style>

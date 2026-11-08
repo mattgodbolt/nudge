@@ -8,6 +8,9 @@ export interface InboxFilters {
   sourceId?: number;
   videoId?: string;
   labelId?: number;
+  feedId?: number;
+  kind?: 'pr' | 'issue';
+  audience?: 'outside' | 'team' | 'contributors' | 'bots' | 'people';
   q?: string;
 }
 
@@ -129,6 +132,9 @@ export class InboxStore {
       filters.sourceId === this.filters.sourceId &&
       filters.videoId === this.filters.videoId &&
       filters.labelId === this.filters.labelId &&
+      filters.feedId === this.filters.feedId &&
+      filters.kind === this.filters.kind &&
+      filters.audience === this.filters.audience &&
       (filters.q ?? '') === (this.filters.q ?? '');
     if (same) {
       if (selectId && this.items.some((i) => i.comment.id === selectId)) this.selectedId = selectId;

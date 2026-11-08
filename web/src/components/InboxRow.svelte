@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { InboxItem } from '../../../shared/types';
+  import { authorChip, reasonChip, refLabel, statusChip } from '../lib/github';
   import { relativeTime } from '../lib/format';
   import { formatSnoozeTime, recentlyWoken } from '../lib/snooze';
   import { inbox } from '../lib/stores/inbox.svelte';
@@ -29,10 +30,20 @@
   } = $props();
 
   const c = $derived(item.comment);
+  const gh = $derived(item.item.provider === 'github' ? item.item : null);
+  const chips = $derived(gh ? [reasonChip(gh), authorChip(gh), statusChip(gh)].filter((x) => x !== null) : []);
   const unread = $derived(c.state === 'inbox' && !item.snoozedUntil);
   const woke = $derived(!item.snoozedUntil && c.state === 'inbox' && recentlyWoken(item.wokeAt, now));
   const stateLabel = $derived(
-    c.state === 'done' ? 'Done' : c.state === 'replied' ? 'Replied' : c.state === 'auto_replied' ? 'Answered' : '',
+    c.state === 'done'
+      ? 'Done'
+      : c.state === 'replied'
+        ? 'Replied'
+        : c.state === 'auto_replied'
+          ? 'Answered'
+          : c.state === 'resolved'
+            ? 'Closed'
+            : '',
   );
 </script>
 
@@ -55,6 +66,9 @@
     <div class="top">
       <span class="author truncate">{c.authorName}</span>
       {#if c.isOwn}<span class="badge">You</span>{/if}
+      {#each chips as chip (chip.text)}
+        <span class="badge chip {chip.tone}" title={chip.title} data-testid="row-chip">{chip.text}</span>
+      {/each}
       <span class="time faint">{relativeTime(c.publishedAt, now)}</span>
       {#if item.parent}<span class="reply faint truncate">↳ reply to {item.parent.authorName}</span>{/if}
       <span class="spacer"></span>
@@ -68,9 +82,19 @@
           data-testid="row-state">{stateLabel}</span
         >{/if}
     </div>
-    <div class="text">{c.textPlain}</div>
+    {#if gh}
+      <div class="text gh-title" data-testid="row-title">{gh.title}</div>
+    {:else}
+      <div class="text">{c.textPlain}</div>
+    {/if}
     <div class="video">
-      <span class="vtitle faint truncate">{item.video.title}</span>
+      <span class="vtitle faint truncate"
+        >{#if gh}<span class="kind" data-testid="row-kind">{gh.kind === 'pr' ? 'PR' : 'Issue'}</span>
+          {refLabel(gh)}{:else}{item.video.title}{/if}</span
+      >
+      {#if gh?.github}
+        {#each gh.github.labels.slice(0, 3) as name (name)}<span class="ghlabel">{name}</span>{/each}
+      {/if}
       <LabelChips ids={item.labels} />
     </div>
   </div>
@@ -122,7 +146,7 @@
         testid="row-done"
       />
     {/if}
-    {#if c.state === 'inbox'}
+    {#if c.state === 'inbox' && !gh}
       <ActionButton
         id="triage.replied"
         label="Mark replied"
@@ -322,5 +346,33 @@
     .quick :global(.btn.action .lbl) {
       font-size: var(--fs-label);
     }
+  }
+  .gh-title {
+    font-weight: 500;
+  }
+  .chip.accent {
+    background: color-mix(in srgb, var(--accent) 16%, transparent);
+    color: var(--accent);
+  }
+  .chip.muted {
+    opacity: 0.75;
+  }
+  .kind {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    padding: 0 5px;
+    margin-right: 4px;
+    border: 1px solid var(--border-strong);
+    border-radius: 4px;
+    text-transform: uppercase;
+  }
+  .ghlabel {
+    font-size: var(--fs-meta);
+    color: var(--text-muted);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 0 7px;
+    white-space: nowrap;
   }
 </style>

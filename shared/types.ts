@@ -307,6 +307,8 @@ export interface Bootstrap {
   sources: SourceDTO[];
   quota: QuotaDTO;
   sync: SyncStatus;
+  feeds: FeedDTO[];
+  mutes: MuteRuleDTO[];
 }
 export type ServerEvent =
   | {

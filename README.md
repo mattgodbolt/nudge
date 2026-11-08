@@ -138,6 +138,30 @@ deploy/install-cron.sh                  # auto-update + nightly backup
   with `ssh -L 4517:127.0.0.1:4517 <box>` and open `http://127.0.0.1:4517/settings` (the tokens then live in the
   database), or connect on your laptop and copy the database across.
 
+## GitHub
+
+Besides YouTube comments, Nudge can collect every new pull request and issue in a GitHub user's or organisation's
+repositories, so you can triage them with the same keys (`e` done, `b` snooze, `l` label).
+
+- **Add a feed:** Sources > GitHub, enter a user or organisation (for example `compiler-explorer`). It starts "from now
+  on" by default; you can also import the last two weeks or everything open. Public repositories work with no token,
+  at GitHub's low anonymous rate limit.
+- **Token (optional):** Settings > GitHub. Paste a **read-only** token (a fine-grained token with read access to pull
+  requests and issues, or a classic one with no scopes for public repositories). It lives in Nudge's database like the
+  YouTube key and is never sent back to the browser. **Test** shows who it belongs to and warns if it can do more than
+  read. Nudge never writes to GitHub.
+- **My accounts:** Settings > GitHub. Items opened by these logins (yours, and any agent account that works for you)
+  never reach the inbox.
+- **Who opened it:** every row says whether the author is on the team, a past contributor, a first-timer, an outsider
+  or a bot, and the filter bar above the list narrows to any of those, or to just PRs or just issues.
+- **Closing and coming back:** closing or merging on GitHub moves an item to Done. A Done item returns to the top of
+  the inbox when someone other than you comments on it while it is open, and when it is reopened.
+- **Mute:** `Shift+M` mutes a repository, an author, all bots, or one item. Muted items go to All (still searchable),
+  never reopen, and never notify. Rules are listed, and removable, under Sources > GitHub; the toast after muting
+  offers an undo.
+- **Polling:** each feed is checked about every five minutes (and on `Shift+N`), independently of YouTube's quota.
+  Notifications work for GitHub arrivals too.
+
 ## Install on your phone and get notifications
 
 Nudge is an installable web app (PWA) that can send Web Push notifications, with no native app involved.

@@ -82,6 +82,8 @@ export function registerApiRoutes(app: FastifyInstance, deps: AppDeps): void {
     sources: repo.listSources(),
     quota: quota.snapshot(),
     sync: engine.status(),
+    feeds: repo.listFeeds(),
+    mutes: repo.listMuteRules(),
   }));
 
   app.get('/api/inbox', async (req) => {

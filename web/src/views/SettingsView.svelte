@@ -24,6 +24,10 @@
   let keyInput = $state('');
   let keyBusy = $state(false);
   let keyResult = $state<{ ok: boolean; message: string } | null>(null);
+  let ghToken = $state('');
+  let ghBusy = $state(false);
+  let ghResult = $state<{ ok: boolean; message: string } | null>(null);
+  let ghAccount = $state('');
   let chanInput = $state('');
   let chanError = $state('');
   let chanBusy = $state(false);
@@ -49,6 +53,40 @@
   }
   async function removeKey() {
     if (await settings.save({ apiKey: null })) toasts.push({ message: 'Stored API key removed', timeoutMs: 2500 });
+  }
+
+  async function testGithub() {
+    ghBusy = true;
+    ghResult = null;
+    try {
+      ghResult = await api.testGithub(ghToken.trim() || undefined);
+    } catch (e) {
+      ghResult = { ok: false, message: e instanceof Error ? e.message : 'Test failed' };
+    } finally {
+      ghBusy = false;
+    }
+  }
+  async function saveGithubToken() {
+    if (!ghToken.trim()) return;
+    if (await settings.save({ github: { token: ghToken.trim() } })) {
+      ghToken = '';
+      ghResult = null;
+      toasts.push({ message: 'GitHub token saved', kind: 'success', timeoutMs: 2500 });
+    }
+  }
+  async function removeGithubToken() {
+    if (await settings.save({ github: { token: null } }))
+      toasts.push({ message: 'GitHub token removed', timeoutMs: 2500 });
+  }
+  async function addAccount(e: Event) {
+    e.preventDefault();
+    const login = ghAccount.trim();
+    const mine = s?.github.myAccounts ?? [];
+    if (!login || mine.some((a) => a.toLowerCase() === login.toLowerCase())) return;
+    if (await settings.save({ github: { myAccounts: [...mine, login] } })) ghAccount = '';
+  }
+  async function removeAccount(login: string) {
+    await settings.save({ github: { myAccounts: (s?.github.myAccounts ?? []).filter((a) => a !== login) } });
   }
 
   async function addChannel(e: Event) {
@@ -386,6 +424,64 @@
               : ''}.{/if}
         </p>
       {/if}
+    </section>
+
+    <section class="panel sec" data-testid="settings-github">
+      <h2>GitHub</h2>
+      <p class="muted meta">
+        {#if s.github.configured}
+          Using a token ending <code>…{s.github.last4}</code>, stored in Nudge's database.
+        {:else}
+          No token: public repositories still work, with a low rate limit. For private repositories or a higher limit,
+          create a <strong>read-only</strong> token at GitHub &rsaquo; Settings &rsaquo; Developer settings and paste it here.
+          Nudge never writes to GitHub.
+        {/if}
+      </p>
+      <div class="line">
+        <input
+          class="input mono grow"
+          type="password"
+          placeholder="Paste a token to test or replace…"
+          bind:value={ghToken}
+          autocomplete="off"
+          aria-label="GitHub token"
+          data-testid="github-token"
+        />
+        <button class="btn" onclick={testGithub} disabled={ghBusy || (!ghToken.trim() && !s.github.configured)}
+          >{ghBusy ? 'Testing…' : 'Test'}</button
+        >
+        <button class="btn primary" onclick={saveGithubToken} disabled={!ghToken.trim()} data-testid="github-save"
+          >Save</button
+        >
+        {#if s.github.configured}<button class="btn danger" onclick={removeGithubToken}>Remove</button>{/if}
+      </div>
+      {#if ghResult}<p class="meta" class:ok={ghResult.ok} class:bad={!ghResult.ok} data-testid="github-result">
+          {ghResult.message}
+        </p>{/if}
+      <h3>My accounts</h3>
+      <p class="muted meta">
+        Pull requests and issues opened by these logins are yours, so they never land in the inbox. Add your own account
+        and any account an agent uses on your behalf.
+      </p>
+      <div class="chips" data-testid="github-accounts">
+        {#each s.github.myAccounts as login (login)}
+          <span class="chip"
+            >{login}<button aria-label="Remove {login}" onclick={() => void removeAccount(login)}>×</button></span
+          >
+        {/each}
+      </div>
+      <form class="line" onsubmit={addAccount}>
+        <input
+          class="input grow"
+          bind:value={ghAccount}
+          placeholder="GitHub login, e.g. mattgodbolt"
+          aria-label="GitHub login"
+          data-testid="github-account"
+          autocomplete="off"
+          spellcheck="false"
+        />
+        <button class="btn" type="submit" disabled={!ghAccount.trim()}>Add account</button>
+      </form>
     </section>
 
     <section class="panel sec" data-testid="settings-notifications">
@@ -736,5 +832,10 @@
     color: var(--accent);
     position: relative;
     z-index: 1;
+  }
+  h3 {
+    margin: var(--s2) 0 0;
+    font-size: 13px;
+    color: var(--text-muted);
   }
 </style>

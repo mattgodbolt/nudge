@@ -32,6 +32,8 @@ class UiStore {
   threadScroll = $state({ delta: 0, tick: 0 });
   /** Comment ids the open snooze menu will act on (null = closed). */
   snoozeFor = $state<string[] | null>(null);
+  /** The GitHub item the mute menu is open for (null = closed). */
+  muteFor = $state<string | null>(null);
   /** The label picker: 'apply' toggles labels on `ids`, 'goto' jumps to a label folder. */
   labelPicker = $state<{ mode: 'apply'; ids: string[] } | { mode: 'goto' } | null>(null);
 
@@ -61,6 +63,14 @@ class UiStore {
     this.helpOpen = false;
     this.paletteOpen = false;
     this.snoozeFor = ids;
+  }
+  /** Open the mute menu for a GitHub item (default: the cursor row). Ignored for other providers. */
+  openMute(id = inbox.selectedId) {
+    const item = id ? inbox.items.find((i) => i.comment.id === id) : undefined;
+    if (!item || item.item.provider !== 'github') return;
+    this.helpOpen = false;
+    this.paletteOpen = false;
+    this.muteFor = item.comment.id;
   }
   openLabelPicker(ids = inbox.targetIds()) {
     if (ids.length === 0) return;

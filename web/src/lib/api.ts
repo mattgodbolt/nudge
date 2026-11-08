@@ -82,7 +82,7 @@ export const api = {
   inbox: (q: InboxQuery) =>
     request<InboxPage>(
       'GET',
-      `/api/inbox${qs({ view: q.view, sourceId: q.sourceId, videoId: q.videoId, labelId: q.labelId, q: q.q, cursor: q.cursor, limit: q.limit })}`,
+      `/api/inbox${qs({ view: q.view, sourceId: q.sourceId, videoId: q.videoId, labelId: q.labelId, feedId: q.feedId, kind: q.kind, audience: q.audience, q: q.q, cursor: q.cursor, limit: q.limit })}`,
     ),
   thread: (id: string, focus?: string) =>
     request<T.ThreadDetail>('GET', `/api/threads/${encodeURIComponent(id)}${qs({ focus })}`),
@@ -137,5 +137,17 @@ export const api = {
     request<T.PushStateDTO>('POST', '/api/push/subscribe', { subscription, prefs, label }),
   pushUnsubscribe: (endpoint: string) => request<void>('POST', '/api/push/unsubscribe', { endpoint }),
   pushTest: (endpoint: string) => request<{ result: 'ok' | 'gone' | 'error' }>('POST', '/api/push/test', { endpoint }),
+  feeds: () => request<{ feeds: T.FeedDTO[]; mutes: T.MuteRuleDTO[] }>('GET', '/api/feeds'),
+  addFeed: (f: { owner: string; prs?: boolean; issues?: boolean; importMode?: T.ImportMode }) =>
+    request<T.FeedDTO>('POST', '/api/feeds', f),
+  patchFeed: (id: number, p: Partial<Pick<T.FeedDTO, 'enabled' | 'prs' | 'issues'>>) =>
+    request<T.FeedDTO>('PATCH', `/api/feeds/${id}`, p),
+  deleteFeed: (id: number) => request<void>('DELETE', `/api/feeds/${id}`),
+  pollFeed: (id: number) => request<T.FeedDTO>('POST', `/api/feeds/${id}/poll`),
+  addMute: (kind: T.MuteKind, value?: string) =>
+    request<{ rule: T.MuteRuleDTO; triage: T.TriageResult | null }>('POST', '/api/mutes', { kind, value }),
+  deleteMute: (id: number) => request<void>('DELETE', `/api/mutes/${id}`),
+  testGithub: (token?: string) =>
+    request<{ ok: boolean; message: string; login?: string }>('POST', '/api/settings/test-github', { token }),
   testKey: (apiKey?: string) => request<{ ok: boolean; message: string }>('POST', '/api/settings/test-key', { apiKey }),
 };

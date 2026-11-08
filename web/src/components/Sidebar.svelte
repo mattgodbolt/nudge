@@ -2,6 +2,7 @@
   import { tick } from 'svelte';
   import { router, type RouteName } from '../lib/router.svelte';
   import { inbox } from '../lib/stores/inbox.svelte';
+  import { feeds } from '../lib/stores/feeds.svelte';
   import { labels, labelColorVar } from '../lib/stores/labels.svelte';
   import { sources } from '../lib/stores/sources.svelte';
   import { ui } from '../lib/stores/ui.svelte';
@@ -167,6 +168,29 @@
       {:else}
         <div class="faint meta pad">No sources yet</div>
       {/each}
+      {#if feeds.list.length > 0}
+        <div class="label head">GitHub</div>
+        {#each feeds.list as f (f.id)}
+          {@const n = inbox.counts.byFeed[f.id] ?? f.inboxCount}
+          <a
+            class="item sub"
+            class:active={router.route === 'inbox' && router.query.feed === String(f.id)}
+            class:off={!f.enabled}
+            href="/inbox?feed={f.id}"
+            data-testid="sidebar-feed"
+            onclick={(e) => {
+              e.preventDefault();
+              router.navigate('inbox', { feed: String(f.id) });
+              ui.pane = 'list';
+            }}
+          >
+            <Icon name="list" size={14} />
+            <span class="grow truncate">{f.owner}</span>
+            {#if f.lastError}<span class="warn" title={f.lastError} data-testid="feed-error">!</span>{/if}
+            {#if n > 0}<span class="count" data-testid="sidebar-feed-count">{formatNumber(n)}</span>{/if}
+          </a>
+        {/each}
+      {/if}
     </div>
   </div>
 
@@ -455,5 +479,9 @@
       border-color: var(--text);
       box-shadow: none;
     }
+  }
+  .warn {
+    color: var(--warn);
+    font-weight: 700;
   }
 </style>

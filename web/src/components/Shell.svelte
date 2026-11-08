@@ -11,6 +11,7 @@
   import CommandPalette from './CommandPalette.svelte';
   import HelpOverlay from './HelpOverlay.svelte';
   import SnoozeMenu from './SnoozeMenu.svelte';
+  import MuteMenu from './MuteMenu.svelte';
   import LabelPicker from './LabelPicker.svelte';
   import Icon from './Icon.svelte';
   import TipLayer from './TipLayer.svelte';
@@ -57,6 +58,7 @@
 <CommandPalette />
 <HelpOverlay />
 <SnoozeMenu />
+<MuteMenu />
 <LabelPicker />
 <TipLayer />
 {#if keymap.pendingChord}
