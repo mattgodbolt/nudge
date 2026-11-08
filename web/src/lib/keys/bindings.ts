@@ -1,6 +1,7 @@
 import type { Binding } from './keymap.svelte';
 import { resync } from '../resync.svelte';
 import { router } from '../router.svelte';
+import { assistant } from '../stores/assistant.svelte';
 import { inbox } from '../stores/inbox.svelte';
 import { sync } from '../stores/sync.svelte';
 import { theme } from '../stores/theme.svelte';
@@ -30,6 +31,14 @@ export function appBindings(): Binding[] {
         ui.helpOpen = false;
         ui.paletteOpen = !ui.paletteOpen;
       },
+    },
+    {
+      id: 'assistant.open',
+      keys: ['c'],
+      scope: 'global',
+      group: 'App',
+      description: 'Tell Nudge… (add a todo, snooze this, …)',
+      run: () => assistant.show(),
     },
     {
       id: 'help.open',

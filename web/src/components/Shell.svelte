@@ -12,6 +12,8 @@
   import HelpOverlay from './HelpOverlay.svelte';
   import SnoozeMenu from './SnoozeMenu.svelte';
   import MuteMenu from './MuteMenu.svelte';
+  import Assistant from './Assistant.svelte';
+  import { assistant } from '../lib/stores/assistant.svelte';
   import LabelPicker from './LabelPicker.svelte';
   import Icon from './Icon.svelte';
   import TipLayer from './TipLayer.svelte';
@@ -59,6 +61,18 @@
 <HelpOverlay />
 <SnoozeMenu />
 <MuteMenu />
+<Assistant />
+{#if !assistant.open && !hideNavOnMobile}
+  <button
+    type="button"
+    class="fab"
+    data-testid="assistant-fab"
+    aria-label="Tell Nudge"
+    onclick={() => assistant.show()}
+  >
+    <Icon name="mic" size={26} />
+  </button>
+{/if}
 <LabelPicker />
 <TipLayer />
 {#if keymap.pendingChord}
@@ -111,6 +125,10 @@
     background: color-mix(in srgb, var(--warn) 12%, var(--bg));
     color: var(--text);
   }
+  /* Phone only: the one-press way in. Desktop uses `c` and the sidebar button. */
+  .fab {
+    display: none;
+  }
   .chord {
     position: fixed;
     right: var(--s4);
@@ -124,6 +142,23 @@
     font-size: var(--fs-meta);
   }
   @media (max-width: 899px) {
+    .fab {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: fixed;
+      right: var(--s4);
+      bottom: calc(var(--s4) + env(safe-area-inset-bottom));
+      width: 56px;
+      height: 56px;
+      border-radius: 50%;
+      border: 0;
+      background: var(--accent);
+      color: var(--on-accent, #fff);
+      box-shadow: var(--shadow-pop);
+      z-index: 60;
+      cursor: pointer;
+    }
     .shell {
       flex-direction: column;
     }

@@ -138,6 +138,19 @@ deploy/install-cron.sh                  # auto-update + nightly backup
   with `ssh -L 4517:127.0.0.1:4517 <box>` and open `http://127.0.0.1:4517/settings` (the tokens then live in the
   database), or connect on your laptop and copy the database across.
 
+## Tell Nudge (todos and voice commands)
+
+Press `c` (or the mic button on your phone) and say or type a command: "remind me in 3 days to ring the plumber", or,
+with an item selected, "snooze this till Monday" / "done". Nudge sends the text to a small Anthropic model, which can
+only do three things: add a todo, snooze the selected item, or mark it done. Each shows a toast with Undo. If the
+assistant is off or fails, your words are saved as a plain todo, so nothing you say is lost.
+
+- Add an Anthropic API key in **Settings → Assistant** (stored in the database, like the other keys; use a key with a
+  small spend limit). Without one, `c` just saves a todo.
+- Dictation uses the browser's built-in speech recognition (Chrome, Android, Safari), which Chrome sends to Google's
+  servers. The phone keyboard's own mic button works in the same box if yours has none.
+- A todo with a due time stays hidden (Snoozed) until then, then comes back with a notification.
+
 ## GitHub
 
 Besides YouTube comments, Nudge can collect every new pull request and issue in a GitHub user's or organisation's

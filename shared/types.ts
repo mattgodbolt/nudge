@@ -57,8 +57,8 @@ export interface VideoDTO {
   lastError: string | null;
   inboxCount: number;
 }
-export type ItemProvider = 'youtube' | 'github';
-export type ItemKind = 'comment' | 'pr' | 'issue';
+export type ItemProvider = 'youtube' | 'github' | 'todo';
+export type ItemKind = 'comment' | 'pr' | 'issue' | 'todo';
 /** GitHub's relationship between the author and the repository (the REST `author_association` field). */
 export type GithubAssociation =
   'OWNER' | 'MEMBER' | 'COLLABORATOR' | 'CONTRIBUTOR' | 'FIRST_TIME_CONTRIBUTOR' | 'FIRST_TIMER' | 'MANNEQUIN' | 'NONE';
@@ -83,6 +83,8 @@ export interface ItemDTO {
   reason: string | null;
   /** Covered by a mute rule or muted on its own: it never reopens or notifies. */
   muted: boolean;
+  /** A todo: what was said (verbatim). The notes are the item body. */
+  todo?: { raw: string };
   github?: {
     owner: string;
     repo: string;
@@ -184,6 +186,24 @@ export interface GithubSettingsDTO {
   /** Logins that are "me" (my own account and any agent accounts): their items never reach the inbox. */
   myAccounts: string[];
 }
+/** What the assistant did for one command: enough to describe it and to undo it. */
+export type AssistantOutcome =
+  | { type: 'add_todo'; id: string; title: string; due: string | null }
+  | { type: 'snooze'; id: string; until: string; undoActionId: number | null }
+  | { type: 'done'; id: string; undoActionId: number | null };
+export interface AssistantResponse {
+  outcomes: AssistantOutcome[];
+  /** What the assistant said back (e.g. why it did nothing). */
+  reply: string;
+  /** Set when the words were saved as a plain todo because the assistant was off or failed. */
+  fallback: 'off' | 'failed' | null;
+  error: string | null;
+}
+export interface LlmSettingsDTO {
+  configured: boolean;
+  last4: string | null;
+  model: string;
+}
 export interface StatsTotals {
   videos: number;
   /** Videos whose duration/likes are known; fewer than `videos` until the one-off backfill has run. */
@@ -272,6 +292,7 @@ export interface SettingsDTO {
   /** Commit of the running server (short SHA), or 'dev'. */
   version: string;
   github: GithubSettingsDTO;
+  llm: LlmSettingsDTO;
   google: GoogleAuthDTO;
 }
 export interface Capabilities {

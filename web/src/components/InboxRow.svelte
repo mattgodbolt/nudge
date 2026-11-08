@@ -31,6 +31,7 @@
 
   const c = $derived(item.comment);
   const gh = $derived(item.item.provider === 'github' ? item.item : null);
+  const todo = $derived(item.item.provider === 'todo' ? item.item : null);
   const chips = $derived(gh ? [reasonChip(gh), authorChip(gh), statusChip(gh)].filter((x) => x !== null) : []);
   const unread = $derived(c.state === 'inbox' && !item.snoozedUntil);
   const woke = $derived(!item.snoozedUntil && c.state === 'inbox' && recentlyWoken(item.wokeAt, now));
@@ -61,10 +62,10 @@
   onkeydown={() => {}}
 >
   <span class="dot" class:on={unread} title={unread ? 'Needs attention' : c.state.replace('_', ' ')}></span>
-  <Avatar url={c.authorAvatarUrl} name={c.authorName} />
+  <Avatar url={c.authorAvatarUrl} name={todo ? 'Todo' : c.authorName} />
   <div class="body">
     <div class="top">
-      <span class="author truncate">{c.authorName}</span>
+      <span class="author truncate">{todo ? 'Todo' : c.authorName}</span>
       {#if c.isOwn}<span class="badge">You</span>{/if}
       {#each chips as chip (chip.text)}
         <span class="badge chip {chip.tone}" title={chip.title} data-testid="row-chip">{chip.text}</span>
@@ -82,14 +83,16 @@
           data-testid="row-state">{stateLabel}</span
         >{/if}
     </div>
-    {#if gh}
-      <div class="text gh-title" data-testid="row-title">{gh.title}</div>
+    {#if gh || todo}
+      <div class="text gh-title" data-testid="row-title">{(gh ?? todo)?.title}</div>
     {:else}
       <div class="text">{c.textPlain}</div>
     {/if}
     <div class="video">
       <span class="vtitle faint truncate"
-        >{#if gh}<span class="kind" data-testid="row-kind">{gh.kind === 'pr' ? 'PR' : 'Issue'}</span>
+        >{#if todo}{c.textPlain || 'Todo'}{:else if gh}<span class="kind" data-testid="row-kind"
+            >{gh.kind === 'pr' ? 'PR' : 'Issue'}</span
+          >
           {refLabel(gh)}{:else}{item.video.title}{/if}</span
       >
       {#if gh?.github}

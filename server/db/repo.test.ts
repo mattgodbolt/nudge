@@ -101,6 +101,7 @@ describe('settings', () => {
       backfillDays: 14,
       theme: 'system',
       github: { token: null, myAccounts: [] },
+      llm: { apiKey: null, model: 'claude-haiku-5-5' },
     });
     const s = repo.updateSettings({ apiKey: 'k', theme: 'dark', pollEnabled: false });
     expect(s).toMatchObject({ apiKey: 'k', theme: 'dark', pollEnabled: false, dailyQuotaBudget: 9000 });

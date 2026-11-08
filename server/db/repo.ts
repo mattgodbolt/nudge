@@ -37,6 +37,7 @@ import type {
 } from '../contracts.js';
 import { openDb, type Db } from './db.js';
 import { createFeedsRepo } from './feeds.js';
+import { createTodosRepo } from './todos.js';
 import { htmlToPlain } from './text.js';
 import { tierFor, unitsPerDay } from './tiers-lite.js';
 
@@ -58,6 +59,7 @@ const DEFAULT_SETTINGS: StoredSettings = {
   backfillDays: 14,
   theme: 'system',
   github: { token: null, myAccounts: [] },
+  llm: { apiKey: null, model: 'claude-haiku-5-5' },
 };
 
 export type UndoErrorCode = 'not_found' | 'already_undone' | 'expired';
@@ -1531,10 +1533,12 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
     };
   }
 
+  const todos = createTodosRepo({ db, now });
   const { itemFromRow: _itemFromRow, ...feedMethods } = feeds;
 
   return {
     ...feedMethods,
+    ...todos,
     close: () => void db.close(),
     listGoogleAccounts,
     upsertGoogleAccount,

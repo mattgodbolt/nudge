@@ -55,6 +55,33 @@
     if (await settings.save({ apiKey: null })) toasts.push({ message: 'Stored API key removed', timeoutMs: 2500 });
   }
 
+  let llmKey = $state('');
+  let llmBusy = $state(false);
+  let llmResult = $state<{ ok: boolean; message: string } | null>(null);
+  async function testLlm() {
+    llmBusy = true;
+    llmResult = null;
+    try {
+      llmResult = await api.testLlm(llmKey.trim() || undefined);
+    } catch (e) {
+      llmResult = { ok: false, message: e instanceof Error ? e.message : 'Test failed' };
+    } finally {
+      llmBusy = false;
+    }
+  }
+  async function saveLlmKey() {
+    if (!llmKey.trim()) return;
+    if (await settings.save({ llm: { apiKey: llmKey.trim() } })) {
+      llmKey = '';
+      llmResult = null;
+      toasts.push({ message: 'Anthropic key saved', kind: 'success', timeoutMs: 2500 });
+    }
+  }
+  async function removeLlmKey() {
+    if (await settings.save({ llm: { apiKey: null } }))
+      toasts.push({ message: 'Anthropic key removed', timeoutMs: 2500 });
+  }
+
   async function testGithub() {
     ghBusy = true;
     ghResult = null;
@@ -424,6 +451,38 @@
               : ''}.{/if}
         </p>
       {/if}
+    </section>
+
+    <section class="panel sec" data-testid="settings-llm">
+      <h2>Assistant</h2>
+      <p class="muted meta">
+        {#if s.llm.configured}
+          Using an Anthropic key ending <code>…{s.llm.last4}</code> ({s.llm.model}), stored in Nudge's database.
+        {:else}
+          Press <kbd class="mono">c</kbd> (or the mic button on your phone) and say things like “remind me in 3 days to ring
+          the plumber” or “snooze this till Monday”. This needs an Anthropic API key, ideally one with a small spend limit.
+          Without one, what you say is saved as a plain todo.
+        {/if}
+      </p>
+      <div class="line">
+        <input
+          class="input mono grow"
+          type="password"
+          placeholder="Paste a key to test or replace…"
+          bind:value={llmKey}
+          autocomplete="off"
+          aria-label="Anthropic API key"
+          data-testid="llm-key"
+        />
+        <button class="btn" onclick={testLlm} disabled={llmBusy || (!llmKey.trim() && !s.llm.configured)}
+          >{llmBusy ? 'Testing…' : 'Test'}</button
+        >
+        <button class="btn primary" onclick={saveLlmKey} disabled={!llmKey.trim()} data-testid="llm-save">Save</button>
+        {#if s.llm.configured}<button class="btn danger" onclick={removeLlmKey}>Remove</button>{/if}
+      </div>
+      {#if llmResult}<p class="meta" class:ok={llmResult.ok} class:bad={!llmResult.ok} data-testid="llm-result">
+          {llmResult.message}
+        </p>{/if}
     </section>
 
     <section class="panel sec" data-testid="settings-github">

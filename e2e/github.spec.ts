@@ -180,7 +180,7 @@ test('Settings: the token is masked, "my accounts" can be added and removed, and
 
   await page.goto('/settings');
   await page.getByTestId('github-token').fill('ghp_demo_token_value_1234');
-  await page.getByRole('button', { name: 'Test', exact: true }).nth(1).click();
+  await card.getByRole('button', { name: 'Test', exact: true }).click();
   await expect(page.getByTestId('github-result')).toContainText('Signed in as demo-owner');
   await page.getByTestId('github-save').click();
   await expect(card).toContainText('…1234');

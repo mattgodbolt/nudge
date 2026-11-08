@@ -129,6 +129,7 @@ export interface StoredSettings {
   theme: 'system' | 'light' | 'dark';
   /** GitHub: a read-only token (never sent to the browser) and the logins that are me. */
   github: { token: string | null; myAccounts: string[] };
+  llm: { apiKey: string | null; model: string };
 }
 export interface NewFeed {
   owner: string;
@@ -318,6 +319,10 @@ export interface Repo {
   deleteMuteRule(id: number): boolean;
   /** The provider-neutral card for an item of any provider. */
   getItem(id: string): { item: ItemDTO; state: CommentState; occurredAt: string; bodyPlain: string } | null;
+  /** Create a todo straight into the inbox (or snoozed until `dueAt`). Returns its id. */
+  addTodo(input: { title: string; notes: string; raw: string; dueAt: string | null }): string;
+  /** Remove a todo outright (undoing its creation). Returns whether one was removed. */
+  deleteTodo(id: string): boolean;
   githubItemMeta(ids: string[]): Map<string, { state: CommentState; sourceState: string | null; comments: number }>;
   upsertGithubItems(feedId: number, ups: GithubItemUpsert[]): UpsertGithubResult;
 
@@ -555,6 +560,38 @@ export interface GithubSearchPage {
   rate: GithubRate | null;
 }
 /** Everything the poller needs from GitHub; the real one is a thin fetch wrapper, tests and demo mode fake it. */
+/** One thing the assistant decided to do. `due`/`until` are ISO 8601 instants (null: none given). */
+export type AssistantAction =
+  | { type: 'add_todo'; title: string; notes: string; due: string | null }
+  | { type: 'snooze'; until: string }
+  | { type: 'done' };
+export interface AssistantResult {
+  actions: AssistantAction[];
+  /** What the assistant said back, if anything (e.g. why it did nothing). */
+  reply: string;
+}
+export class LlmError extends Error {
+  constructor(
+    message: string,
+    public status: number | null = null,
+  ) {
+    super(message);
+    this.name = 'LlmError';
+  }
+}
+export interface LlmClient {
+  /** Check a key with a tiny call. */
+  test(apiKey: string, model: string): Promise<{ ok: boolean; message: string }>;
+  /**
+   * Turn a spoken or typed command into actions. `now` is the user's local time with its UTC offset, so "Friday" and
+   * "in 3 days" resolve in their own time zone. `selected` is the item the user has open, if any: "this" means it.
+   */
+  command(
+    input: { text: string; now: string; selected: { title: string | null; kind: string } | null },
+    apiKey: string,
+    model: string,
+  ): Promise<AssistantResult>;
+}
 export interface GithubClient {
   /** Who owns this token (GET /user) and the scopes it carries, for the Settings "Test" button. */
   whoami(token: string): Promise<{ login: string; scopes: string[] | null }>;
@@ -591,6 +628,8 @@ export interface AppDeps {
   /** GitHub feeds (absent in tests that do not exercise them). */
   github?: GithubPoller;
   githubClient?: GithubClient;
+  /** The assistant (absent in tests that do not exercise it). */
+  llm?: LlmClient;
   resolveApiKey(): { key: string | null; source: 'env' | 'settings' | 'file' | null };
   demo: boolean;
   /** Short commit SHA of this server, shown in Settings. */

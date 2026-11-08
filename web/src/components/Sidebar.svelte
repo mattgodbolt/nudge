@@ -6,6 +6,7 @@
   import { labels, labelColorVar } from '../lib/stores/labels.svelte';
   import { sources } from '../lib/stores/sources.svelte';
   import { ui } from '../lib/stores/ui.svelte';
+  import { assistant } from '../lib/stores/assistant.svelte';
   import { phone } from '../lib/phone.svelte';
   import { resync } from '../lib/resync.svelte';
   import { formatNumber } from '../lib/format';
@@ -98,6 +99,10 @@
     aria-label="Jump to… (search commands and views)"
   >
     <Icon name="search" size={phone.value ? 22 : 14} /><span class="grow">Jump to…</span><Kbd keys="$mod+k" />
+  </button>
+
+  <button class="btn ghost search tell" data-testid="tell-nudge" onclick={() => assistant.show()}>
+    <Icon name="mic" size={14} /><span class="grow">Tell Nudge…</span><Kbd label="c" />
   </button>
 
   <div class="nav" bind:this={navEl}>
@@ -354,6 +359,9 @@
   /* Phone: row 1 = brand + big icon buttons (search, sources, stats, settings); row 2 = a swipeable strip
      of every view (Inbox, Snoozed, Done, All, each label, each source) as 44px+ chips. */
   @media (max-width: 899px) {
+    .tell {
+      display: none;
+    }
     .sidebar {
       width: 100%;
       height: auto;

@@ -37,6 +37,8 @@ export interface SettingsUpdate {
   theme?: 'system' | 'light' | 'dark';
   /** GitHub: the token (null removes it) and which logins are me. */
   github?: { token?: string | null; myAccounts?: string[] };
+  /** The assistant (Anthropic): API key (null removes it) and model. */
+  llm?: { apiKey?: string | null; model?: string };
   /** Google OAuth client: pasted JSON from the console, explicit fields, or null to remove. */
   googleClient?: { json: string } | { clientId: string; clientSecret: string } | null;
 }

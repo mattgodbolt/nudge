@@ -58,6 +58,24 @@ function parseGithubUpdate(v: unknown): NonNullable<SettingsUpdate['github']> {
   return out;
 }
 
+/** The assistant's settings: an opaque key (null removes it) and a model id. */
+function parseLlmUpdate(v: unknown): NonNullable<SettingsUpdate['llm']> {
+  const g = asObject(v);
+  const out: NonNullable<SettingsUpdate['llm']> = {};
+  if (g.apiKey !== undefined) {
+    if (g.apiKey !== null && (typeof g.apiKey !== 'string' || g.apiKey.length > 300 || /\s/.test(g.apiKey.trim()))) {
+      throw bad('"llm.apiKey" must be a key string or null');
+    }
+    out.apiKey = g.apiKey as string | null;
+  }
+  if (g.model !== undefined) {
+    if (typeof g.model !== 'string' || !/^[\w.:-]{3,80}$/.test(g.model.trim()))
+      throw bad('"llm.model" must be a model id');
+    out.model = g.model.trim();
+  }
+  return out;
+}
+
 function idList(v: unknown, name: string, max: number): string[] {
   if (!Array.isArray(v) || v.length === 0 || v.length > max || !v.every((i) => typeof i === 'string')) {
     throw bad(`"${name}" must be a non-empty array of strings (max ${max})`);
@@ -409,15 +427,22 @@ export function registerApiRoutes(app: FastifyInstance, deps: AppDeps): void {
     if (b.backfillDays !== undefined) u.backfillDays = int(b.backfillDays, 'backfillDays', { min: 0, max: 36500 });
     if (b.theme !== undefined) u.theme = oneOf(b.theme, 'theme', THEMES);
     if (b.github !== undefined) u.github = parseGithubUpdate(b.github);
+    const llm = b.llm === undefined ? undefined : parseLlmUpdate(b.llm);
     const googleClient = b.googleClient === undefined ? undefined : parseGoogleClientUpdate(b.googleClient);
 
     const before = repo.getSettings();
-    const { apiKey, googleClient: _ignored, github, ...rest } = u;
+    const { apiKey, googleClient: _ignored, github, llm: _llmIgnored, ...rest } = u;
     const patch: Parameters<typeof repo.updateSettings>[0] = { ...rest };
     if (github) {
       patch.github = {
         token: github.token === undefined ? before.github.token : github.token?.trim() || null,
         myAccounts: github.myAccounts ?? before.github.myAccounts,
+      };
+    }
+    if (llm) {
+      patch.llm = {
+        apiKey: llm.apiKey === undefined ? before.llm.apiKey : llm.apiKey?.trim() || null,
+        model: llm.model ?? before.llm.model,
       };
     }
     if (googleClient !== undefined) patch.googleClient = googleClient;

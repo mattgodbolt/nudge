@@ -50,6 +50,12 @@ export function createPushNotifier(deps: NotifierDeps): PushService {
   let inFlight: Promise<void> = Promise.resolve();
 
   function resolve(id: string, requireFresh: boolean): Resolved | null {
+    if (id.startsWith('todo:')) {
+      // You just wrote it, so capturing is no news; a due todo coming back is.
+      if (requireFresh) return null;
+      const t = deps.repo.getItem(id);
+      return t && t.state === 'inbox' ? { gh: t.item } : null;
+    }
     if (id.startsWith('gh:')) {
       const g = deps.repo.getItem(id);
       if (!g || g.state !== 'inbox' || g.item.isOwn || g.item.muted) return null;
@@ -70,6 +76,15 @@ export function createPushNotifier(deps: NotifierDeps): PushService {
   function describe(kind: 'new' | 'woke', items: Resolved[]): PushPayload | null {
     if (items.length === 0) return null;
     const woke = kind === 'woke';
+    if (items.length === 1 && items[0]!.gh?.provider === 'todo') {
+      const t = items[0]!.gh;
+      return {
+        title: 'Todo due',
+        body: snippet(t.title ?? ''),
+        url: `/inbox?c=${encodeURIComponent(t.id)}`,
+        tag: `nudge-${kind}-${t.id}`,
+      };
+    }
     if (items.length === 1 && items[0]!.gh) {
       const g = items[0]!.gh;
       const what = g.kind === 'pr' ? 'pull request' : 'issue';

@@ -76,6 +76,11 @@ export function buildSettingsDto(deps: AppDeps): SettingsDTO {
       last4: s.github.token ? s.github.token.slice(-4) : null,
       myAccounts: s.github.myAccounts,
     },
+    llm: {
+      configured: s.llm.apiKey !== null,
+      last4: s.llm.apiKey ? s.llm.apiKey.slice(-4) : null,
+      model: s.llm.model,
+    },
     // Status only: account titles and flags. Tokens and the client secret never leave the server.
     google: deps.auth.status(),
   };

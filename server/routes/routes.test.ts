@@ -57,6 +57,7 @@ function stubRepo() {
     backfillDays: 14,
     theme: 'system',
     github: { token: null, myAccounts: [] },
+    llm: { apiKey: null, model: 'claude-haiku-5-5' },
   };
   const sources: SourceDTO[] = [];
   const counts = (): Counts => {

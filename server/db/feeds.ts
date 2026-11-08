@@ -210,6 +210,7 @@ export function createFeedsRepo(deps: FeedsDeps) {
       sourceState: r.source_state ?? null,
       reason: r.reason ?? null,
       muted: !!r.muted,
+      ...(r.provider === 'todo' ? { todo: { raw: typeof data.raw === 'string' ? data.raw : '' } } : {}),
       ...(github
         ? {
             github: {

@@ -8,6 +8,8 @@ import { loadConfig, migrateLegacyDb, resolveApiKey, resolveGoogleClient } from 
 import { openRepo } from './db/repo.js';
 import { createFakeClient } from './demo/fake-client.js';
 import { createFakeGithubClient, DEMO_GITHUB_OWNER } from './demo/github.js';
+import { createFakeLlmClient } from './demo/llm.js';
+import { createLlmClient } from './providers/anthropic/client.js';
 import { decorateDemo, nonDemoSources, seedDemo } from './demo/seed.js';
 import { createDemoPosting } from './demo/post.js';
 import { createWorld } from './demo/world.js';
@@ -99,6 +101,8 @@ async function main(): Promise<void> {
     repo.addFeed({ owner: DEMO_GITHUB_OWNER, prs: true, issues: true, importMode: 'all' });
   }
 
+  const llm = config.demo ? createFakeLlmClient() : createLlmClient();
+
   const vapid = ensureVapidKeys(repo);
   const push = createPushNotifier({
     repo,
@@ -166,6 +170,7 @@ async function main(): Promise<void> {
     push,
     github,
     githubClient,
+    llm,
     resolveApiKey: resolveKey,
     demo: config.demo,
     version: resolveVersion(),

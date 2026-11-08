@@ -149,5 +149,9 @@ export const api = {
   deleteMute: (id: number) => request<void>('DELETE', `/api/mutes/${id}`),
   testGithub: (token?: string) =>
     request<{ ok: boolean; message: string; login?: string }>('POST', '/api/settings/test-github', { token }),
+  assistant: (body: { text: string; now: string; selectedId: string | null }) =>
+    request<T.AssistantResponse>('POST', '/api/assistant', body),
+  deleteTodo: (id: string) => request<void>('DELETE', `/api/todos/${encodeURIComponent(id)}`),
+  testLlm: (apiKey?: string) => request<{ ok: boolean; message: string }>('POST', '/api/settings/test-llm', { apiKey }),
   testKey: (apiKey?: string) => request<{ ok: boolean; message: string }>('POST', '/api/settings/test-key', { apiKey }),
 };

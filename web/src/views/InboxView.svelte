@@ -16,6 +16,7 @@
   import InboxRow from '../components/InboxRow.svelte';
   import ThreadView from '../components/ThreadView.svelte';
   import GithubThread from '../components/GithubThread.svelte';
+  import TodoThread from '../components/TodoThread.svelte';
   import { feeds } from '../lib/stores/feeds.svelte';
   import VirtualList from '../components/VirtualList.svelte';
   import EmptyState from '../components/EmptyState.svelte';
@@ -356,6 +357,8 @@
       {#key selected.comment.threadId}
         {#if selected.item.provider === 'github'}
           <GithubThread item={selected} now={sync.now} />
+        {:else if selected.item.provider === 'todo'}
+          <TodoThread item={selected} now={sync.now} />
         {:else}
           <ThreadView item={selected} now={sync.now} />
         {/if}
