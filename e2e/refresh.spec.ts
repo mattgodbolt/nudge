@@ -111,3 +111,18 @@ test.describe('on a touch phone', () => {
     await boot;
   });
 });
+
+test('on a phone the settings page scrolls inside the screen instead of growing past it', async ({ page }) => {
+  await page.setViewportSize({ width: 449, height: 900 });
+  await page.goto('/settings');
+  await expect(page.getByTestId('settings-notifications')).toBeAttached();
+  const { scrollable, fits } = await page.evaluate(() => {
+    const el = document.querySelector('.page') as HTMLElement;
+    return {
+      scrollable: el.scrollHeight > el.clientHeight,
+      fits: el.getBoundingClientRect().bottom <= window.innerHeight,
+    };
+  });
+  expect(fits).toBe(true);
+  expect(scrollable).toBe(true);
+});

@@ -77,6 +77,8 @@
   main {
     flex: 1;
     min-width: 0;
+    /* In the phone's column layout the default min-height:auto lets main grow to its content, so pages never scroll. */
+    min-height: 0;
     display: flex;
     flex-direction: column;
     position: relative;
