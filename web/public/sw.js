@@ -1,6 +1,11 @@
 // Nudge service worker. It does two jobs only: show Web Push notifications and route taps on them into the app.
 // It deliberately caches nothing, so the app is always the version the server is serving.
 
+// Take over as soon as a new version installs. Without this the old worker keeps handling pushes until every window
+// on the site is closed, so a fix to push handling would not reach a phone that keeps the app in memory.
+self.addEventListener('install', () => self.skipWaiting());
+self.addEventListener('activate', (event) => event.waitUntil(self.clients.claim()));
+
 /* A push is { title, body, url, tag }. */
 self.addEventListener('push', (event) => {
   let data = {};
