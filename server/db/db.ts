@@ -22,13 +22,15 @@ export class SchemaTooNewError extends Error {
 export function migrate(db: Db): void {
   const current = db.pragma('user_version', { simple: true }) as number;
   if (current > MIGRATIONS.length) throw new SchemaTooNewError(current, MIGRATIONS.length);
-  for (let v = current; v < MIGRATIONS.length; v++) {
-    const sql = MIGRATIONS[v]!;
-    db.transaction(() => {
-      db.exec(sql);
+  if (current === MIGRATIONS.length) return;
+  // One transaction for the whole upgrade: all-or-nothing, and one commit instead of one per migration, which matters
+  // on slow storage (a fresh database runs every migration).
+  db.transaction(() => {
+    for (let v = current; v < MIGRATIONS.length; v++) {
+      db.exec(MIGRATIONS[v]!);
       db.pragma(`user_version = ${v + 1}`);
-    })();
-  }
+    }
+  })();
 }
 
 /** Comments and the API key live in here: owner-only. The WAL/SHM sidecars may not exist yet, so best effort. */

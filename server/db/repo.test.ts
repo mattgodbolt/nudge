@@ -85,7 +85,8 @@ describe('db', () => {
     expect(existsSync(path)).toBe(true);
     expect(db.pragma('journal_mode', { simple: true })).toBe('wal');
     db.close();
-  });
+    // Creating a file database is dominated by disk sync time, which varies from 5s to 40s on the ZFS deploy box.
+  }, 120_000);
 });
 
 describe('settings', () => {
