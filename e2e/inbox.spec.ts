@@ -93,3 +93,22 @@ test('* a selects all, bulk bar acts on them', async ({ page }) => {
   await expect(page.getByTestId('toast').first()).toContainText('done');
   await expect(bar).toHaveCount(0);
 });
+
+test('sort order: oldest first reverses the list, Shift+O cycles, and the choice is remembered', async ({ page }) => {
+  await page.goto('/inbox');
+  const first = page.getByTestId('inbox-row').first();
+  await expect(first).toBeVisible();
+  const newestId = await first.getAttribute('data-comment-id');
+
+  await page.getByTestId('sort').selectOption('oldest');
+  await expect(page.getByTestId('inbox-row').first()).not.toHaveAttribute('data-comment-id', newestId!);
+
+  await page.reload(); // remembered in this browser
+  await expect(page.getByTestId('sort')).toHaveValue('oldest');
+  await expect(page.getByTestId('inbox-row').first()).not.toHaveAttribute('data-comment-id', newestId!);
+
+  await page.keyboard.press('Shift+O'); // oldest -> arrived
+  await expect(page.getByTestId('sort')).toHaveValue('arrived');
+  await page.getByTestId('sort').selectOption('newest');
+  await expect(page.getByTestId('inbox-row').first()).toHaveAttribute('data-comment-id', newestId!);
+});

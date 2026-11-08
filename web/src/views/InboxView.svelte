@@ -1,4 +1,5 @@
 <script lang="ts">
+  import type { InboxOrder } from '../../../shared/types';
   import { resync } from '../lib/resync.svelte';
   import { phone } from '../lib/phone.svelte';
   import { keymap } from '../lib/keys/keymap.svelte';
@@ -182,6 +183,21 @@
         >{pluralize(inbox.total || inbox.items.length, feeds.list.length > 0 ? 'item' : 'comment')}</span
       >
       <span class="grow"></span>
+      <label class="sort faint meta">
+        <span class="sr">Sort</span>
+        <select
+          value={inbox.order}
+          data-testid="sort"
+          aria-label="Sort order"
+          title="Sort order (Shift+O cycles)"
+          onchange={(e) => void inbox.setOrder(e.currentTarget.value as InboxOrder)}
+        >
+          <option value="newest">Newest first</option>
+          <option value="oldest">Oldest first</option>
+          <option value="arrived">Recently arrived</option>
+          <option value="source">By source</option>
+        </select>
+      </label>
     </header>
     <div class="filters">
       <label class="search">
@@ -602,6 +618,29 @@
     }
     .inbox.thread-open .list {
       display: none;
+    }
+  }
+  .sort select {
+    font: inherit;
+    font-size: var(--fs-meta);
+    color: var(--text-muted);
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 2px 4px;
+    cursor: pointer;
+  }
+  .sr {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+  }
+  @media (max-width: 899px) {
+    .sort select {
+      font-size: 16px;
+      min-height: 36px;
     }
   }
   .ghfilters {

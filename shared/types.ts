@@ -98,6 +98,7 @@ export interface ItemDTO {
     createdAt: string;
   };
 }
+export type InboxOrder = 'newest' | 'oldest' | 'arrived' | 'source';
 export interface InboxItem {
   item: ItemDTO;
   /**
@@ -108,6 +109,8 @@ export interface InboxItem {
   video: Pick<VideoDTO, 'id' | 'title' | 'thumbnailUrl'>;
   /** Context for replies (null for top-level comments). */
   parent: Pick<CommentDTO, 'id' | 'authorName' | 'textPlain' | 'isOwn'> | null;
+  /** When Nudge first saw it (not when it was written): what the "recently arrived" order sorts by. */
+  arrivedAt: string;
   threadReplyCount: number;
   hasDraft: boolean;
   /** Ids of the labels on this comment. */

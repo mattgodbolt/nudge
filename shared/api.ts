@@ -14,6 +14,11 @@ export interface InboxQuery {
   kind?: 'pr' | 'issue' | 'todo';
   /** GitHub author filter: outside contributors, the team, past contributors, bots, or any human. */
   audience?: 'outside' | 'team' | 'contributors' | 'bots' | 'people';
+  /**
+   * newest: latest activity first (default); oldest: the reverse; arrived: most recently landed in Nudge first;
+   * source: Todos, then GitHub, then YouTube, newest first within each.
+   */
+  order?: T.InboxOrder;
   q?: string;
   cursor?: string;
   limit?: number;

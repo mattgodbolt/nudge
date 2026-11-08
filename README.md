@@ -85,6 +85,7 @@ Notes:
 | `b`                                      | snooze… (`1`-`4` presets, `5` pick a time)       | `l`         | label as… (type to filter or create) |
 | `g i`, `g d`, `g a`, `g s`, `g t`, `g ,` | go to Inbox, Done, All, Sources, Stats, Settings | `Ctrl+K`    | command palette                      |
 | `g z`                                    | go to Snoozed                                    | `g l`       | go to label… (picker)                |
+| `Shift+O`                                | cycle sort order                                 | `c`         | tell Nudge… (todos, voice commands)  |
 
 Snoozing hides a comment until the time you pick; it returns to the top of the Inbox (a "back from snooze" marker
 shows for a day), and `z` undoes it. In the Snoozed view `Shift+U` unsnoozes. Labels (managed in Settings) are

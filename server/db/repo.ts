@@ -864,7 +864,7 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
   const INBOX_SELECT = `SELECT c.*, i.id AS item_id, i.provider, i.kind, i.title AS i_title, i.author AS i_author,
       i.author_avatar_url AS i_avatar, i.is_own AS i_own, i.body_plain, i.url AS i_url, i.container_key,
       i.container_title, i.source_state, i.reason, i.muted, i.data, i.occurred_at,
-      i.state, i.state_source, i.state_changed_at, i.snoozed_until, i.woke_at,
+      i.state, i.state_source, i.state_changed_at, i.snoozed_until, i.woke_at, i.first_seen_at AS arrived_at,
       v.title AS v_title, v.thumbnail_url AS v_thumb,
       p.id AS p_id, p.author_name AS p_author, p.text_plain AS p_text, p.is_own AS p_own,
       t.total_reply_count AS t_total,
@@ -878,6 +878,8 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
   /** SQL fragments for "needs attention now" (inbox state and not currently snoozed); bind @now. */
   const NOT_SNOOZED = '(i.snoozed_until IS NULL OR i.snoozed_until <= @now)';
   const SORT_VALUE = 'COALESCE(i.woke_at, i.occurred_at)';
+  const ARRIVED_VALUE = 'COALESCE(i.woke_at, i.first_seen_at)';
+  const RANK = "(CASE i.provider WHEN 'todo' THEN 0 WHEN 'github' THEN 1 ELSE 2 END)";
 
   function inboxItem(r: Row, labels: number[], at: string): InboxItem {
     const item = feeds.itemFromRow(r);
@@ -911,6 +913,7 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
         ? { id: r.video_id, title: r.v_title, thumbnailUrl: r.v_thumb }
         : { id: r.container_key ?? '', title: r.container_title ?? '', thumbnailUrl: null },
       parent: r.p_id ? { id: r.p_id, authorName: r.p_author, textPlain: r.p_text, isOwn: !!r.p_own } : null,
+      arrivedAt: r.arrived_at,
       threadReplyCount: r.t_total ?? 0,
       hasDraft: !!r.has_draft,
       labels,
@@ -991,16 +994,36 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
     const base = where.join(' AND ');
     const total = (db.prepare(`SELECT COUNT(*) AS n FROM items i WHERE ${base}`).get(args) as Row).n as number;
 
+    // Every order is a keyset (rank?, key, id), so paging stays stable however the list is sorted.
+    const order = q.order ?? 'newest';
+    const key = order === 'arrived' ? ARRIVED_VALUE : SORT_VALUE;
+    const dir = order === 'oldest' ? 'ASC' : 'DESC';
+    const cmp = order === 'oldest' ? '>' : '<';
+    const ranked = order === 'source';
     const pageWhere = [base];
-    const sep = q.cursor ? q.cursor.indexOf('|') : -1;
-    if (q.cursor && sep > 0) {
-      args.cPub = q.cursor.slice(0, sep);
-      args.cId = q.cursor.slice(sep + 1);
-      pageWhere.push(`(${SORT_VALUE} < @cPub OR (${SORT_VALUE} = @cPub AND i.id > @cId))`);
+    if (q.cursor) {
+      const parts = q.cursor.split('|');
+      // [rank|]key|id (an id never contains "|"); a cursor from another order is ignored rather than trusted.
+      if (parts.length === (ranked ? 3 : 2)) {
+        const id = parts.pop()!;
+        const k = parts.pop()!;
+        args.cId = id;
+        args.cKey = k;
+        const after = `(${key} ${cmp} @cKey OR (${key} = @cKey AND i.id > @cId))`;
+        if (ranked) {
+          args.cRank = Number(parts[0]);
+          pageWhere.push(`(${RANK} > @cRank OR (${RANK} = @cRank AND ${after}))`);
+        } else {
+          pageWhere.push(after);
+        }
+      }
     }
     const limit = Math.min(Math.max(Math.trunc(q.limit ?? DEFAULT_LIMIT), 1), MAX_LIMIT);
     const rows = db
-      .prepare(`${INBOX_SELECT} WHERE ${pageWhere.join(' AND ')} ORDER BY ${SORT_VALUE} DESC, i.id ASC LIMIT @lim`)
+      .prepare(
+        `${INBOX_SELECT} WHERE ${pageWhere.join(' AND ')}
+         ORDER BY ${ranked ? `${RANK} ASC, ` : ''}${key} ${dir}, i.id ASC LIMIT @lim`,
+      )
       .all({ ...args, lim: limit + 1 }) as Row[];
     const more = rows.length > limit;
     const pageRows = more ? rows.slice(0, limit) : rows;
@@ -1008,7 +1031,12 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
     const labels = labelsFor(pageRows.map((r) => r.item_id as string));
     return {
       items: pageRows.map((r) => inboxItem(r, labels.get(r.item_id) ?? [], at)),
-      nextCursor: more && last ? `${last.woke_at ?? last.occurred_at}|${last.item_id}` : null,
+      nextCursor:
+        more && last
+          ? `${ranked ? `${last.provider === 'todo' ? 0 : last.provider === 'github' ? 1 : 2}|` : ''}${
+              order === 'arrived' ? (last.woke_at ?? last.arrived_at) : (last.woke_at ?? last.occurred_at)
+            }|${last.item_id}`
+          : null,
       total,
     };
   }

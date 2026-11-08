@@ -59,6 +59,7 @@ function item(n: number): InboxItem {
     },
     video: { id: 'v1', title: 'Video', thumbnailUrl: null },
     parent: null,
+    arrivedAt: '2025-01-01T00:00:00.000Z',
     threadReplyCount: 0,
     hasDraft: false,
     labels: [],

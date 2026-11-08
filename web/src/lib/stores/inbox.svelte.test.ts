@@ -43,6 +43,7 @@ function item(n: number, state: CommentDTO['state'] = 'inbox'): InboxItem {
     },
     video: { id: 'v1', title: 'Video', thumbnailUrl: null },
     parent: null,
+    arrivedAt: '2025-01-01T00:00:00.000Z',
     threadReplyCount: 0,
     hasDraft: false,
     labels: [],
@@ -408,5 +409,33 @@ describe('InboxStore snooze and labels', () => {
     store.pruneLabels(new Set([7]));
     expect(store.items[0]!.labels).toEqual([7]);
     expect(store.counts.byLabel).toEqual({ 7: 4 });
+  });
+});
+
+describe('compareItems', () => {
+  const mk = (
+    id: string,
+    publishedAt: string,
+    arrivedAt: string,
+    provider: 'youtube' | 'github' | 'todo' = 'youtube',
+  ) => {
+    const base = item(1);
+    return {
+      ...base,
+      arrivedAt,
+      item: { ...base.item, provider },
+      comment: { ...base.comment, id, publishedAt },
+    };
+  };
+  const a = mk('a', '2025-01-03T00:00:00Z', '2025-02-01T00:00:00Z', 'youtube');
+  const b = mk('b', '2025-01-02T00:00:00Z', '2025-03-01T00:00:00Z', 'github');
+  const c = mk('c', '2025-01-01T00:00:00Z', '2025-01-15T00:00:00Z', 'todo');
+  const sorted = (order: Parameters<typeof compareItems>[2]) =>
+    [a, b, c].sort((x, y) => compareItems(x, y, order)).map((i) => i.comment.id);
+  it('sorts each way the server does', () => {
+    expect(sorted('newest')).toEqual(['a', 'b', 'c']);
+    expect(sorted('oldest')).toEqual(['c', 'b', 'a']);
+    expect(sorted('arrived')).toEqual(['b', 'a', 'c']);
+    expect(sorted('source')).toEqual(['c', 'b', 'a']); // todo, github, youtube
   });
 });

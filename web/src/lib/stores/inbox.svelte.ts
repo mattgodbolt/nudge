@@ -1,4 +1,4 @@
-import type { CommentState, Counts, InboxItem, InboxView, ServerEvent } from '../../../../shared/types';
+import type { CommentState, Counts, InboxItem, InboxOrder, InboxView, ServerEvent } from '../../../../shared/types';
 import type { InboxPage } from '../../../../shared/api';
 import { api } from '../api';
 import { thread } from './thread.svelte';
@@ -78,20 +78,34 @@ function shiftCounts(counts: Counts, from: InboxItem, to: InboxItem, sign: 1 | -
   };
 }
 
-/** Mirrors the server sort: COALESCE(woke_at, published_at) DESC, id ASC. */
-function sortKey(i: InboxItem): string {
-  return i.wokeAt ?? i.comment.publishedAt;
-}
-export function compareItems(a: InboxItem, b: InboxItem): number {
-  const ka = sortKey(a);
-  const kb = sortKey(b);
-  if (ka !== kb) return ka < kb ? 1 : -1;
+/** Mirrors the server sorts (see listInbox): a key, optionally preceded by a source rank, then id ascending. */
+const sortKey = (i: InboxItem, order: InboxOrder): string =>
+  order === 'arrived' ? (i.wokeAt ?? i.arrivedAt) : (i.wokeAt ?? i.comment.publishedAt);
+const rank = (i: InboxItem): number => (i.item.provider === 'todo' ? 0 : i.item.provider === 'github' ? 1 : 2);
+export function compareItems(a: InboxItem, b: InboxItem, order: InboxOrder = 'newest'): number {
+  if (order === 'source' && rank(a) !== rank(b)) return rank(a) - rank(b);
+  const ka = sortKey(a, order);
+  const kb = sortKey(b, order);
+  if (ka !== kb) return (ka < kb ? 1 : -1) * (order === 'oldest' ? -1 : 1);
   return a.comment.id < b.comment.id ? -1 : a.comment.id > b.comment.id ? 1 : 0;
+}
+
+const ORDER_KEY = 'nudge-inbox-order';
+const ORDERS: readonly InboxOrder[] = ['newest', 'oldest', 'arrived', 'source'];
+function savedOrder(): InboxOrder {
+  try {
+    const v = localStorage.getItem(ORDER_KEY);
+    return ORDERS.find((o) => o === v) ?? 'newest';
+  } catch {
+    return 'newest';
+  }
 }
 
 export class InboxStore {
   items = $state.raw<InboxItem[]>([]);
   view = $state<InboxView>('inbox');
+  /** How the list is sorted; remembered in this browser. */
+  order = $state<InboxOrder>(savedOrder());
   filters = $state<InboxFilters>({});
   selectedId = $state<string | null>(null);
   selectedIds = $state.raw<ReadonlySet<string>>(new Set());
@@ -122,7 +136,23 @@ export class InboxStore {
   /* ---------- loading ---------- */
 
   #query(cursor?: string) {
-    return { view: this.view, ...this.filters, cursor, limit: PAGE };
+    return { view: this.view, ...this.filters, order: this.order, cursor, limit: PAGE };
+  }
+
+  /** Change the sort order and reload from the top. */
+  async setOrder(order: InboxOrder): Promise<void> {
+    if (order === this.order) return;
+    this.order = order;
+    try {
+      localStorage.setItem(ORDER_KEY, order);
+    } catch {
+      /* storage unavailable */
+    }
+    this.nextCursor = null;
+    await this.load();
+  }
+  cycleOrder(): Promise<void> {
+    return this.setOrder(ORDERS[(ORDERS.indexOf(this.order) + 1) % ORDERS.length]!);
   }
 
   /** Switch view/filters; reloads only when something actually changed. */
@@ -199,7 +229,9 @@ export class InboxStore {
     const freshIds = new Set(fresh.map((i) => i.comment.id));
     const last = page.nextCursor ? page.items[page.items.length - 1] : undefined;
     // Items beyond the fetched window are kept; everything inside it is replaced by the server's view.
-    const tail = last ? this.items.filter((i) => !freshIds.has(i.comment.id) && compareItems(i, last) > 0) : [];
+    const tail = last
+      ? this.items.filter((i) => !freshIds.has(i.comment.id) && compareItems(i, last, this.order) > 0)
+      : [];
     const prevIndex = this.selectedIndex;
     this.items = [...fresh, ...tail];
     if (!this.items.some((i) => i.comment.id === this.selectedId)) {
@@ -517,7 +549,7 @@ export class InboxStore {
     for (const c of changes) {
       if (!present.has(c.before.comment.id) && viewIncludes(this.view, c[target], labelId)) next.push(c[target]);
     }
-    next.sort(compareItems);
+    next.sort((x, y) => compareItems(x, y, this.order));
     this.items = next;
     this.total = Math.max(0, this.total + (next.length - oldItems.length));
 

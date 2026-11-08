@@ -119,6 +119,7 @@ export function registerApiRoutes(app: FastifyInstance, deps: AppDeps): void {
     if (q.audience) {
       query.audience = oneOf(q.audience, 'audience', ['outside', 'team', 'contributors', 'bots', 'people'] as const);
     }
+    if (q.order) query.order = oneOf(q.order, 'order', ['newest', 'oldest', 'arrived', 'source'] as const);
     if (q.q?.trim()) query.q = q.q.trim();
     if (q.cursor) query.cursor = q.cursor;
     query.limit = q.limit === undefined ? 100 : int(q.limit, 'limit', { min: 1, max: 500 });

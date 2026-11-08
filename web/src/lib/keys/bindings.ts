@@ -324,6 +324,13 @@ export function inboxBindings(): Binding[] {
       when: () => inbox.selected?.item.provider === 'github',
       run: () => ui.openMute(),
     }),
+    list({
+      id: 'sort.cycle',
+      keys: ['Shift+O'],
+      group: 'Navigation',
+      description: 'Change sort order (newest, oldest, recently arrived, by source)',
+      run: () => void inbox.cycleOrder(),
+    }),
     list({ id: 'search.focus', keys: ['/'], group: 'Navigation', description: 'Search', run: () => ui.focusSearch() }),
     list({
       id: 'inbox.show-new',
