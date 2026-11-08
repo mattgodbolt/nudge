@@ -6,6 +6,7 @@
   import { sources } from '../lib/stores/sources.svelte';
   import { ui } from '../lib/stores/ui.svelte';
   import { phone } from '../lib/phone.svelte';
+  import { resync } from '../lib/resync.svelte';
   import { formatNumber } from '../lib/format';
   import Icon from './Icon.svelte';
   import SyncIndicator from './SyncIndicator.svelte';
@@ -69,6 +70,17 @@
       <circle cx="16" cy="8" r="5" fill="var(--accent)" />
     </svg>
     <span class="name">Nudge</span>
+    <button
+      class="btn ghost sm refresh"
+      class:busy={resync.busy}
+      onclick={() => void resync.run()}
+      disabled={resync.busy}
+      title="Refresh (Shift+R)"
+      aria-label="Refresh"
+      data-testid="refresh"
+    >
+      <Icon name="refresh" size={phone.value ? 22 : 15} />
+    </button>
     <button
       class="btn ghost sm collapse"
       onclick={() => ui.toggleSidebar()}
@@ -236,6 +248,15 @@
     min-width: 0;
     text-align: left;
   }
+  .refresh.busy :global(svg) {
+    animation: refresh-spin 0.9s linear infinite;
+    color: var(--accent);
+  }
+  @keyframes refresh-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
   .group {
     display: flex;
     flex-direction: column;
@@ -334,6 +355,15 @@
     }
     .name {
       font-size: 16px;
+    }
+    .refresh {
+      flex: none;
+      width: 48px;
+      height: 48px;
+      padding: 0;
+      justify-content: center;
+      border: 1px solid var(--border);
+      background: var(--bg-elev);
     }
     .search {
       order: 1;

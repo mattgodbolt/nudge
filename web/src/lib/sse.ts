@@ -54,28 +54,53 @@ export function dispatch(e: ServerEvent) {
   }
 }
 
+let current: { reconnect(): void } | null = null;
+
+/**
+ * Drop and reopen the event stream. A phone that has had the tab frozen in the background can hold a connection that
+ * looks open but is dead, so no error ever fires; reopening is the only way to know.
+ */
+export function reconnectEvents(): void {
+  current?.reconnect();
+}
+
 /** One EventSource for the app's lifetime; on reconnect we re-bootstrap to resync. */
 export function connectEvents(): () => void {
-  const es = new EventSource('/api/events');
+  let es: EventSource;
   let wasDown = false;
-  for (const type of TYPES) {
-    es.addEventListener(type, (ev) => {
-      try {
-        dispatch(JSON.parse((ev as MessageEvent).data) as ServerEvent);
-      } catch {
-        /* ignore malformed event */
-      }
-    });
-  }
-  es.onopen = () => {
-    if (wasDown) {
-      wasDown = false;
-      void app.boot();
-      void inbox.refreshTop();
+  const open = () => {
+    es = new EventSource('/api/events');
+    for (const type of TYPES) {
+      es.addEventListener(type, (ev) => {
+        try {
+          dispatch(JSON.parse((ev as MessageEvent).data) as ServerEvent);
+        } catch {
+          /* ignore malformed event */
+        }
+      });
     }
+    es.onopen = () => {
+      if (wasDown) {
+        wasDown = false;
+        void app.boot();
+        void inbox.refreshTop();
+      }
+    };
+    es.onerror = () => {
+      wasDown = true;
+    };
   };
-  es.onerror = () => {
-    wasDown = true;
+  open();
+  const me = {
+    reconnect() {
+      es.close();
+      wasDown = false; // the caller resyncs explicitly
+      open();
+    },
   };
-  return () => es.close();
+  current = me;
+  return () => {
+    es.close();
+    if (current === me) current = null;
+  };
 }

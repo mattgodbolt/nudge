@@ -4,6 +4,7 @@
   import { appBindings } from './lib/keys/bindings';
   import { router } from './lib/router.svelte';
   import { connectEvents } from './lib/sse';
+  import { installAutoResync } from './lib/resync.svelte';
   import { app } from './lib/stores/app.svelte';
   import { settings } from './lib/stores/settings.svelte';
   import { theme } from './lib/stores/theme.svelte';
@@ -24,7 +25,9 @@
     const unreg = keymap.register(appBindings());
     void app.boot();
     const close = connectEvents();
+    const stopAuto = installAutoResync();
     return () => {
+      stopAuto();
       close();
       unreg();
       detach();

@@ -142,6 +142,10 @@ deploy/install-cron.sh                  # auto-update + nightly backup
 
 Nudge is an installable web app (PWA) that can send Web Push notifications, with no native app involved.
 
+A tab that has been in the background catches up on its own when you return to it (and reloads itself if a newer
+version was deployed meanwhile). You can also refresh by hand: the circular-arrow button in the header, `Shift+R`, or
+pull the list down on a touch screen.
+
 1. On the phone (connected to your tailnet), open the HTTPS address in Chrome. Menu → **Install app**, or use the
    **Install as an app** button in Settings → Notifications.
 2. Open **Settings → Notifications → Turn on for this device**, allow notifications, then **Send a test**.

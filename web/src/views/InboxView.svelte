@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { resync } from '../lib/resync.svelte';
   import { phone } from '../lib/phone.svelte';
   import { keymap } from '../lib/keys/keymap.svelte';
   import { inboxBindings } from '../lib/keys/bindings';
@@ -264,6 +265,7 @@
         rowHeight={phone.value ? 156 : 84}
         selectedIndex={inbox.selectedIndex}
         onNearEnd={() => void inbox.loadMore()}
+        onRefresh={() => resync.run()}
         key={(i) => i.comment.id}
       >
         {#snippet row(item, _index)}

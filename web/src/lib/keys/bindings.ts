@@ -1,4 +1,5 @@
 import type { Binding } from './keymap.svelte';
+import { resync } from '../resync.svelte';
 import { router } from '../router.svelte';
 import { inbox } from '../stores/inbox.svelte';
 import { sync } from '../stores/sync.svelte';
@@ -113,6 +114,14 @@ export function appBindings(): Binding[] {
       group: 'App',
       description: 'Toggle sidebar',
       run: () => ui.toggleSidebar(),
+    },
+    {
+      id: 'app.refresh',
+      keys: ['Shift+R'],
+      scope: 'global',
+      group: 'App',
+      description: 'Refresh (reload data from the server)',
+      run: () => void resync.run(),
     },
     {
       id: 'sync.now',
