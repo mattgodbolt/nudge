@@ -126,3 +126,15 @@ test('on a phone the settings page scrolls inside the screen instead of growing 
   expect(fits).toBe(true);
   expect(scrollable).toBe(true);
 });
+
+test('on a phone, an inbox emptied while a thread is open shows the list, not a blank screen', async ({ page }) => {
+  await page.setViewportSize({ width: 449, height: 900 });
+  await page.goto('/inbox');
+  await page.getByTestId('inbox-row').first().click();
+  await expect(page.getByTestId('thread-view')).toBeVisible();
+  // Everything was actioned elsewhere: the next list load comes back empty.
+  await page.route('**/api/inbox?**', (route) => route.fulfill({ json: { items: [], nextCursor: null, total: 0 } }));
+  await page.keyboard.press('Shift+R');
+  await expect(page.getByTestId('refresh')).toBeVisible();
+  await expect(page.getByTestId('thread-view')).toBeHidden();
+});

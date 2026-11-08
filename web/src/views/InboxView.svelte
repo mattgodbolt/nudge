@@ -86,6 +86,11 @@
       thread.prefetch(inbox.items[i - 1]?.comment.threadId);
     }
   });
+  // On a phone the thread pane replaces the list (and hides the nav). With nothing left to show it would be a blank
+  // screen with no way out, so fall back to the list, which carries the empty state.
+  $effect(() => {
+    if (inbox.loaded && inbox.items.length === 0 && ui.pane === 'thread') ui.pane = 'list';
+  });
   let urlTimer: ReturnType<typeof setTimeout> | undefined;
   $effect(() => {
     const id = selected?.comment.id;
