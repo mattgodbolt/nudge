@@ -78,7 +78,7 @@ class SettingsStore {
   async save(update: SettingsUpdate): Promise<boolean> {
     const prev = this.value;
     if (prev) {
-      const { apiKey: _k, ...rest } = update;
+      const { apiKey: _k, github: _g, ...rest } = update;
       this.value = { ...prev, ...rest };
     }
     try {

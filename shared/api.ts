@@ -6,6 +6,12 @@ export interface InboxQuery {
   videoId?: string;
   /** Only comments carrying this label. With view 'all' this is the label's folder (every state except own). */
   labelId?: number;
+  /** Only items from this non-YouTube feed. */
+  feedId?: number;
+  /** Only this kind of item. */
+  kind?: 'pr' | 'issue';
+  /** GitHub author filter: outside contributors, the team, past contributors, bots, or any human. */
+  audience?: 'outside' | 'team' | 'contributors' | 'bots' | 'people';
   q?: string;
   cursor?: string;
   limit?: number;
@@ -29,6 +35,8 @@ export interface SettingsUpdate {
   manualReserve?: number;
   backfillDays?: number;
   theme?: 'system' | 'light' | 'dark';
+  /** GitHub: the token (null removes it) and which logins are me. */
+  github?: { token?: string | null; myAccounts?: string[] };
   /** Google OAuth client: pasted JSON from the console, explicit fields, or null to remove. */
   googleClient?: { json: string } | { clientId: string; clientSecret: string } | null;
 }

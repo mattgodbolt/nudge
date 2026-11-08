@@ -56,6 +56,7 @@ function stubRepo() {
     manualReserve: 1000,
     backfillDays: 14,
     theme: 'system',
+    github: { token: null, myAccounts: [] },
   };
   const sources: SourceDTO[] = [];
   const counts = (): Counts => {
@@ -67,6 +68,7 @@ function stubRepo() {
       snoozed: 0,
       bySource: {},
       byLabel: {},
+      byFeed: {},
     };
   };
   const move = (ids: string[], to: CommentState): TriageResult => {

@@ -32,10 +32,10 @@ interface CommitResult {
 const PAGE = 100;
 
 export function emptyCounts(): Counts {
-  return { inbox: 0, done: 0, all: 0, snoozed: 0, bySource: {}, byLabel: {} };
+  return { inbox: 0, done: 0, all: 0, snoozed: 0, bySource: {}, byLabel: {}, byFeed: {} };
 }
 
-const isDone = (s: CommentState) => s === 'done' || s === 'replied' || s === 'auto_replied';
+const isDone = (s: CommentState) => s === 'done' || s === 'replied' || s === 'auto_replied' || s === 'resolved';
 
 export function viewIncludes(view: InboxView, item: InboxItem, labelId?: number): boolean {
   if (labelId !== undefined && !item.labels.includes(labelId)) return false;

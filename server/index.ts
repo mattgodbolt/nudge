@@ -7,6 +7,7 @@ import { createGoogleAuth } from './auth/google.js';
 import { loadConfig, migrateLegacyDb, resolveApiKey, resolveGoogleClient } from './config.js';
 import { openRepo } from './db/repo.js';
 import { createFakeClient } from './demo/fake-client.js';
+import { createFakeGithubClient, DEMO_GITHUB_OWNER } from './demo/github.js';
 import { decorateDemo, nonDemoSources, seedDemo } from './demo/seed.js';
 import { createDemoPosting } from './demo/post.js';
 import { createWorld } from './demo/world.js';
@@ -17,6 +18,8 @@ import { buildSettingsDto } from './routes/util.js';
 import { backfillVideoDetails } from './sync/membership.js';
 import { createPushNotifier } from './push/notifier.js';
 import { createWebPushSender, ensureVapidKeys } from './push/sender.js';
+import { createGithubClient } from './providers/github/client.js';
+import { createGithubPoller } from './sync/github.js';
 import { createSnoozeWaker } from './sync/snooze.js';
 import { createSyncEngine } from './sync/engine.js';
 import { createQuotaTracker } from './sync/quota.js';
@@ -65,7 +68,13 @@ async function main(): Promise<void> {
   if (config.demo && world) {
     const fake = createFakeClient(world, { live: !config.demoClockFixed });
     yt = fake;
-    demoTick = () => fake.tick();
+    demoTick = () => {
+      fake.tick();
+      if (fakeGithub) {
+        fakeGithub.tick();
+        void github.pollNow();
+      }
+    };
   } else {
     yt = createHttpClient({ getApiKey: () => resolveKey().key, quota });
   }
@@ -81,6 +90,14 @@ async function main(): Promise<void> {
   });
 
   const snoozeWaker = createSnoozeWaker({ repo, bus });
+
+  // GitHub feeds poll on their own schedule, independent of YouTube's key and quota. Demo mode never leaves the box.
+  const fakeGithub = config.demo ? createFakeGithubClient() : null;
+  const githubClient = fakeGithub ? fakeGithub.client : createGithubClient();
+  const github = createGithubPoller({ repo, bus, client: githubClient });
+  if (fakeGithub && process.env.NUDGE_DEMO_GITHUB === '1' && repo.listFeeds().length === 0) {
+    repo.addFeed({ owner: DEMO_GITHUB_OWNER, prs: true, issues: true, importMode: 'all' });
+  }
 
   const vapid = ensureVapidKeys(repo);
   const push = createPushNotifier({
@@ -147,6 +164,8 @@ async function main(): Promise<void> {
     onSettingsChanged: () => scheduler.start(),
     backfillDetails: () => backfillVideoDetails(repo, yt),
     push,
+    github,
+    githubClient,
     resolveApiKey: resolveKey,
     demo: config.demo,
     version: resolveVersion(),
@@ -164,6 +183,7 @@ async function main(): Promise<void> {
   listenPort = port;
   scheduler.start();
   snoozeWaker.start();
+  github.start();
   // Videos stored before duration/likes were tracked: fill them in once, quietly (best effort; the Stats page can retry).
   if (resolveKey().key) {
     backfillVideoDetails(repo, yt).catch((e: unknown) =>
@@ -182,6 +202,7 @@ async function main(): Promise<void> {
     console.log(`\n${signal} received, shutting down`);
     scheduler.stop();
     snoozeWaker.stop();
+    github.stop();
     push.stop();
     await app.close();
     repo.close();

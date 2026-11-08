@@ -13,6 +13,7 @@ const counts = (inbox: number, done: number): Counts => ({
   snoozed: 0,
   bySource: {},
   byLabel: {},
+  byFeed: {},
 });
 const json = (body: unknown, status = 200) =>
   Promise.resolve(new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } }));
@@ -20,6 +21,22 @@ const json = (body: unknown, status = 200) =>
 function item(n: number): InboxItem {
   const id = `c${n}`;
   return {
+    item: {
+      id,
+      provider: 'youtube',
+      kind: 'comment',
+      title: null,
+      author: `Author ${n}`,
+      authorAvatarUrl: null,
+      isOwn: false,
+      url: null,
+      containerKey: 'v1',
+      containerTitle: 'Video',
+      containerUrl: null,
+      sourceState: null,
+      reason: null,
+      muted: false,
+    },
     comment: {
       id,
       threadId: `t${n}`,

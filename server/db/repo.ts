@@ -36,6 +36,7 @@ import type {
   YtVideo,
 } from '../contracts.js';
 import { openDb, type Db } from './db.js';
+import { createFeedsRepo } from './feeds.js';
 import { htmlToPlain } from './text.js';
 import { tierFor, unitsPerDay } from './tiers-lite.js';
 
@@ -56,6 +57,7 @@ const DEFAULT_SETTINGS: StoredSettings = {
   manualReserve: 1000,
   backfillDays: 14,
   theme: 'system',
+  github: { token: null, myAccounts: [] },
 };
 
 export type UndoErrorCode = 'not_found' | 'already_undone' | 'expired';
@@ -106,6 +108,7 @@ function ftsQuery(q: string): string | null {
 
 export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
   const now = () => clock().toISOString();
+  const escapeHtml = (t: string) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
   /* ---------------- settings ---------------- */
   function getSettings(): StoredSettings {
@@ -126,6 +129,13 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
   );
   const ownIds = () => getSettings().ownChannelIds;
 
+  const feeds = createFeedsRepo({
+    db,
+    now,
+    myAccounts: () => new Set(getSettings().github.myAccounts.map((l) => l.toLowerCase())),
+    baselineFor: (mode) => baselineFor(mode),
+  });
+
   function updateSettings(p: Partial<StoredSettings>): StoredSettings {
     const before = getSettings();
     db.transaction(() => {
@@ -135,6 +145,9 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
       }
       if (p.ownChannelIds && JSON.stringify(p.ownChannelIds) !== JSON.stringify(before.ownChannelIds)) {
         recomputeOwnership(p.ownChannelIds);
+      }
+      if (p.github && JSON.stringify(p.github.myAccounts) !== JSON.stringify(before.github.myAccounts)) {
+        feeds.recomputeGithubOwnership();
       }
     })();
     return getSettings();
@@ -846,27 +859,57 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
   }
 
   /* ---------------- reading ---------------- */
-  const INBOX_SELECT = `SELECT c.*, i.state, i.state_source, i.state_changed_at, i.snoozed_until, i.woke_at,
+  const INBOX_SELECT = `SELECT c.*, i.id AS item_id, i.provider, i.kind, i.title AS i_title, i.author AS i_author,
+      i.author_avatar_url AS i_avatar, i.is_own AS i_own, i.body_plain, i.url AS i_url, i.container_key,
+      i.container_title, i.source_state, i.reason, i.muted, i.data, i.occurred_at,
+      i.state, i.state_source, i.state_changed_at, i.snoozed_until, i.woke_at,
       v.title AS v_title, v.thumbnail_url AS v_thumb,
       p.id AS p_id, p.author_name AS p_author, p.text_plain AS p_text, p.is_own AS p_own,
       t.total_reply_count AS t_total,
-      EXISTS (SELECT 1 FROM drafts d WHERE d.item_id = c.id AND d.status = 'draft') AS has_draft
+      EXISTS (SELECT 1 FROM drafts d WHERE d.item_id = i.id AND d.status = 'draft') AS has_draft
     FROM items i
-    JOIN comments c ON c.id = i.id
-    JOIN videos v ON v.id = c.video_id
-    JOIN threads t ON t.id = c.thread_id
+    LEFT JOIN comments c ON c.id = i.id
+    LEFT JOIN videos v ON v.id = c.video_id
+    LEFT JOIN threads t ON t.id = c.thread_id
     LEFT JOIN comments p ON p.id = c.parent_id`;
 
   /** SQL fragments for "needs attention now" (inbox state and not currently snoozed); bind @now. */
   const NOT_SNOOZED = '(i.snoozed_until IS NULL OR i.snoozed_until <= @now)';
-  const SORT_VALUE = 'COALESCE(i.woke_at, c.published_at)';
+  const SORT_VALUE = 'COALESCE(i.woke_at, i.occurred_at)';
 
   function inboxItem(r: Row, labels: number[], at: string): InboxItem {
+    const item = feeds.itemFromRow(r);
+    const youtube = r.provider === 'youtube';
+    // Non-YouTube items get a comment-shaped stand-in so selection, snooze, labels and undo work unchanged.
+    const comment: CommentDTO = youtube
+      ? commentDto({ ...r, id: r.item_id })
+      : {
+          id: r.item_id,
+          threadId: r.item_id,
+          parentId: null,
+          videoId: r.container_key ?? '',
+          authorName: r.i_author ?? '',
+          authorChannelId: null,
+          authorAvatarUrl: r.i_avatar ?? null,
+          textHtml: escapeHtml(r.body_plain ?? ''),
+          textPlain: r.body_plain ?? '',
+          likeCount: 0,
+          publishedAt: r.occurred_at,
+          updatedAt: r.occurred_at,
+          isOwn: !!r.i_own,
+          state: r.state,
+          stateSource: r.state_source,
+          permalink: r.i_url ?? '',
+          postedByApp: false,
+        };
     return {
-      comment: commentDto(r),
-      video: { id: r.video_id, title: r.v_title, thumbnailUrl: r.v_thumb },
+      item,
+      comment,
+      video: youtube
+        ? { id: r.video_id, title: r.v_title, thumbnailUrl: r.v_thumb }
+        : { id: r.container_key ?? '', title: r.container_title ?? '', thumbnailUrl: null },
       parent: r.p_id ? { id: r.p_id, authorName: r.p_author, textPlain: r.p_text, isOwn: !!r.p_own } : null,
-      threadReplyCount: r.t_total,
+      threadReplyCount: r.t_total ?? 0,
       hasDraft: !!r.has_draft,
       labels,
       snoozedUntil: r.snoozed_until && r.snoozed_until > at ? r.snoozed_until : null,
@@ -899,12 +942,35 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
     else if (q.view === 'done') where.push("i.state IN ('done','replied','auto_replied','resolved')");
     else where.push("i.state != 'own'");
     if (q.sourceId !== undefined) {
-      where.push('c.video_id IN (SELECT video_id FROM source_videos WHERE source_id = @sourceId)');
+      where.push(
+        "i.provider = 'youtube' AND i.container_key IN (SELECT video_id FROM source_videos WHERE source_id = @sourceId)",
+      );
       args.sourceId = q.sourceId;
     }
     if (q.videoId) {
-      where.push('c.video_id = @videoId');
+      where.push('i.container_key = @videoId');
       args.videoId = q.videoId;
+    }
+    if (q.feedId !== undefined) {
+      where.push('i.feed_id = @feedId');
+      args.feedId = q.feedId;
+    }
+    if (q.kind) {
+      where.push('i.kind = @kind');
+      args.kind = q.kind;
+    }
+    if (q.audience) {
+      const assoc = "json_extract(i.data, '$.association')";
+      const bot = "COALESCE(json_extract(i.data, '$.authorType'), '') = 'Bot'";
+      const by: Record<string, string> = {
+        outside: `${assoc} IN ('NONE','FIRST_TIME_CONTRIBUTOR','FIRST_TIMER','MANNEQUIN') AND NOT ${bot}`,
+        team: `${assoc} IN ('OWNER','MEMBER','COLLABORATOR') AND NOT ${bot}`,
+        contributors: `${assoc} = 'CONTRIBUTOR' AND NOT ${bot}`,
+        bots: bot,
+        people: `NOT ${bot}`,
+      };
+      const clause = by[q.audience];
+      if (clause) where.push(`i.provider = 'github' AND ${clause}`);
     }
     if (q.labelId !== undefined) {
       where.push('i.id IN (SELECT item_id FROM item_labels WHERE label_id = @labelId)');
@@ -917,28 +983,26 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
       args.fts = fts;
     }
     const base = where.join(' AND ');
-    const total = (
-      db.prepare(`SELECT COUNT(*) AS n FROM items i JOIN comments c ON c.id = i.id WHERE ${base}`).get(args) as Row
-    ).n as number;
+    const total = (db.prepare(`SELECT COUNT(*) AS n FROM items i WHERE ${base}`).get(args) as Row).n as number;
 
     const pageWhere = [base];
     const sep = q.cursor ? q.cursor.indexOf('|') : -1;
     if (q.cursor && sep > 0) {
       args.cPub = q.cursor.slice(0, sep);
       args.cId = q.cursor.slice(sep + 1);
-      pageWhere.push(`(${SORT_VALUE} < @cPub OR (${SORT_VALUE} = @cPub AND c.id > @cId))`);
+      pageWhere.push(`(${SORT_VALUE} < @cPub OR (${SORT_VALUE} = @cPub AND i.id > @cId))`);
     }
     const limit = Math.min(Math.max(Math.trunc(q.limit ?? DEFAULT_LIMIT), 1), MAX_LIMIT);
     const rows = db
-      .prepare(`${INBOX_SELECT} WHERE ${pageWhere.join(' AND ')} ORDER BY ${SORT_VALUE} DESC, c.id ASC LIMIT @lim`)
+      .prepare(`${INBOX_SELECT} WHERE ${pageWhere.join(' AND ')} ORDER BY ${SORT_VALUE} DESC, i.id ASC LIMIT @lim`)
       .all({ ...args, lim: limit + 1 }) as Row[];
     const more = rows.length > limit;
     const pageRows = more ? rows.slice(0, limit) : rows;
     const last = pageRows[pageRows.length - 1];
-    const labels = labelsFor(pageRows.map((r) => r.id as string));
+    const labels = labelsFor(pageRows.map((r) => r.item_id as string));
     return {
-      items: pageRows.map((r) => inboxItem(r, labels.get(r.id) ?? [], at)),
-      nextCursor: more && last ? `${last.woke_at ?? last.published_at}|${last.id}` : null,
+      items: pageRows.map((r) => inboxItem(r, labels.get(r.item_id) ?? [], at)),
+      nextCursor: more && last ? `${last.woke_at ?? last.occurred_at}|${last.item_id}` : null,
       total,
     };
   }
@@ -1004,6 +1068,16 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
       .all({ now: at }) as Row[]) {
       byLabel[r.label_id] = r.n;
     }
+    const byFeed: Record<number, number> = {};
+    for (const f of db.prepare('SELECT id FROM feeds').all() as Row[]) byFeed[f.id] = 0;
+    for (const r of db
+      .prepare(
+        `SELECT i.feed_id, COUNT(*) AS n FROM items i WHERE i.feed_id IS NOT NULL AND i.state = 'inbox'
+           AND ${NOT_SNOOZED} GROUP BY i.feed_id`,
+      )
+      .all({ now: at }) as Row[]) {
+      byFeed[r.feed_id] = r.n;
+    }
     const all = [...by.entries()].reduce((a, [s, c]) => (s === 'own' ? a : a + c), 0);
     return {
       inbox: n('inbox') - snoozed,
@@ -1012,6 +1086,7 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
       snoozed,
       bySource,
       byLabel,
+      byFeed,
     };
   }
 
@@ -1456,7 +1531,10 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
     };
   }
 
+  const { itemFromRow: _itemFromRow, ...feedMethods } = feeds;
+
   return {
+    ...feedMethods,
     close: () => void db.close(),
     listGoogleAccounts,
     upsertGoogleAccount,

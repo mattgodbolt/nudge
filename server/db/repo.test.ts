@@ -100,6 +100,7 @@ describe('settings', () => {
       manualReserve: 1000,
       backfillDays: 14,
       theme: 'system',
+      github: { token: null, myAccounts: [] },
     });
     const s = repo.updateSettings({ apiKey: 'k', theme: 'dark', pollEnabled: false });
     expect(s).toMatchObject({ apiKey: 'k', theme: 'dark', pollEnabled: false, dailyQuotaBudget: 9000 });
@@ -542,6 +543,7 @@ describe('counts', () => {
       snoozed: 0,
       bySource: { [sourceId]: 0, [s2.id]: 1, [empty.id]: 0 },
       byLabel: {},
+      byFeed: {},
     });
     expect(repo.listSources().find((s) => s.id === s2.id)!.inboxCount).toBe(1);
   });

@@ -221,3 +221,90 @@ describe('push notifier', () => {
     n.stop();
   });
 });
+
+describe('GitHub arrivals', () => {
+  const ghItem = (n: number, o: Record<string, unknown> = {}) => ({
+    id: `gh:org/app#${n}`,
+    kind: 'pr' as const,
+    repo: 'org/app',
+    number: n,
+    title: `Change ${n}`,
+    author: 'carol',
+    authorAvatarUrl: null,
+    authorType: 'User',
+    association: 'CONTRIBUTOR' as const,
+    bodyPlain: '',
+    url: `https://github.com/org/app/pull/${n}`,
+    createdAt: ago(HOUR),
+    updatedAt: ago(HOUR),
+    sourceState: 'open' as const,
+    draft: false,
+    comments: 0,
+    labels: [],
+    ...o,
+  });
+  let feedId: number;
+  beforeEach(() => {
+    // Baseline far in the past so items created an hour ago land in the inbox.
+    feedId = env.repo.addFeed({ owner: 'org', prs: true, issues: true, importMode: 'all' }).id;
+  });
+
+  it('describes one new pull request by repo, title and author, and links straight to it', async () => {
+    subscribe(EP);
+    const n = notifier();
+    const r = env.repo.upsertGithubItems(feedId, [ghItem(1)]);
+    arrive(r.added);
+    await n.flush();
+    expect(sent).toHaveLength(1);
+    expect(sent[0]!.payload).toEqual({
+      title: 'New pull request in org/app',
+      body: 'Change 1 (by carol)',
+      url: '/inbox?c=gh%3Aorg%2Fapp%231',
+      tag: 'nudge-new-gh:org/app#1',
+    });
+    n.stop();
+  });
+
+  it('summarises a mixed batch of comments and GitHub items by container', async () => {
+    subscribe(EP);
+    const n = notifier();
+    addThread('c1');
+    const r = env.repo.upsertGithubItems(feedId, [ghItem(1), ghItem(2, { kind: 'issue' })]);
+    arrive(['c1', ...r.added]);
+    await n.flush();
+    expect(sent[0]!.payload.title).toBe('3 new items');
+    expect(sent[0]!.payload.body).toContain('org/app (2)');
+    n.stop();
+  });
+
+  it('says "activity" for a reopened thread even when it is old, and skips muted or already-handled items', async () => {
+    subscribe(EP);
+    const n = notifier();
+    const old = ghItem(1, { createdAt: ago(30 * 24 * HOUR) });
+    env.repo.upsertGithubItems(feedId, [old]);
+    env.repo.triage([old.id], 'done');
+    const r = env.repo.upsertGithubItems(feedId, [{ ...old, comments: 2 }]);
+    arrive(r.reopened);
+    await n.flush();
+    expect(sent[0]!.payload.title).toBe('Activity on org/app#1');
+
+    sent = [];
+    const muted = ghItem(2);
+    env.repo.addMuteRule('item', muted.id);
+    const r2 = env.repo.upsertGithubItems(feedId, [muted]);
+    arrive([...r2.added, muted.id]);
+    await n.flush();
+    expect(sent).toEqual([]);
+    n.stop();
+  });
+
+  it('does not announce a new item whose creation is older than the freshness window', async () => {
+    subscribe(EP);
+    const n = notifier();
+    const r = env.repo.upsertGithubItems(feedId, [ghItem(1, { createdAt: ago(5 * 24 * HOUR) })]);
+    arrive(r.added);
+    await n.flush();
+    expect(sent).toEqual([]);
+    n.stop();
+  });
+});

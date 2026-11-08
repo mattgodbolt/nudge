@@ -6,6 +6,22 @@ import { toasts } from './toasts.svelte';
 function item(n: number, state: CommentDTO['state'] = 'inbox'): InboxItem {
   const id = `c${n}`;
   return {
+    item: {
+      id,
+      provider: 'youtube',
+      kind: 'comment',
+      title: null,
+      author: `Author ${n}`,
+      authorAvatarUrl: null,
+      isOwn: false,
+      url: null,
+      containerKey: 'v1',
+      containerTitle: 'Video',
+      containerUrl: null,
+      sourceState: null,
+      reason: null,
+      muted: false,
+    },
     comment: {
       id,
       threadId: `t${n}`,
@@ -42,6 +58,7 @@ const counts = (inbox: number, done: number): Counts => ({
   snoozed: 0,
   bySource: {},
   byLabel: {},
+  byFeed: {},
 });
 const json = (body: unknown, status = 200) =>
   Promise.resolve(new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } }));
@@ -191,6 +208,7 @@ describe('InboxStore snooze and labels', () => {
     snoozed: snoozedN,
     bySource: {},
     byLabel,
+    byFeed: {},
   });
   const bodies = (path: string) =>
     fetchMock.mock.calls.filter((c) => c[0] === path).map((c) => JSON.parse(c[1].body as string));

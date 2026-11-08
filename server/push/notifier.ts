@@ -1,4 +1,4 @@
-import type { CommentDTO, ServerEvent } from '../../shared/types.js';
+import type { CommentDTO, ItemDTO, ServerEvent } from '../../shared/types.js';
 import type { EventBus, PushPayload, PushSender, PushService, Repo } from '../contracts.js';
 
 export interface NotifierDeps {
@@ -26,10 +26,15 @@ function snippet(text: string): string {
   return flat.length > SNIPPET ? `${flat.slice(0, SNIPPET - 1)}…` : flat;
 }
 
-interface Resolved {
-  comment: CommentDTO;
-  videoTitle: string;
-}
+type Resolved =
+  | { comment: CommentDTO; videoTitle: string; gh?: undefined }
+  | { gh: ItemDTO; comment?: undefined; videoTitle?: undefined };
+
+/** The grouping key and display title of an arrival, whatever its source. */
+const groupOf = (r: Resolved): { key: string; title: string } =>
+  r.gh
+    ? { key: `gh:${r.gh.containerKey ?? ''}`, title: r.gh.containerTitle || 'GitHub' }
+    : { key: r.comment.videoId, title: r.videoTitle };
 
 /**
  * Turns inbox arrivals into Web Push notifications. Listens to the event bus, coalesces for a short window, and
@@ -45,6 +50,14 @@ export function createPushNotifier(deps: NotifierDeps): PushService {
   let inFlight: Promise<void> = Promise.resolve();
 
   function resolve(id: string, requireFresh: boolean): Resolved | null {
+    if (id.startsWith('gh:')) {
+      const g = deps.repo.getItem(id);
+      if (!g || g.state !== 'inbox' || g.item.isOwn || g.item.muted) return null;
+      // Only a genuinely new item has an age worth checking; activity on an old thread is news by definition.
+      const createdAt = g.item.github?.createdAt ?? g.occurredAt;
+      if (requireFresh && g.item.reason === 'new' && now() - Date.parse(createdAt) > maxAgeMs) return null;
+      return { gh: g.item };
+    }
     const c = deps.repo.getComment(id);
     // Still needs attention? It may have been triaged, snoozed or deleted since the event.
     if (!c || c.state !== 'inbox' || c.isOwn) return null;
@@ -57,8 +70,25 @@ export function createPushNotifier(deps: NotifierDeps): PushService {
   function describe(kind: 'new' | 'woke', items: Resolved[]): PushPayload | null {
     if (items.length === 0) return null;
     const woke = kind === 'woke';
+    if (items.length === 1 && items[0]!.gh) {
+      const g = items[0]!.gh;
+      const what = g.kind === 'pr' ? 'pull request' : 'issue';
+      const repoName = g.containerTitle ?? 'GitHub';
+      const title =
+        g.reason === 'new_activity'
+          ? `Activity on ${repoName}#${g.github?.number ?? ''}`
+          : g.reason === 'reopened'
+            ? `Reopened in ${repoName}`
+            : `New ${what} in ${repoName}`;
+      return {
+        title: `${woke ? 'Snoozed: ' : ''}${title}`,
+        body: snippet(`${g.title ?? ''}${g.author ? ` (by ${g.author})` : ''}`),
+        url: `/inbox?c=${encodeURIComponent(g.id)}`,
+        tag: `nudge-${kind}-${g.id}`,
+      };
+    }
     if (items.length === 1) {
-      const { comment: c, videoTitle } = items[0]!;
+      const { comment: c, videoTitle } = items[0] as { comment: CommentDTO; videoTitle: string };
       return {
         title: `${woke ? 'Snoozed: ' : ''}${c.authorName} on ${videoTitle}`,
         body: snippet(c.textPlain),
@@ -69,15 +99,18 @@ export function createPushNotifier(deps: NotifierDeps): PushService {
     // Group by video id (titles can repeat or be missing); show the busiest videos first.
     const perVideo = new Map<string, { title: string; n: number }>();
     for (const i of items) {
-      const v = perVideo.get(i.comment.videoId) ?? { title: i.videoTitle, n: 0 };
+      const { key, title } = groupOf(i);
+      const v = perVideo.get(key) ?? { title, n: 0 };
       v.n++;
-      perVideo.set(i.comment.videoId, v);
+      perVideo.set(key, v);
     }
+    const allGithub = items.every((i) => i.gh);
+    const noun = allGithub ? 'item' : items.some((i) => i.gh) ? 'item' : 'comment';
     const ranked = [...perVideo.values()].sort((a, b) => b.n - a.n);
     const shown = ranked.slice(0, MAX_VIDEOS_LISTED).map((v) => `${v.title} (${v.n})`);
     const more = ranked.length - shown.length;
     return {
-      title: woke ? `${items.length} snoozed comments are back` : `${items.length} new comments`,
+      title: woke ? `${items.length} snoozed ${noun}s are back` : `${items.length} new ${noun}s`,
       body: shown.join(', ') + (more > 0 ? ` and ${more} more` : ''),
       url: '/inbox',
       // A constant tag: the newest summary replaces the previous one instead of stacking up.

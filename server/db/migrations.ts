@@ -241,4 +241,37 @@ CREATE TRIGGER items_au AFTER UPDATE OF title, body_plain, author ON items BEGIN
 END;
 INSERT INTO items_fts(items_fts) VALUES ('rebuild');
 `,
+  /* 008 feeds (GitHub) and mute rules */ `
+-- A feed is one non-YouTube subscription: today, every pull request and issue in a GitHub user's or organisation's
+-- repositories. Its items live in the shared items table (provider 'github', feed_id set), so triage, snooze, labels
+-- and search all work on them unchanged. Credentials and "who am I" live in the settings table, not here.
+CREATE TABLE feeds (
+  id INTEGER PRIMARY KEY,
+  provider TEXT NOT NULL CHECK (provider IN ('github')),
+  kind TEXT NOT NULL DEFAULT 'owner',
+  owner TEXT NOT NULL,
+  owner_type TEXT CHECK (owner_type IN ('org','user')),
+  prs INTEGER NOT NULL DEFAULT 1,
+  issues INTEGER NOT NULL DEFAULT 1,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  import_mode TEXT NOT NULL DEFAULT 'none' CHECK (import_mode IN ('none','recent','all')),
+  added_at TEXT NOT NULL,
+  baseline_at TEXT,
+  cursor TEXT,
+  last_polled_at TEXT, next_poll_at TEXT,
+  error_count INTEGER NOT NULL DEFAULT 0, backoff_until TEXT, last_error TEXT,
+  rate_limit INTEGER, rate_remaining INTEGER, rate_reset_at TEXT,
+  UNIQUE (provider, owner));
+ALTER TABLE items ADD COLUMN feed_id INTEGER REFERENCES feeds(id) ON DELETE CASCADE;
+ALTER TABLE items ADD COLUMN muted INTEGER NOT NULL DEFAULT 0;
+CREATE INDEX idx_items_feed ON items(feed_id);
+
+-- Mute rules apply to items as they arrive (they land archived, still searchable) and never reopen on activity.
+CREATE TABLE mute_rules (
+  id INTEGER PRIMARY KEY,
+  kind TEXT NOT NULL CHECK (kind IN ('repo','author','bots','item')),
+  value TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  UNIQUE (kind, value));
+`,
 ];

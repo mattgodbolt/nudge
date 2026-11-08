@@ -26,6 +26,11 @@ import type {
   VideoDTO,
   ReplyResult,
   Capabilities,
+  FeedDTO,
+  GithubAssociation,
+  ItemDTO,
+  MuteKind,
+  MuteRuleDTO,
 } from '../shared/types.js';
 import type { DraftDTO, InboxPage, InboxQuery, SyncRequest } from '../shared/api.js';
 
@@ -122,6 +127,72 @@ export interface StoredSettings {
   manualReserve: number;
   backfillDays: number;
   theme: 'system' | 'light' | 'dark';
+  /** GitHub: a read-only token (never sent to the browser) and the logins that are me. */
+  github: { token: string | null; myAccounts: string[] };
+}
+export interface NewFeed {
+  owner: string;
+  prs: boolean;
+  issues: boolean;
+  importMode: ImportMode;
+}
+export interface FeedRow {
+  id: number;
+  provider: 'github';
+  owner: string;
+  ownerType: 'org' | 'user' | null;
+  prs: boolean;
+  issues: boolean;
+  enabled: boolean;
+  importMode: ImportMode;
+  addedAt: string;
+  baselineAt: string | null;
+  cursor: string | null;
+  lastPolledAt: string | null;
+  nextPollAt: string | null;
+  errorCount: number;
+  backoffUntil: string | null;
+  lastError: string | null;
+  rate: { limit: number; remaining: number; resetAt: string } | null;
+}
+export interface FeedPollResult {
+  cursor?: string | null;
+  ownerType?: 'org' | 'user' | null;
+  nextPollAt: string;
+  errorCount: number;
+  backoffUntil?: string | null;
+  error?: string | null;
+  rate?: { limit: number; remaining: number; resetAt: string } | null;
+}
+/** One pull request or issue as the poller hands it to the repo. */
+export interface GithubItemUpsert {
+  id: string;
+  kind: 'pr' | 'issue';
+  /** "owner/repo". */
+  repo: string;
+  number: number;
+  title: string;
+  author: string;
+  authorAvatarUrl: string | null;
+  authorType: string | null;
+  association: GithubAssociation | null;
+  bodyPlain: string;
+  url: string;
+  createdAt: string;
+  updatedAt: string;
+  sourceState: 'open' | 'closed' | 'merged';
+  draft: boolean;
+  comments: number;
+  labels: string[];
+  /** Set by the poller when the comment count grew: was the newest comment mine? (undefined = unknown) */
+  lastCommenterIsMe?: boolean;
+}
+export interface UpsertGithubResult {
+  /** New arrivals that need attention. */
+  added: string[];
+  /** Done or resolved items that came back (new activity or reopened). */
+  reopened: string[];
+  changed: string[];
 }
 export interface NewSource {
   kind: SourceKind;
@@ -228,6 +299,27 @@ export interface Repo {
 
   getSettings(): StoredSettings;
   updateSettings(p: Partial<StoredSettings>): StoredSettings;
+
+  /* --- feeds and mute rules (migration 008) --- */
+  listFeeds(): FeedDTO[];
+  getFeed(id: number): FeedDTO | null;
+  getFeedRow(id: number): FeedRow | null;
+  enabledFeedRows(): FeedRow[];
+  addFeed(f: NewFeed): FeedDTO;
+  updateFeed(
+    id: number,
+    p: Partial<{ enabled: boolean; prs: boolean; issues: boolean; importMode: ImportMode }>,
+  ): FeedDTO | null;
+  deleteFeed(id: number): boolean;
+  recordFeedPoll(id: number, r: FeedPollResult): void;
+  listMuteRules(): MuteRuleDTO[];
+  /** Adds the rule and returns the inbox items it now covers (the caller archives them with triage, so it is undoable). */
+  addMuteRule(kind: MuteKind, value: string): { rule: MuteRuleDTO; affectedIds: string[] };
+  deleteMuteRule(id: number): boolean;
+  /** The provider-neutral card for an item of any provider. */
+  getItem(id: string): { item: ItemDTO; state: CommentState; occurredAt: string; bodyPlain: string } | null;
+  githubItemMeta(ids: string[]): Map<string, { state: CommentState; sourceState: string | null; comments: number }>;
+  upsertGithubItems(feedId: number, ups: GithubItemUpsert[]): UpsertGithubResult;
 
   listSources(): SourceDTO[];
   /** Aggregate totals over every tracked, non-missing video. */
@@ -440,6 +532,45 @@ export class LabelError extends Error {
   }
 }
 
+/* ---------------- GitHub (polled; no webhooks, the box is only reachable on the tailnet) ---------------- */
+export interface GithubRate {
+  limit: number;
+  remaining: number;
+  resetAt: string;
+}
+/** A failure talking to GitHub. `retryAt` is set when the cause is a rate limit. */
+export class GithubError extends Error {
+  constructor(
+    message: string,
+    public status: number,
+    public retryAt: string | null = null,
+  ) {
+    super(message);
+    this.name = 'GithubError';
+  }
+}
+export interface GithubSearchPage {
+  items: GithubItemUpsert[];
+  total: number;
+  rate: GithubRate | null;
+}
+/** Everything the poller needs from GitHub; the real one is a thin fetch wrapper, tests and demo mode fake it. */
+export interface GithubClient {
+  /** Who owns this token (GET /user) and the scopes it carries, for the Settings "Test" button. */
+  whoami(token: string): Promise<{ login: string; scopes: string[] | null }>;
+  ownerType(owner: string, token: string | null): Promise<'org' | 'user' | null>;
+  /** One page (up to 100) of /search/issues, oldest update first. */
+  search(q: string, page: number, token: string | null): Promise<GithubSearchPage>;
+  /** Login of the newest comment on an issue or PR (given its comment count), or null. */
+  latestCommenter(repo: string, number: number, commentCount: number, token: string | null): Promise<string | null>;
+}
+export interface GithubPoller {
+  start(): void;
+  stop(): void;
+  /** Poll every enabled feed now (or just one); resolves when done. */
+  pollNow(feedId?: number): Promise<void>;
+}
+
 export interface AppDeps {
   repo: Repo;
   engine: SyncEngine;
@@ -457,6 +588,9 @@ export interface AppDeps {
   backfillDetails?(): Promise<number>;
   /** Web Push (absent in tests that do not exercise it). */
   push?: PushService;
+  /** GitHub feeds (absent in tests that do not exercise them). */
+  github?: GithubPoller;
+  githubClient?: GithubClient;
   resolveApiKey(): { key: string | null; source: 'env' | 'settings' | 'file' | null };
   demo: boolean;
   /** Short commit SHA of this server, shown in Settings. */

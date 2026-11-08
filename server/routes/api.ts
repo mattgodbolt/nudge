@@ -7,6 +7,7 @@ import { LabelError, PostError, YtError } from '../contracts.js';
 import { LABEL_COLORS, MAX_LABELS } from '../../shared/types.js';
 import { isValidClientId, parseGoogleClientJson } from '../reply/google-client.js';
 import { setOwnChannelId } from '../sync/own-channels.js';
+import { LOGIN } from './github.js';
 import { HttpError, asObject, bad, bool, buildSettingsDto, int, notFound, oneOf, str } from './util.js';
 
 const VIEWS = ['inbox', 'done', 'all', 'snoozed'] as const;
@@ -35,6 +36,26 @@ function asLabelHttp<T>(fn: () => T): T {
     if (e instanceof LabelError) throw new HttpError(LABEL_STATUS[e.code], e.message, e.code);
     throw e;
   }
+}
+
+/** Validate the GitHub part of a settings update. A token is opaque; logins must look like GitHub logins. */
+function parseGithubUpdate(v: unknown): NonNullable<SettingsUpdate['github']> {
+  const g = asObject(v);
+  const out: NonNullable<SettingsUpdate['github']> = {};
+  if (g.token !== undefined) {
+    if (g.token !== null && (typeof g.token !== 'string' || g.token.length > 300 || /\s/.test(g.token.trim()))) {
+      throw bad('"github.token" must be a token string or null');
+    }
+    out.token = g.token as string | null;
+  }
+  if (g.myAccounts !== undefined) {
+    const a = g.myAccounts;
+    if (!Array.isArray(a) || a.length > 20 || !a.every((l) => typeof l === 'string' && LOGIN.test(l.trim()))) {
+      throw bad('"github.myAccounts" must be a list of GitHub logins');
+    }
+    out.myAccounts = [...new Set((a as string[]).map((l) => l.trim()))];
+  }
+  return out;
 }
 
 function idList(v: unknown, name: string, max: number): string[] {
@@ -69,6 +90,11 @@ export function registerApiRoutes(app: FastifyInstance, deps: AppDeps): void {
     if (q.sourceId !== undefined) query.sourceId = int(q.sourceId, 'sourceId', { min: 1 });
     if (q.videoId) query.videoId = q.videoId;
     if (q.labelId !== undefined) query.labelId = int(q.labelId, 'labelId', { min: 1 });
+    if (q.feedId !== undefined) query.feedId = int(q.feedId, 'feedId', { min: 1 });
+    if (q.kind) query.kind = oneOf(q.kind, 'kind', ['pr', 'issue'] as const);
+    if (q.audience) {
+      query.audience = oneOf(q.audience, 'audience', ['outside', 'team', 'contributors', 'bots', 'people'] as const);
+    }
     if (q.q?.trim()) query.q = q.q.trim();
     if (q.cursor) query.cursor = q.cursor;
     query.limit = q.limit === undefined ? 100 : int(q.limit, 'limit', { min: 1, max: 500 });
@@ -331,6 +357,8 @@ export function registerApiRoutes(app: FastifyInstance, deps: AppDeps): void {
     if (scope !== 'all' && syncReq.id === undefined) throw bad(`"id" is required for scope "${scope}"`);
     const deep = bool(b, 'deep');
     if (deep !== undefined) syncReq.deep = deep;
+    // "Sync now" means everything: GitHub feeds have their own limits, so they do not depend on YouTube's quota.
+    if (scope === 'all') void deps.github?.pollNow().catch(() => undefined);
     if (!quota.canManual()) throw new HttpError(429, 'Daily quota exhausted', 'quota_exhausted');
     // Fire and forget: progress is reported over SSE. The engine merges concurrent requests.
     engine.run({ trigger: 'manual', ...syncReq }).catch((e: unknown) => {
@@ -378,11 +406,18 @@ export function registerApiRoutes(app: FastifyInstance, deps: AppDeps): void {
       u.manualReserve = int(b.manualReserve, 'manualReserve', { min: 0, max: 1_000_000 });
     if (b.backfillDays !== undefined) u.backfillDays = int(b.backfillDays, 'backfillDays', { min: 0, max: 36500 });
     if (b.theme !== undefined) u.theme = oneOf(b.theme, 'theme', THEMES);
+    if (b.github !== undefined) u.github = parseGithubUpdate(b.github);
     const googleClient = b.googleClient === undefined ? undefined : parseGoogleClientUpdate(b.googleClient);
 
     const before = repo.getSettings();
-    const { apiKey, googleClient: _ignored, ...rest } = u;
+    const { apiKey, googleClient: _ignored, github, ...rest } = u;
     const patch: Parameters<typeof repo.updateSettings>[0] = { ...rest };
+    if (github) {
+      patch.github = {
+        token: github.token === undefined ? before.github.token : github.token?.trim() || null,
+        myAccounts: github.myAccounts ?? before.github.myAccounts,
+      };
+    }
     if (googleClient !== undefined) patch.googleClient = googleClient;
     if (apiKey !== undefined) patch.apiKey = apiKey?.trim() ? apiKey.trim() : null;
     repo.updateSettings(patch);
@@ -400,6 +435,13 @@ export function registerApiRoutes(app: FastifyInstance, deps: AppDeps): void {
       }
       emitSources();
       emitInbox([]);
+    }
+    const githubChanged = JSON.stringify(before.github) !== JSON.stringify(after.github);
+    if (githubChanged) {
+      emitInbox([]);
+      bus.emit({ type: 'feeds.changed', feeds: repo.listFeeds(), mutes: repo.listMuteRules() });
+      // A new token (or new "me" accounts) is worth acting on straight away.
+      if (before.github.token !== after.github.token) void deps.github?.pollNow().catch(() => undefined);
     }
     deps.onSettingsChanged();
     const dto = buildSettingsDto(deps);

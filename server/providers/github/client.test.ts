@@ -1,0 +1,146 @@
+import { describe, expect, it } from 'vitest';
+import { GithubError } from '../../contracts.js';
+import { cleanBody, createGithubClient, mapSearchItem } from './client.js';
+
+const issue = (over: Record<string, unknown> = {}) => ({
+  number: 7,
+  title: 'Fix it',
+  user: { login: 'carol', avatar_url: 'https://a/b.png', type: 'User' },
+  author_association: 'FIRST_TIME_CONTRIBUTOR',
+  body: 'Hello <!-- template comment --> world',
+  html_url: 'https://github.com/org/app/pull/7',
+  created_at: '2026-11-08T10:00:00Z',
+  updated_at: '2026-11-08T11:00:00Z',
+  state: 'open',
+  comments: 2,
+  labels: [{ name: 'bug' }, { name: 'help wanted' }],
+  repository_url: 'https://api.github.com/repos/org/app',
+  pull_request: { merged_at: null },
+  draft: true,
+  ...over,
+});
+
+describe('mapSearchItem', () => {
+  it('maps a pull request', () => {
+    expect(mapSearchItem(issue())).toEqual({
+      id: 'gh:org/app#7',
+      kind: 'pr',
+      repo: 'org/app',
+      number: 7,
+      title: 'Fix it',
+      author: 'carol',
+      authorAvatarUrl: 'https://a/b.png',
+      authorType: 'User',
+      association: 'FIRST_TIME_CONTRIBUTOR',
+      bodyPlain: 'Hello  world',
+      url: 'https://github.com/org/app/pull/7',
+      createdAt: '2026-11-08T10:00:00.000Z',
+      updatedAt: '2026-11-08T11:00:00.000Z',
+      sourceState: 'open',
+      draft: true,
+      comments: 2,
+      labels: ['bug', 'help wanted'],
+    });
+  });
+
+  it('tells merged from closed, and issues from pull requests', () => {
+    expect(
+      mapSearchItem(issue({ state: 'closed', pull_request: { merged_at: '2026-11-08T12:00:00Z' } }))?.sourceState,
+    ).toBe('merged');
+    expect(mapSearchItem(issue({ state: 'closed', pull_request: { merged_at: null } }))?.sourceState).toBe('closed');
+    const i = mapSearchItem(issue({ pull_request: undefined }));
+    expect(i?.kind).toBe('issue');
+  });
+
+  it('survives a deleted author, an unknown association and a bad record', () => {
+    const m = mapSearchItem(issue({ user: null, author_association: 'WEIRD' }));
+    expect(m).toMatchObject({ author: 'ghost', authorType: null, association: null });
+    expect(mapSearchItem(issue({ repository_url: 'nonsense' }))).toBeNull();
+    expect(mapSearchItem(issue({ number: 'x' }))).toBeNull();
+  });
+
+  it('caps very long bodies', () => {
+    expect(cleanBody('x'.repeat(5000)).length).toBe(4001);
+    expect(cleanBody(null)).toBe('');
+  });
+});
+
+function client(res: (url: string) => Response) {
+  const seen: { url: string; headers: Record<string, string> }[] = [];
+  const c = createGithubClient({
+    fetch: (async (url: string, init: RequestInit) => {
+      seen.push({ url, headers: init.headers as Record<string, string> });
+      return res(url);
+    }) as unknown as typeof fetch,
+  });
+  return { c, seen };
+}
+const json = (body: unknown, headers: Record<string, string> = {}, status = 200) =>
+  new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json', ...headers } });
+
+describe('the client', () => {
+  it('searches oldest-update-first, sends the token, and reports the rate limit', async () => {
+    const { c, seen } = client(() =>
+      json(
+        { total_count: 1, items: [issue()] },
+        { 'x-ratelimit-limit': '30', 'x-ratelimit-remaining': '29', 'x-ratelimit-reset': '1794160000' },
+      ),
+    );
+    const page = await c.search('org:x updated:>=2026-11-08T00:00:00Z', 2, 'tok');
+    const u = new URL(seen[0]!.url);
+    expect(u.origin + u.pathname).toBe('https://api.github.com/search/issues');
+    expect(u.searchParams.get('sort')).toBe('updated');
+    expect(u.searchParams.get('order')).toBe('asc');
+    expect(u.searchParams.get('page')).toBe('2');
+    expect(seen[0]!.headers.Authorization).toBe('Bearer tok');
+    expect(page.items).toHaveLength(1);
+    expect(page.rate).toEqual({ limit: 30, remaining: 29, resetAt: new Date(1794160000 * 1000).toISOString() });
+  });
+
+  it('works without a token (public repos only) and sends no Authorization header', async () => {
+    const { c, seen } = client(() => json({ total_count: 0, items: [] }));
+    await c.search('org:x', 1, null);
+    expect(seen[0]!.headers.Authorization).toBeUndefined();
+  });
+
+  it('turns a rate limit into a retry time, a bad token into a clear error, and an outage into an error', async () => {
+    const limited = client(() =>
+      json({}, { 'x-ratelimit-limit': '10', 'x-ratelimit-remaining': '0', 'x-ratelimit-reset': '1794160000' }, 403),
+    );
+    await expect(limited.c.search('q', 1, null)).rejects.toMatchObject({
+      status: 403,
+      retryAt: new Date(1794160000 * 1000).toISOString(),
+    });
+    const retry = client(() => json({}, { 'retry-after': '30' }, 429));
+    const err = (await retry.c.search('q', 1, null).catch((e) => e)) as GithubError;
+    expect(err.retryAt && Date.parse(err.retryAt) - Date.now()).toBeGreaterThan(20_000);
+    await expect(client(() => json({}, {}, 401)).c.search('q', 1, 't')).rejects.toThrow(/rejected the token/);
+    await expect(client(() => json({}, {}, 502)).c.search('q', 1, 't')).rejects.toThrow(/unavailable/);
+    const refused = client(() => json({ message: 'nope' }, {}, 403));
+    const e2 = (await refused.c.search('q', 1, 't').catch((e) => e)) as GithubError;
+    expect(e2.retryAt).toBeNull();
+  });
+
+  it('knows an organisation from a user, and a missing owner', async () => {
+    expect(await client(() => json({ type: 'Organization' })).c.ownerType('compiler-explorer', null)).toBe('org');
+    expect(await client(() => json({ type: 'User' })).c.ownerType('mattgodbolt', null)).toBe('user');
+    expect(await client(() => json({}, {}, 404)).c.ownerType('nobody-here', null)).toBeNull();
+  });
+
+  it("reports a token's login and scopes (null for fine-grained tokens, which send none)", async () => {
+    const classic = client(() => json({ login: 'me' }, { 'x-oauth-scopes': 'notifications, repo' }));
+    expect(await classic.c.whoami('t')).toEqual({ login: 'me', scopes: ['notifications', 'repo'] });
+    expect((await client(() => json({ login: 'me' })).c.whoami('t')).scopes).toBeNull();
+  });
+
+  it('reads the newest comment from the last one-per-page page, and never touches other hosts', async () => {
+    const { c, seen } = client(() => json([{ user: { login: 'dave' } }]));
+    expect(await c.latestCommenter('org/app', 7, 4, 't')).toBe('dave');
+    expect(seen[0]!.url).toBe('https://api.github.com/repos/org/app/issues/7/comments?per_page=1&page=4');
+    expect(await c.latestCommenter('org/app', 7, 0, 't')).toBeNull();
+    // Owner names are path-encoded, so they cannot redirect the request elsewhere.
+    await c.ownerType('../evil', null);
+    expect(new URL(seen.at(-1)!.url).host).toBe('api.github.com');
+    expect(seen.at(-1)!.url).toContain('..%2Fevil');
+  });
+});

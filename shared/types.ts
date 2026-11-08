@@ -1,6 +1,6 @@
 // Shared domain + DTO types. This file is the contract between server and web.
 // Changes go through the lead only.
-export type CommentState = 'inbox' | 'done' | 'replied' | 'auto_replied' | 'own' | 'archived';
+export type CommentState = 'inbox' | 'done' | 'replied' | 'auto_replied' | 'resolved' | 'own' | 'archived';
 /** 'snoozed' = inbox comments hidden until their snoozedUntil; 'inbox' excludes them until they wake. */
 export type InboxView = 'inbox' | 'done' | 'all' | 'snoozed';
 /** Label colours are named tokens (the web maps them to CSS colours for light and dark themes). */
@@ -57,7 +57,51 @@ export interface VideoDTO {
   lastError: string | null;
   inboxCount: number;
 }
+export type ItemProvider = 'youtube' | 'github';
+export type ItemKind = 'comment' | 'pr' | 'issue';
+/** GitHub's relationship between the author and the repository (the REST `author_association` field). */
+export type GithubAssociation =
+  'OWNER' | 'MEMBER' | 'COLLABORATOR' | 'CONTRIBUTOR' | 'FIRST_TIME_CONTRIBUTOR' | 'FIRST_TIMER' | 'MANNEQUIN' | 'NONE';
+/** Provider-neutral view of one triage item. Everything the list row and header need, whatever the source. */
+export interface ItemDTO {
+  id: string;
+  provider: ItemProvider;
+  kind: ItemKind;
+  title: string | null;
+  author: string | null;
+  authorAvatarUrl: string | null;
+  isOwn: boolean;
+  /** "Open on <provider>" target. */
+  url: string | null;
+  /** Grouping: a video id, or "owner/repo". */
+  containerKey: string | null;
+  containerTitle: string | null;
+  containerUrl: string | null;
+  /** The provider's own state: 'open' | 'closed' | 'merged'. Null for YouTube. */
+  sourceState: string | null;
+  /** Why it is (back) in the inbox: 'new' | 'new_activity' | 'reopened' | 'muted'. */
+  reason: string | null;
+  /** Covered by a mute rule or muted on its own: it never reopens or notifies. */
+  muted: boolean;
+  github?: {
+    owner: string;
+    repo: string;
+    number: number;
+    draft: boolean;
+    association: GithubAssociation | null;
+    /** 'User' | 'Bot' | 'Organization' ... as reported by GitHub. */
+    authorType: string | null;
+    comments: number;
+    labels: string[];
+    createdAt: string;
+  };
+}
 export interface InboxItem {
+  item: ItemDTO;
+  /**
+   * For YouTube the real comment. For other providers a comment-shaped stand-in (id, author, text, state) so the
+   * shared triage code (selection, snooze, labels, undo) keeps working unchanged.
+   */
   comment: CommentDTO;
   video: Pick<VideoDTO, 'id' | 'title' | 'thumbnailUrl'>;
   /** Context for replies (null for top-level comments). */
@@ -103,6 +147,42 @@ export interface Counts {
   bySource: Record<number, number>;
   /** Comments with each label that need attention (state inbox, not snoozed). Every label has an entry (0 if none). */
   byLabel: Record<number, number>;
+  /** Inbox items per non-YouTube feed. */
+  byFeed: Record<number, number>;
+}
+
+export type FeedProvider = 'github';
+export interface FeedDTO {
+  id: number;
+  provider: FeedProvider;
+  /** The GitHub user or organisation whose pull requests and issues arrive here. */
+  owner: string;
+  ownerType: 'org' | 'user' | null;
+  prs: boolean;
+  issues: boolean;
+  enabled: boolean;
+  importMode: ImportMode;
+  addedAt: string;
+  lastPolledAt: string | null;
+  nextPollAt: string | null;
+  lastError: string | null;
+  rate: { limit: number; remaining: number; resetAt: string } | null;
+  inboxCount: number;
+  itemCount: number;
+}
+export type MuteKind = 'repo' | 'author' | 'bots' | 'item';
+export interface MuteRuleDTO {
+  id: number;
+  kind: MuteKind;
+  /** repo: "owner/repo"; author: a login; bots: ""; item: an item id. */
+  value: string;
+  createdAt: string;
+}
+export interface GithubSettingsDTO {
+  configured: boolean;
+  last4: string | null;
+  /** Logins that are "me" (my own account and any agent accounts): their items never reach the inbox. */
+  myAccounts: string[];
 }
 export interface StatsTotals {
   videos: number;
@@ -191,6 +271,7 @@ export interface SettingsDTO {
   demo: boolean;
   /** Commit of the running server (short SHA), or 'dev'. */
   version: string;
+  github: GithubSettingsDTO;
   google: GoogleAuthDTO;
 }
 export interface Capabilities {
@@ -240,6 +321,7 @@ export type ServerEvent =
   | { type: 'sync.done'; summary: SyncRunSummary }
   | { type: 'quota.update'; quota: QuotaDTO }
   | { type: 'sources.changed'; sources: SourceDTO[] }
+  | { type: 'feeds.changed'; feeds: FeedDTO[]; mutes: MuteRuleDTO[] }
   | { type: 'labels.changed'; labels: LabelDTO[] }
   | { type: 'settings.changed'; settings: SettingsDTO }
   | { type: 'capabilities.changed'; capabilities: Capabilities }

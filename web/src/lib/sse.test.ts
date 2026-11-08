@@ -34,7 +34,7 @@ describe('sse dispatch', () => {
   });
 
   it('inbox.changed updates counts including snoozed and byLabel', () => {
-    const counts = { inbox: 1, done: 0, all: 2, snoozed: 1, bySource: {}, byLabel: { 1: 1 } };
+    const counts = { inbox: 1, done: 0, all: 2, snoozed: 1, bySource: {}, byLabel: { 1: 1 }, byFeed: {} };
     dispatch({ type: 'inbox.changed', counts, addedIds: [], changedIds: [] });
     expect(inbox.counts.snoozed).toBe(1);
     expect(inbox.counts.byLabel).toEqual({ 1: 1 });
