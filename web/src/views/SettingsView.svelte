@@ -433,8 +433,9 @@
           Using a token ending <code>…{s.github.last4}</code>, stored in Nudge's database.
         {:else}
           No token: public repositories still work, with a low rate limit. For private repositories or a higher limit,
-          create a <strong>read-only</strong> token at GitHub &rsaquo; Settings &rsaquo; Developer settings and paste it here.
-          Nudge never writes to GitHub.
+          create a <strong>fine-grained</strong> token (GitHub &rsaquo; Settings &rsaquo; Developer settings): all
+          repositories, with <em>Issues</em> and <em>Pull requests</em> set to read-only. A classic token cannot be read-only
+          for private repositories. Nudge never writes to GitHub.
         {/if}
       </p>
       <div class="line">

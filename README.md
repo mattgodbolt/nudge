@@ -146,10 +146,16 @@ repositories, so you can triage them with the same keys (`e` done, `b` snooze, `
 - **Add a feed:** Sources > GitHub, enter a user or organisation (for example `compiler-explorer`). It starts "from now
   on" by default; you can also import the last two weeks or everything open. Public repositories work with no token,
   at GitHub's low anonymous rate limit.
-- **Token (optional):** Settings > GitHub. Paste a **read-only** token (a fine-grained token with read access to pull
-  requests and issues, or a classic one with no scopes for public repositories). It lives in Nudge's database like the
-  YouTube key and is never sent back to the browser. **Test** shows who it belongs to and warns if it can do more than
-  read. Nudge never writes to GitHub.
+- **Token (optional):** Settings > GitHub. Create a **fine-grained** token (GitHub > Settings > Developer settings >
+  Fine-grained tokens): resource owner = you, all repositories, and only **Issues: read-only** and **Pull requests:
+  read-only**. It can also read other owners' public repositories, so one token covers your private repos and a public
+  organisation. A classic token cannot be read-only for private repositories (its `repo` scope includes write). The
+  token lives in Nudge's database like the YouTube key and is never sent back to the browser. **Test** shows who it
+  belongs to and warns about a classic token with write-capable scopes. Nudge never writes to GitHub.
+- **Known limitation:** there is one token for all feeds, and a fine-grained token has a single owner, so private
+  repositories of a second owner (for example a private repo in an organisation) are not visible. Public ones are.
+  Per-feed tokens are tracked in [#1](https://github.com/mattgodbolt/nudge/issues/1).
+- **One feed per owner:** a feed covers every repository the owner has, including ones created later.
 - **My accounts:** Settings > GitHub. Items opened by these logins (yours, and any agent account that works for you)
   never reach the inbox.
 - **Who opened it:** every row says whether the author is on the team, a past contributor, a first-timer, an outsider
