@@ -55,7 +55,7 @@ export function createFakeGithubClient(now: () => number = Date.now) {
       authorAvatarUrl: null,
       authorType: person.type,
       association: person.association,
-      bodyPlain: `Demo ${isPr ? 'pull request' : 'issue'} body for #${number}.\n\nIt explains what changed and why.`,
+      bodyPlain: `Demo ${isPr ? 'pull request' : 'issue'} body for #${number}.\n\nIt explains **what changed** and why.\n\n<details>\n<summary>Commits</summary>\n\n- first change\n- second change\n</details>`,
       url: `https://github.com/${repo}/${isPr ? 'pull' : 'issues'}/${number}`,
       createdAt: created,
       updatedAt: created,

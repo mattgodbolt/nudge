@@ -81,6 +81,11 @@ test('opening an item shows its description and a link to GitHub; e marks it don
   await rows(page).first().click();
   const body = page.getByTestId('gh-body');
   await expect(body).toContainText('Demo');
+  // The description is rendered markdown: bold text and a collapsed <details>, not visible tags or asterisks.
+  await expect(page.getByTestId('gh-markdown').locator('strong')).toHaveText('what changed');
+  await expect(page.getByTestId('gh-markdown').locator('summary')).toHaveText('Commits');
+  await expect(body).not.toContainText('<details>');
+  await expect(body).not.toContainText('**');
   await expect(page.getByTestId('thread-view').locator('a.title')).toHaveAttribute('href', /github\.com\/demo-org\//);
   // No reply composer or "mark replied" for GitHub items.
   await expect(page.getByTestId('act-replied')).toHaveCount(0);
@@ -89,6 +94,30 @@ test('opening an item shows its description and a link to GitHub; e marks it don
   await page.keyboard.press('e');
   await expect.poll(() => feedCount(page)).toBe(before - 1);
   await expect(rows(page).filter({ hasText: firstTitle })).toHaveCount(0);
+});
+
+test('j and k keep moving through the list after opening an item and after e (no Escape needed)', async ({ page }) => {
+  await openFeed(page);
+  await page.getByTestId('who-all').click();
+  const selected = () => page.locator('[data-testid=inbox-row][aria-selected=true]');
+  const title = () => selected().getByTestId('row-title').innerText();
+
+  await rows(page).first().click();
+  await expect(page.getByTestId('thread-view')).toBeVisible();
+  const first = await title();
+  await page.keyboard.press('j');
+  await expect.poll(title).not.toBe(first);
+  const second = await title();
+  await page.keyboard.press('k');
+  await expect.poll(title).toBe(first);
+
+  // Mark done, then carry straight on down the list.
+  await page.keyboard.press('e');
+  await expect.poll(title).not.toBe(first);
+  const afterDone = await title();
+  await page.keyboard.press('j');
+  await expect.poll(title).not.toBe(afterDone);
+  expect(second).not.toBe(first);
 });
 
 test('Shift+M offers to mute the repo, the author or just the item; muting hides it and can be undone', async ({

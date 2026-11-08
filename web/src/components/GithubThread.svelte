@@ -2,6 +2,7 @@
   import type { InboxItem } from '../../../shared/types';
   import { authorChip, reasonChip, refLabel, statusChip } from '../lib/github';
   import { relativeTime } from '../lib/format';
+  import { renderMarkdown } from '../lib/sanitize';
   import { phone } from '../lib/phone.svelte';
   import { formatSnoozeTime, recentlyWoken } from '../lib/snooze';
   import { inbox } from '../lib/stores/inbox.svelte';
@@ -97,7 +98,8 @@
         <span class="faint meta">opened {relativeTime(item.comment.publishedAt, now)}</span>
       </div>
       {#if item.comment.textPlain}
-        <p class="text">{item.comment.textPlain}</p>
+        <!-- eslint-disable-next-line svelte/no-at-html-tags -- sanitised by renderMarkdown -->
+        <div class="md" data-testid="gh-markdown">{@html renderMarkdown(item.comment.textPlain)}</div>
       {:else}
         <p class="faint">No description.</p>
       {/if}
@@ -220,5 +222,83 @@
     .actions {
       width: 100%;
     }
+  }
+  .md {
+    overflow-wrap: anywhere;
+    line-height: 1.5;
+  }
+  .md :global(> :first-child) {
+    margin-top: 0;
+  }
+  .md :global(> :last-child) {
+    margin-bottom: 0;
+  }
+  .md :global(h1),
+  .md :global(h2),
+  .md :global(h3),
+  .md :global(h4) {
+    margin: var(--s4) 0 var(--s2);
+    font-size: 1em;
+    font-weight: 600;
+  }
+  .md :global(h1),
+  .md :global(h2) {
+    font-size: 1.1em;
+  }
+  .md :global(p),
+  .md :global(ul),
+  .md :global(ol),
+  .md :global(blockquote),
+  .md :global(pre),
+  .md :global(table),
+  .md :global(details) {
+    margin: 0 0 var(--s3);
+  }
+  .md :global(ul),
+  .md :global(ol) {
+    padding-left: 1.4em;
+  }
+  .md :global(code) {
+    font-family: var(--font-mono);
+    font-size: 0.92em;
+    background: var(--bg-hover);
+    border-radius: 4px;
+    padding: 0 4px;
+  }
+  .md :global(pre) {
+    background: var(--bg-sunken);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: var(--s2) var(--s3);
+    overflow-x: auto;
+  }
+  .md :global(pre code) {
+    background: none;
+    padding: 0;
+  }
+  .md :global(blockquote) {
+    border-left: 3px solid var(--border-strong);
+    padding-left: var(--s3);
+    color: var(--text-muted);
+  }
+  .md :global(summary) {
+    cursor: pointer;
+    color: var(--text-muted);
+  }
+  .md :global(a) {
+    color: var(--accent);
+  }
+  .md :global(table) {
+    border-collapse: collapse;
+  }
+  .md :global(th),
+  .md :global(td) {
+    border: 1px solid var(--border);
+    padding: 2px 8px;
+  }
+  .md :global(hr) {
+    border: 0;
+    border-top: 1px solid var(--border);
+    margin: var(--s3) 0;
   }
 </style>

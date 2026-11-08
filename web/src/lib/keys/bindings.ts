@@ -341,7 +341,9 @@ export function inboxBindings(): Binding[] {
       run: () =>
         router.setQuery({ source: undefined, video: undefined, q: undefined, c: undefined }, { replace: false }),
     }),
-    // Thread pane focus: j/k scroll the conversation instead of moving the list.
+    // Thread pane focus: j/k scroll a YouTube conversation instead of moving the list. A GitHub item has nothing to
+    // scroll (its description is short), so there j/k keep moving through the list: otherwise, after `e` on one item,
+    // the keys would seem dead until you pressed Escape.
     {
       id: 'thread.down',
       repeat: true,
@@ -350,7 +352,7 @@ export function inboxBindings(): Binding[] {
       group: 'Navigation',
       description: 'Scroll thread down',
       palette: false,
-      run: () => ui.scrollThread(1),
+      run: () => (inbox.selected?.item.provider === 'github' ? inbox.move(1) : ui.scrollThread(1)),
     },
     {
       id: 'thread.up',
@@ -360,7 +362,7 @@ export function inboxBindings(): Binding[] {
       group: 'Navigation',
       description: 'Scroll thread up',
       palette: false,
-      run: () => ui.scrollThread(-1),
+      run: () => (inbox.selected?.item.provider === 'github' ? inbox.move(-1) : ui.scrollThread(-1)),
     },
     {
       id: 'thread.back',
