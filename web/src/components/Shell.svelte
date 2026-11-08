@@ -62,7 +62,7 @@
 <SnoozeMenu />
 <MuteMenu />
 <Assistant />
-{#if !assistant.open && !hideNavOnMobile}
+{#if !assistant.open}
   <button
     type="button"
     class="fab"

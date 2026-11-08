@@ -82,7 +82,7 @@ export const api = {
   inbox: (q: InboxQuery) =>
     request<InboxPage>(
       'GET',
-      `/api/inbox${qs({ view: q.view, sourceId: q.sourceId, videoId: q.videoId, labelId: q.labelId, feedId: q.feedId, kind: q.kind, audience: q.audience, q: q.q, cursor: q.cursor, limit: q.limit })}`,
+      `/api/inbox${qs({ view: q.view, sourceId: q.sourceId, videoId: q.videoId, labelId: q.labelId, feedId: q.feedId, repo: q.repo, kind: q.kind, audience: q.audience, q: q.q, cursor: q.cursor, limit: q.limit })}`,
     ),
   thread: (id: string, focus?: string) =>
     request<T.ThreadDetail>('GET', `/api/threads/${encodeURIComponent(id)}${qs({ focus })}`),

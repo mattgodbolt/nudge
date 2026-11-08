@@ -45,8 +45,11 @@
   const q = $derived(router.query.q || '');
   const feedId = $derived(router.query.feed ? Number(router.query.feed) : undefined);
   const feed = $derived(feedId !== undefined ? feeds.get(feedId) : undefined);
-  const kind = $derived<'pr' | 'issue' | undefined>(
-    router.query.kind === 'pr' ? 'pr' : router.query.kind === 'issue' ? 'issue' : undefined,
+  const repo = $derived(router.query.repo || undefined);
+  const kind = $derived<'pr' | 'issue' | 'todo' | undefined>(
+    router.query.kind === 'pr' || router.query.kind === 'issue' || router.query.kind === 'todo'
+      ? router.query.kind
+      : undefined,
   );
   const AUDIENCES = ['outside', 'team', 'contributors', 'bots'] as const;
   const audience = $derived(AUDIENCES.find((a) => a === router.query.who));
@@ -59,6 +62,7 @@
       videoId,
       labelId,
       feedId: Number.isFinite(feedId) ? feedId : undefined,
+      repo,
       kind,
       audience,
       q: q || undefined,
@@ -199,6 +203,18 @@
             onclick={() => router.setQuery({ feed: undefined, c: undefined }, { replace: false })}>×</button
           ></span
         >{/if}
+      {#if kind === 'todo'}<span class="chip" data-testid="todo-chip"
+          >Todos<button
+            aria-label="Clear todo filter"
+            onclick={() => router.setQuery({ kind: undefined, c: undefined }, { replace: false })}>×</button
+          ></span
+        >{/if}
+      {#if repo}<span class="chip" data-testid="repo-chip"
+          >{repo}<button
+            aria-label="Clear repository filter"
+            onclick={() => router.setQuery({ repo: undefined, c: undefined }, { replace: false })}>×</button
+          ></span
+        >{/if}
       {#if source}<span class="chip"
           >{source.title ?? source.ytId}<button
             aria-label="Clear source filter"
@@ -213,7 +229,7 @@
         >{/if}
     </div>
 
-    {#if feeds.list.length > 0}
+    {#if feeds.list.length > 0 && kind !== 'todo'}
       <div class="ghfilters" role="group" aria-label="Filter GitHub items" data-testid="gh-filters">
         {#each [['', 'All'], ['outside', 'Outside'], ['team', 'Team'], ['contributors', 'Contributors'], ['bots', 'Bots']] as [value, text] (value)}
           <button

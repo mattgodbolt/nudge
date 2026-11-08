@@ -15,6 +15,38 @@
   import QuotaMeter from './QuotaMeter.svelte';
   import Kbd from './Kbd.svelte';
 
+  /** Which GitHub owners are expanded. A feed you are looking at is always shown open. */
+  let expanded = $state<Set<number>>(new Set());
+  try {
+    expanded = new Set(JSON.parse(localStorage.getItem('nudge-sidebar-open-feeds') ?? '[]') as number[]);
+  } catch {
+    /* storage unavailable */
+  }
+  const isOpen = (id: number) => expanded.has(id) || router.query.feed === String(id);
+  function toggle(id: number) {
+    const next = new Set(expanded);
+    if (isOpen(id)) next.delete(id);
+    else next.add(id);
+    expanded = next;
+    try {
+      localStorage.setItem('nudge-sidebar-open-feeds', JSON.stringify([...next]));
+    } catch {
+      /* storage unavailable */
+    }
+  }
+  /** Repositories under an owner that have something waiting, busiest first; the one you are viewing stays listed. */
+  function reposOf(owner: string): { full: string; name: string; n: number }[] {
+    const prefix = `${owner.toLowerCase()}/`;
+    const out = Object.entries(inbox.counts.byRepo)
+      .filter(([full]) => full.toLowerCase().startsWith(prefix))
+      .map(([full, n]) => ({ full, name: full.slice(prefix.length), n }));
+    const cur = router.query.repo;
+    if (cur && cur.toLowerCase().startsWith(prefix) && !out.some((r) => r.full === cur)) {
+      out.push({ full: cur, name: cur.slice(prefix.length), n: 0 });
+    }
+    return out.sort((x, y) => y.n - x.n || x.name.localeCompare(y.name));
+  }
+
   const views = $derived([
     {
       route: 'inbox' as RouteName,
@@ -153,6 +185,7 @@
         {/each}
       {/if}
       <div class="label head">Sources</div>
+      <div class="label subhead">YouTube</div>
       {#each sources.list as s (s.id)}
         {@const n = inbox.counts.bySource[s.id] ?? s.inboxCount}
         <a
@@ -174,28 +207,80 @@
         <div class="faint meta pad">No sources yet</div>
       {/each}
       {#if feeds.list.length > 0}
-        <div class="label head">GitHub</div>
+        <div class="label subhead">GitHub</div>
         {#each feeds.list as f (f.id)}
           {@const n = inbox.counts.byFeed[f.id] ?? f.inboxCount}
-          <a
-            class="item sub"
-            class:active={router.route === 'inbox' && router.query.feed === String(f.id)}
-            class:off={!f.enabled}
-            href="/inbox?feed={f.id}"
-            data-testid="sidebar-feed"
-            onclick={(e) => {
-              e.preventDefault();
-              router.navigate('inbox', { feed: String(f.id) });
-              ui.pane = 'list';
-            }}
-          >
-            <Icon name="list" size={14} />
-            <span class="grow truncate">{f.owner}</span>
-            {#if f.lastError}<span class="warn" title={f.lastError} data-testid="feed-error">!</span>{/if}
-            {#if n > 0}<span class="count" data-testid="sidebar-feed-count">{formatNumber(n)}</span>{/if}
-          </a>
+          {@const repos = reposOf(f.owner)}
+          {@const open = isOpen(f.id)}
+          <div class="feedrow">
+            <button
+              type="button"
+              class="chev"
+              class:closed={!open}
+              aria-label="{open ? 'Collapse' : 'Expand'} {f.owner}"
+              aria-expanded={open}
+              data-testid="feed-toggle"
+              onclick={() => toggle(f.id)}><Icon name="chevron-down" size={12} /></button
+            >
+            <a
+              class="item sub grow"
+              class:active={router.route === 'inbox' && router.query.feed === String(f.id) && !router.query.repo}
+              class:off={!f.enabled}
+              href="/inbox?feed={f.id}"
+              data-testid="sidebar-feed"
+              onclick={(e) => {
+                e.preventDefault();
+                router.navigate('inbox', { feed: String(f.id) });
+                ui.pane = 'list';
+              }}
+            >
+              <Icon name="list" size={14} />
+              <span class="grow truncate">{f.owner}</span>
+              {#if f.lastError}<span class="warn" title={f.lastError} data-testid="feed-error">!</span>{/if}
+              {#if n > 0}<span class="count" data-testid="sidebar-feed-count">{formatNumber(n)}</span>{/if}
+            </a>
+          </div>
+          {#if open}
+            {#each repos as r (r.full)}
+              <a
+                class="item sub repo"
+                class:active={router.route === 'inbox' && router.query.repo === r.full}
+                href="/inbox?feed={f.id}&repo={encodeURIComponent(r.full)}"
+                data-testid="sidebar-repo"
+                title={r.full}
+                onclick={(e) => {
+                  e.preventDefault();
+                  router.navigate('inbox', { feed: String(f.id), repo: r.full });
+                  ui.pane = 'list';
+                }}
+              >
+                <span class="grow truncate">{r.name}</span>
+                {#if r.n > 0}<span class="count" data-testid="sidebar-repo-count">{formatNumber(r.n)}</span>{/if}
+              </a>
+            {:else}
+              <div class="faint meta pad repo-empty">Nothing waiting</div>
+            {/each}
+          {/if}
         {/each}
       {/if}
+      <div class="label subhead">Todos</div>
+      <a
+        class="item sub"
+        class:active={router.route === 'inbox' && router.query.kind === 'todo'}
+        href="/inbox?kind=todo"
+        data-testid="sidebar-todos"
+        onclick={(e) => {
+          e.preventDefault();
+          router.navigate('inbox', { kind: 'todo' });
+          ui.pane = 'list';
+        }}
+      >
+        <Icon name="check" size={14} />
+        <span class="grow truncate">Todos</span>
+        {#if inbox.counts.todos > 0}<span class="count" data-testid="sidebar-todos-count"
+            >{formatNumber(inbox.counts.todos)}</span
+          >{/if}
+      </a>
     </div>
   </div>
 
@@ -358,7 +443,42 @@
   }
   /* Phone: row 1 = brand + big icon buttons (search, sources, stats, settings); row 2 = a swipeable strip
      of every view (Inbox, Snoozed, Done, All, each label, each source) as 44px+ chips. */
+  .subhead {
+    padding: var(--s2) var(--s2) 2px var(--s3);
+    font-size: var(--fs-meta);
+    color: var(--text-faint, var(--text-muted));
+  }
+  .feedrow {
+    display: flex;
+    align-items: center;
+  }
+  .chev {
+    flex: none;
+    width: 18px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 0;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 0;
+  }
+  .chev.closed :global(svg) {
+    transform: rotate(-90deg);
+  }
+  .repo {
+    padding-left: 34px;
+  }
+  .repo-empty {
+    padding-left: 34px;
+  }
   @media (max-width: 899px) {
+    .chev {
+      width: 32px;
+      height: 44px;
+    }
     .tell {
       display: none;
     }

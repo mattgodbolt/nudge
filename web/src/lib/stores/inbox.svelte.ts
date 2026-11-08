@@ -9,7 +9,8 @@ export interface InboxFilters {
   videoId?: string;
   labelId?: number;
   feedId?: number;
-  kind?: 'pr' | 'issue';
+  repo?: string;
+  kind?: 'pr' | 'issue' | 'todo';
   audience?: 'outside' | 'team' | 'contributors' | 'bots' | 'people';
   q?: string;
 }
@@ -35,7 +36,7 @@ interface CommitResult {
 const PAGE = 100;
 
 export function emptyCounts(): Counts {
-  return { inbox: 0, done: 0, all: 0, snoozed: 0, bySource: {}, byLabel: {}, byFeed: {} };
+  return { inbox: 0, done: 0, all: 0, snoozed: 0, bySource: {}, byLabel: {}, byFeed: {}, byRepo: {}, todos: 0 };
 }
 
 const isDone = (s: CommentState) => s === 'done' || s === 'replied' || s === 'auto_replied' || s === 'resolved';
@@ -133,6 +134,7 @@ export class InboxStore {
       filters.videoId === this.filters.videoId &&
       filters.labelId === this.filters.labelId &&
       filters.feedId === this.filters.feedId &&
+      filters.repo === this.filters.repo &&
       filters.kind === this.filters.kind &&
       filters.audience === this.filters.audience &&
       (filters.q ?? '') === (this.filters.q ?? '');

@@ -40,6 +40,34 @@ test('the feed shows up in the sidebar with a count, and its items read as pull 
   await expect(page.getByTestId('feed-chip')).toContainText('demo-org');
 });
 
+test('the sidebar groups YouTube, GitHub and Todos under Sources, and an owner opens out into repos to filter by', async ({
+  page,
+}) => {
+  await page.goto('/inbox');
+  const side = page.getByRole('navigation', { name: 'Main' });
+  await expect(side.getByText('Sources', { exact: true })).toBeVisible();
+  await expect(side.getByText('YouTube', { exact: true })).toBeVisible();
+  await expect(side.getByText('GitHub', { exact: true })).toBeVisible();
+  await expect(page.getByTestId('sidebar-todos')).toBeVisible();
+
+  await expect(page.getByTestId('sidebar-repo')).toHaveCount(0); // collapsed until opened
+  await page.getByTestId('feed-toggle').click();
+  const repos = page.getByTestId('sidebar-repo');
+  await expect(repos).toHaveCount(3);
+  await expect(repos.filter({ hasText: 'compiler' }).getByTestId('sidebar-repo-count')).toBeVisible();
+
+  await repos.filter({ hasText: 'compiler' }).click();
+  await expect(page).toHaveURL(/repo=demo-org%2Fcompiler/);
+  await expect(page.getByTestId('repo-chip')).toContainText('demo-org/compiler');
+  await expect(rows(page).first()).toBeVisible();
+  await expect(rows(page).first()).toContainText('demo-org/compiler #');
+  await expect(rows(page).filter({ hasText: 'demo-org/infra #' })).toHaveCount(0);
+
+  await page.getByRole('button', { name: 'Clear repository filter' }).click();
+  await expect(page.getByTestId('repo-chip')).toHaveCount(0);
+  await page.getByTestId('feed-toggle').click(); // collapse again for the tests that follow
+});
+
 test('who opened it: outside contributors, the team, contributors and bots filter the list', async ({ page }) => {
   await openFeed(page);
   const chips = async () => (await rows(page).getByTestId('row-chip').allInnerTexts()).sort();

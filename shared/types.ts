@@ -151,6 +151,10 @@ export interface Counts {
   byLabel: Record<number, number>;
   /** Inbox items per non-YouTube feed. */
   byFeed: Record<number, number>;
+  /** Inbox items per GitHub repository ("owner/repo"); repositories with nothing waiting are absent. */
+  byRepo: Record<string, number>;
+  /** Todos waiting in the inbox. */
+  todos: number;
 }
 
 export type FeedProvider = 'github';

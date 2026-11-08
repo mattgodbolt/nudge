@@ -8,8 +8,10 @@ export interface InboxQuery {
   labelId?: number;
   /** Only items from this non-YouTube feed. */
   feedId?: number;
+  /** Only items in this repository ("owner/repo"). */
+  repo?: string;
   /** Only this kind of item. */
-  kind?: 'pr' | 'issue';
+  kind?: 'pr' | 'issue' | 'todo';
   /** GitHub author filter: outside contributors, the team, past contributors, bots, or any human. */
   audience?: 'outside' | 'team' | 'contributors' | 'bots' | 'people';
   q?: string;

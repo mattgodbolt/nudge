@@ -70,6 +70,8 @@ function stubRepo() {
       bySource: {},
       byLabel: {},
       byFeed: {},
+      byRepo: {},
+      todos: 0,
     };
   };
   const move = (ids: string[], to: CommentState): TriageResult => {

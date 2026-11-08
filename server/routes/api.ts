@@ -111,7 +111,11 @@ export function registerApiRoutes(app: FastifyInstance, deps: AppDeps): void {
     if (q.videoId) query.videoId = q.videoId;
     if (q.labelId !== undefined) query.labelId = int(q.labelId, 'labelId', { min: 1 });
     if (q.feedId !== undefined) query.feedId = int(q.feedId, 'feedId', { min: 1 });
-    if (q.kind) query.kind = oneOf(q.kind, 'kind', ['pr', 'issue'] as const);
+    if (q.repo) {
+      if (!/^[\w.-]{1,100}\/[\w.-]{1,100}$/.test(q.repo)) throw bad('"repo" must look like owner/name');
+      query.repo = q.repo;
+    }
+    if (q.kind) query.kind = oneOf(q.kind, 'kind', ['pr', 'issue', 'todo'] as const);
     if (q.audience) {
       query.audience = oneOf(q.audience, 'audience', ['outside', 'team', 'contributors', 'bots', 'people'] as const);
     }

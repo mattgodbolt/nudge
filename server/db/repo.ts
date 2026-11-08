@@ -953,6 +953,10 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
       where.push('i.container_key = @videoId');
       args.videoId = q.videoId;
     }
+    if (q.repo) {
+      where.push("i.provider = 'github' AND i.container_key = @repo COLLATE NOCASE");
+      args.repo = q.repo;
+    }
     if (q.feedId !== undefined) {
       where.push('i.feed_id = @feedId');
       args.feedId = q.feedId;
@@ -1080,6 +1084,20 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
       .all({ now: at }) as Row[]) {
       byFeed[r.feed_id] = r.n;
     }
+    const todos = (
+      db
+        .prepare(`SELECT COUNT(*) AS n FROM items i WHERE i.provider = 'todo' AND i.state = 'inbox' AND ${NOT_SNOOZED}`)
+        .get({ now: at }) as Row
+    ).n as number;
+    const byRepo: Record<string, number> = {};
+    for (const r of db
+      .prepare(
+        `SELECT i.container_key AS repo, COUNT(*) AS n FROM items i WHERE i.provider = 'github' AND i.state = 'inbox'
+           AND ${NOT_SNOOZED} GROUP BY i.container_key`,
+      )
+      .all({ now: at }) as Row[]) {
+      byRepo[r.repo] = r.n;
+    }
     const all = [...by.entries()].reduce((a, [s, c]) => (s === 'own' ? a : a + c), 0);
     return {
       inbox: n('inbox') - snoozed,
@@ -1089,6 +1107,8 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
       bySource,
       byLabel,
       byFeed,
+      byRepo,
+      todos,
     };
   }
 

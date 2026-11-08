@@ -89,11 +89,16 @@ test.describe('on a phone', () => {
   test('the floating mic button opens the box; sending a todo works', async ({ page }) => {
     await page.goto('/inbox');
     await page.waitForSelector('[data-testid=inbox-row]');
+    // It stays available with an item open full-screen, where "snooze this" is most useful.
+    await page.getByTestId('inbox-row').first().click();
+    await expect(page.getByTestId('thread-view')).toBeVisible();
+    await expect(page.getByTestId('assistant-fab')).toBeVisible();
     await page.getByTestId('assistant-fab').click();
     await expect(box(page)).toBeVisible();
     await page.getByTestId('assistant-input').fill('book the dentist');
     await page.getByTestId('assistant-send').click();
     await expect(box(page)).toBeHidden();
+    await page.getByRole('button', { name: 'Back to list' }).click();
     await expect(page.getByTestId('inbox-row').filter({ hasText: 'Book the dentist' })).toBeVisible();
   });
 });

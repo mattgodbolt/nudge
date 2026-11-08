@@ -545,6 +545,8 @@ describe('counts', () => {
       bySource: { [sourceId]: 0, [s2.id]: 1, [empty.id]: 0 },
       byLabel: {},
       byFeed: {},
+      byRepo: {},
+      todos: 0,
     });
     expect(repo.listSources().find((s) => s.id === s2.id)!.inboxCount).toBe(1);
   });

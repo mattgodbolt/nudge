@@ -59,6 +59,8 @@ const counts = (inbox: number, done: number): Counts => ({
   bySource: {},
   byLabel: {},
   byFeed: {},
+  byRepo: {},
+  todos: 0,
 });
 const json = (body: unknown, status = 200) =>
   Promise.resolve(new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } }));
@@ -209,6 +211,8 @@ describe('InboxStore snooze and labels', () => {
     bySource: {},
     byLabel,
     byFeed: {},
+    byRepo: {},
+    todos: 0,
   });
   const bodies = (path: string) =>
     fetchMock.mock.calls.filter((c) => c[0] === path).map((c) => JSON.parse(c[1].body as string));
