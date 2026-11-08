@@ -9,6 +9,7 @@ import type {
   LabelColor,
   LabelDTO,
   PollTier,
+  PushPrefs,
   SnoozeResult,
   SourceDTO,
   StatsDTO,
@@ -25,6 +26,7 @@ import { LabelError } from '../contracts.js';
 import type {
   GoogleAccountRow,
   NewSource,
+  PushSubscriptionRow,
   Repo,
   SourceRow,
   StoredSettings,
@@ -137,6 +139,64 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
     })();
     return getSettings();
   }
+
+  /* ---------------- web push ---------------- */
+  const pushRow = (r: Row): PushSubscriptionRow => ({
+    endpoint: r.endpoint,
+    p256dh: r.p256dh,
+    auth: r.auth,
+    newComments: !!r.new_comments,
+    snoozeWake: !!r.snooze_wake,
+    label: r.label,
+    createdAt: r.created_at,
+    lastSuccessAt: r.last_success_at,
+    failureCount: r.failure_count,
+  });
+  const listPushSubscriptions = (): PushSubscriptionRow[] =>
+    (db.prepare('SELECT * FROM push_subscriptions ORDER BY created_at, endpoint').all() as Row[]).map(pushRow);
+  function getPushSubscription(endpoint: string): PushSubscriptionRow | null {
+    const r = db.prepare('SELECT * FROM push_subscriptions WHERE endpoint = ?').get(endpoint) as Row | undefined;
+    return r ? pushRow(r) : null;
+  }
+  function upsertPushSubscription(s: {
+    endpoint: string;
+    p256dh: string;
+    auth: string;
+    label: string | null;
+    prefs: PushPrefs;
+  }): void {
+    db.prepare(
+      `INSERT INTO push_subscriptions (endpoint, p256dh, auth, new_comments, snooze_wake, label, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(endpoint) DO UPDATE SET p256dh = excluded.p256dh, auth = excluded.auth,
+         new_comments = excluded.new_comments, snooze_wake = excluded.snooze_wake, label = excluded.label,
+         failure_count = 0`,
+    ).run(s.endpoint, s.p256dh, s.auth, s.prefs.newComments ? 1 : 0, s.prefs.snoozeWake ? 1 : 0, s.label, now());
+  }
+  const deletePushSubscription = (endpoint: string): boolean =>
+    db.prepare('DELETE FROM push_subscriptions WHERE endpoint = ?').run(endpoint).changes > 0;
+  function markPushResult(endpoint: string, ok: boolean): void {
+    if (ok) {
+      db.prepare('UPDATE push_subscriptions SET last_success_at = ?, failure_count = 0 WHERE endpoint = ?').run(
+        now(),
+        endpoint,
+      );
+    } else {
+      db.prepare('UPDATE push_subscriptions SET failure_count = failure_count + 1 WHERE endpoint = ?').run(endpoint);
+    }
+  }
+  function getVapidKeys(): { publicKey: string; privateKey: string } | null {
+    const r = db.prepare("SELECT value FROM settings WHERE key = 'vapidKeys'").get() as Row | undefined;
+    if (!r) return null;
+    try {
+      const v = JSON.parse(r.value);
+      return typeof v?.publicKey === 'string' && typeof v?.privateKey === 'string' ? v : null;
+    } catch {
+      return null;
+    }
+  }
+  const setVapidKeys = (k: { publicKey: string; privateKey: string }): void =>
+    void putSetting.run('vapidKeys', JSON.stringify(k));
 
   /* ---------------- videos ---------------- */
   const VIDEO_SELECT = `SELECT v.*, (SELECT COUNT(*) FROM comments c WHERE c.video_id = v.id AND c.state = 'inbox') AS inbox_count
@@ -1378,6 +1438,13 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
     recordPostedReply,
     removeLocalComment,
     setThreadCanReply,
+    listPushSubscriptions,
+    getPushSubscription,
+    upsertPushSubscription,
+    deletePushSubscription,
+    markPushResult,
+    getVapidKeys,
+    setVapidKeys,
     getSettings,
     updateSettings,
     listSources,

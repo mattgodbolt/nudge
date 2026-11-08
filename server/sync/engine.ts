@@ -105,7 +105,7 @@ export function createSyncEngine(deps: EngineDeps): SyncEngine {
     acc.changed.clear();
     runNewComments += addedIds.length;
     if (!addedIds.length && !changedIds.length) return;
-    bus.emit({ type: 'inbox.changed', counts: repo.counts(), addedIds, changedIds });
+    bus.emit({ type: 'inbox.changed', counts: repo.counts(), addedIds, changedIds, reason: 'sync' });
   }
   function collect(r: { newCommentIds: string[]; changedIds: string[] }): void {
     for (const id of r.newCommentIds) acc.added.add(id);

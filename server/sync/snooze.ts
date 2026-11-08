@@ -22,7 +22,8 @@ export function createSnoozeWaker(deps: SnoozeWakerDeps): SnoozeWaker {
 
   function sweep(): string[] {
     const { woken, counts } = deps.repo.wakeSnoozed();
-    if (woken.length > 0) deps.bus.emit({ type: 'inbox.changed', counts, addedIds: woken, changedIds: [] });
+    if (woken.length > 0)
+      deps.bus.emit({ type: 'inbox.changed', counts, addedIds: woken, changedIds: [], reason: 'woke' });
     return woken;
   }
 

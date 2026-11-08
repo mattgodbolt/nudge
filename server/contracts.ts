@@ -15,6 +15,7 @@ import type {
   PollTier,
   QuotaDTO,
   ServerEvent,
+  PushPrefs,
   SettingsDTO,
   SourceDTO,
   SourceKind,
@@ -158,8 +159,32 @@ export interface VideoSyncRow {
   /** A comment scan started but has not completed normally; the next scan must not stop early. */
   scanIncomplete: boolean;
 }
+export interface PushSubscriptionRow extends PushPrefs {
+  endpoint: string;
+  p256dh: string;
+  auth: string;
+  label: string | null;
+  createdAt: string;
+  lastSuccessAt: string | null;
+  failureCount: number;
+}
 export interface Repo {
   close(): void;
+  /* --- Web Push (migration 006) --- */
+  listPushSubscriptions(): PushSubscriptionRow[];
+  getPushSubscription(endpoint: string): PushSubscriptionRow | null;
+  upsertPushSubscription(s: {
+    endpoint: string;
+    p256dh: string;
+    auth: string;
+    label: string | null;
+    prefs: PushPrefs;
+  }): void;
+  deletePushSubscription(endpoint: string): boolean;
+  /** Record a delivery attempt: success resets the failure count, failure increments it. */
+  markPushResult(endpoint: string, ok: boolean): void;
+  getVapidKeys(): { publicKey: string; privateKey: string } | null;
+  setVapidKeys(k: { publicKey: string; privateKey: string }): void;
   /* --- Google OAuth accounts + reply posting (migration 003) --- */
   listGoogleAccounts(): GoogleAccountRow[];
   upsertGoogleAccount(a: GoogleAccountRow): void;
@@ -430,6 +455,8 @@ export interface AppDeps {
   onSettingsChanged(): void;
   /** Fetch durations/likes for videos stored before those columns existed; resolves to the number updated. */
   backfillDetails?(): Promise<number>;
+  /** Web Push (absent in tests that do not exercise it). */
+  push?: PushService;
   resolveApiKey(): { key: string | null; source: 'env' | 'settings' | 'file' | null };
   demo: boolean;
   /** Demo mode only: force new comments to appear. */
@@ -437,3 +464,26 @@ export interface AppDeps {
   staticDir?: string;
 }
 export type { QuotaDTO, SettingsDTO, InboxItem };
+
+/* ---------------- Web Push ---------------- */
+export type PushSendResult = 'ok' | 'gone' | 'error';
+export interface PushPayload {
+  title: string;
+  body: string;
+  /** Path to open when tapped (same origin). */
+  url: string;
+  /** Notifications with the same tag replace each other. */
+  tag: string;
+}
+/** Sends one encrypted message to one subscription; the only piece that touches the network. */
+export interface PushSender {
+  send(sub: { endpoint: string; p256dh: string; auth: string }, payload: PushPayload): Promise<PushSendResult>;
+}
+export interface PushService {
+  publicKey(): string;
+  /** Send a test notification to one subscription. */
+  test(endpoint: string): Promise<PushSendResult | 'unknown'>;
+  /** Send whatever has been collected now and wait for it (tests; shutdown). */
+  flush(): Promise<void>;
+  stop(): void;
+}

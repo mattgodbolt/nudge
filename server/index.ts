@@ -15,6 +15,8 @@ import { createHttpPostGateway } from './reply/gateway.js';
 import { createHandoffPoster, createReplyPoster } from './reply/poster.js';
 import { buildSettingsDto } from './routes/util.js';
 import { backfillVideoDetails } from './sync/membership.js';
+import { createPushNotifier } from './push/notifier.js';
+import { createWebPushSender, ensureVapidKeys } from './push/sender.js';
 import { createSnoozeWaker } from './sync/snooze.js';
 import { createSyncEngine } from './sync/engine.js';
 import { createQuotaTracker } from './sync/quota.js';
@@ -79,6 +81,14 @@ async function main(): Promise<void> {
 
   const snoozeWaker = createSnoozeWaker({ repo, bus });
 
+  const vapid = ensureVapidKeys(repo);
+  const push = createPushNotifier({
+    repo,
+    bus,
+    publicKey: vapid.publicKey,
+    sender: createWebPushSender({ keys: vapid, subject: config.pushSubject }),
+  });
+
   if (config.demo) {
     const fresh = repo.listSources().length === 0;
     await seedDemo(repo, addSource); // no-op unless the DB is empty
@@ -135,6 +145,7 @@ async function main(): Promise<void> {
     testKey: config.demo ? async () => ({ ok: true, message: 'Demo mode: no YouTube calls are made' }) : testKey,
     onSettingsChanged: () => scheduler.start(),
     backfillDetails: () => backfillVideoDetails(repo, yt),
+    push,
     resolveApiKey: resolveKey,
     demo: config.demo,
     demoTick,
@@ -169,6 +180,7 @@ async function main(): Promise<void> {
     console.log(`\n${signal} received, shutting down`);
     scheduler.stop();
     snoozeWaker.stop();
+    push.stop();
     await app.close();
     repo.close();
     process.exit(0);

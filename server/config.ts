@@ -10,6 +10,8 @@ export interface Config {
   host: string;
   allowedHosts: string[];
   allowedUsers: string[];
+  /** Contact (mailto: or https: URL) given to push services in VAPID requests. */
+  pushSubject: string;
   dbPath: string;
   demo: boolean;
   /** Demo world does not grow on its own (deterministic e2e). */
@@ -62,6 +64,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, home: string = 
     host: pick(env, 'HOST') || '127.0.0.1',
     allowedHosts: list(pick(env, 'ALLOWED_HOSTS')),
     allowedUsers: list(pick(env, 'ALLOWED_USERS')),
+    pushSubject: pick(env, 'PUSH_SUBJECT')?.trim() || 'mailto:nudge@example.invalid',
     dbPath: pick(env, 'DB') || DEFAULT_DB,
     demo: truthy(pick(env, 'DEMO')),
     demoClockFixed: pick(env, 'DEMO_CLOCK') === 'fixed',

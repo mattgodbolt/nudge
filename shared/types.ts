@@ -226,7 +226,14 @@ export interface Bootstrap {
   sync: SyncStatus;
 }
 export type ServerEvent =
-  | { type: 'inbox.changed'; counts: Counts; addedIds: string[]; changedIds: string[] }
+  | {
+      type: 'inbox.changed';
+      counts: Counts;
+      addedIds: string[];
+      changedIds: string[];
+      /** Why ids were added, when it is a genuine arrival: 'sync' = new on YouTube, 'woke' = a snooze ended. Push notifications key off this. */
+      reason?: 'sync' | 'woke';
+    }
   | { type: 'sync.progress'; status: SyncStatus }
   | { type: 'sync.done'; summary: SyncRunSummary }
   | { type: 'quota.update'; quota: QuotaDTO }
@@ -238,4 +245,25 @@ export type ServerEvent =
 export interface ApiError {
   error: string;
   code: string;
+}
+
+/* ---------------- Web Push ---------------- */
+export interface PushPrefs {
+  /** Notify when new comments arrive. */
+  newComments: boolean;
+  /** Notify when a snoozed comment comes back. */
+  snoozeWake: boolean;
+}
+export interface PushConfigDTO {
+  /** VAPID public key (base64url) for pushManager.subscribe({applicationServerKey}). */
+  publicKey: string;
+}
+/** What the browser's PushSubscription.toJSON() gives us. */
+export interface PushSubscriptionInput {
+  endpoint: string;
+  keys: { p256dh: string; auth: string };
+}
+export interface PushStateDTO {
+  subscribed: boolean;
+  prefs: PushPrefs;
 }

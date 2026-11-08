@@ -105,5 +105,11 @@ export const api = {
     request<T.SettingsDTO>('POST', '/api/settings/own-channels', { input, importMode }),
   removeOwnChannel: (channelId: string) =>
     request<T.SettingsDTO>('DELETE', `/api/settings/own-channels/${encodeURIComponent(channelId)}`),
+  pushConfig: () => request<T.PushConfigDTO>('GET', '/api/push/config'),
+  pushState: (endpoint: string) => request<T.PushStateDTO>('POST', '/api/push/state', { endpoint }),
+  pushSubscribe: (subscription: T.PushSubscriptionInput, prefs?: Partial<T.PushPrefs>, label?: string) =>
+    request<T.PushStateDTO>('POST', '/api/push/subscribe', { subscription, prefs, label }),
+  pushUnsubscribe: (endpoint: string) => request<void>('POST', '/api/push/unsubscribe', { endpoint }),
+  pushTest: (endpoint: string) => request<{ result: 'ok' | 'gone' | 'error' }>('POST', '/api/push/test', { endpoint }),
   testKey: (apiKey?: string) => request<{ ok: boolean; message: string }>('POST', '/api/settings/test-key', { apiKey }),
 };

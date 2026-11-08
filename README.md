@@ -138,6 +138,31 @@ deploy/install-cron.sh                  # auto-update + nightly backup
   with `ssh -L 4517:127.0.0.1:4517 <box>` and open `http://127.0.0.1:4517/settings` (the tokens then live in the
   database), or connect on your laptop and copy the database across.
 
+## Install on your phone and get notifications
+
+Nudge is an installable web app (PWA) that can send Web Push notifications, with no native app involved.
+
+1. On the phone (connected to your tailnet), open the HTTPS address in Chrome. Menu → **Install app**, or use the
+   **Install as an app** button in Settings → Notifications.
+2. Open **Settings → Notifications → Turn on for this device**, allow notifications, then **Send a test**.
+3. Choose what you want: new comments and/or snoozed comments coming back. Settings are per device.
+
+How it works:
+
+- The server generates a VAPID key pair on first start (stored in the database) and sends each message, encrypted
+  end to end, to your browser's push service (Google's FCM for Chrome). The server needs outbound HTTPS to that
+  service; the phone does **not** need the tailnet to _receive_ a notification, only to open the page when you tap it
+  (an always-on Tailscale VPN makes that invisible).
+- New-comment notifications are batched for ~20 seconds, so one sync is one notification ("5 new comments", or the
+  comment itself if there is one). A sync only finds comments as often as it polls the YouTube API, so that is how
+  fresh a notification can be. Comments older than 48 hours are never announced (a new source's history, or a slow
+  video's old finds). Snooze wake-ups go out immediately.
+- If Nudge is open and in view on the device, the notification is skipped.
+- A device is dropped automatically when its push service says it is gone. `NUDGE_PUSH_SUBJECT` (default
+  `mailto:nudge@example.invalid`) is the contact URL sent to push services; set it to a real `mailto:` if you like.
+- Restoring a database backup keeps your subscriptions only if the backup is recent; otherwise a device re-registers
+  itself the next time you open Settings.
+
 ## Naming
 
 The app was called Youtubey. Existing setups keep working: `YOUTUBEY_*` environment variables, `~/.youtubey-key` and

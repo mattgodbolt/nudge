@@ -132,4 +132,10 @@ CREATE TABLE comment_labels (
   PRIMARY KEY (comment_id, label_id));
 CREATE INDEX idx_comment_labels_label ON comment_labels(label_id);
 `,
+  /* 006 Web Push: one row per subscribed device (browser push endpoint + its encryption keys) */ `
+CREATE TABLE push_subscriptions (
+  endpoint TEXT PRIMARY KEY, p256dh TEXT NOT NULL, auth TEXT NOT NULL,
+  new_comments INTEGER NOT NULL DEFAULT 1, snooze_wake INTEGER NOT NULL DEFAULT 1,
+  label TEXT, created_at TEXT NOT NULL, last_success_at TEXT, failure_count INTEGER NOT NULL DEFAULT 0);
+`,
 ];

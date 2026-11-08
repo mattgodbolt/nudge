@@ -13,7 +13,10 @@
   import { formatNumber, until } from '../lib/format';
   import { anyNeedsReauth, clientSourceLabel, connectedLabel, googleState, googleToast } from '../lib/google';
   import { router } from '../lib/router.svelte';
-  import { untrack } from 'svelte';
+  import { push } from '../lib/stores/push.svelte';
+  import { onMount, untrack } from 'svelte';
+
+  onMount(() => void push.init());
 
   const s = $derived(settings.value);
 
@@ -381,6 +384,70 @@
               ? until(sync.quota.blockedUntil, sync.now)
               : ''}.{/if}
         </p>
+      {/if}
+    </section>
+
+    <section class="panel sec" data-testid="settings-notifications">
+      <h2>Notifications</h2>
+      {#if push.status === 'unsupported'}
+        <p class="muted meta">
+          This browser can’t show push notifications here. They need HTTPS (or localhost) and a browser with Web Push
+          support, such as Chrome on Android.
+        </p>
+      {:else}
+        <p class="muted meta">
+          Get a notification on <strong>this device</strong> when comments arrive or a snoozed one comes back. Tapping it
+          opens that comment. You need to be connected to the network that serves Nudge (e.g. Tailscale) to open it.
+        </p>
+        {#if push.status === 'blocked'}
+          <p class="bad meta">
+            Notifications are blocked for this site. Allow them in the browser’s site settings, then come back.
+          </p>
+        {:else if push.status === 'on'}
+          <label class="field"
+            ><span>New comments</span>
+            <input
+              type="checkbox"
+              data-testid="push-new"
+              checked={push.prefs.newComments}
+              onchange={(e) => void push.setPref('newComments', e.currentTarget.checked)}
+            />
+          </label>
+          <label class="field"
+            ><span>Snoozed comments coming back</span>
+            <input
+              type="checkbox"
+              data-testid="push-wake"
+              checked={push.prefs.snoozeWake}
+              onchange={(e) => void push.setPref('snoozeWake', e.currentTarget.checked)}
+            />
+          </label>
+        {/if}
+        <div class="line">
+          {#if push.status === 'on'}
+            <button class="btn" data-testid="push-test" onclick={() => void push.sendTest()}>Send a test</button>
+            <button class="btn" data-testid="push-off" disabled={push.busy} onclick={() => void push.disable()}
+              >Turn off on this device</button
+            >
+          {:else if push.status !== 'blocked'}
+            <button
+              class="btn primary"
+              data-testid="push-on"
+              disabled={push.busy || push.status === 'checking'}
+              onclick={() => void push.enable()}>Turn on for this device</button
+            >
+          {/if}
+          {#if push.canInstall}
+            <button class="btn" data-testid="push-install" onclick={() => void push.install()}>Install as an app</button
+            >
+          {/if}
+        </div>
+        {#if !push.installed && !push.canInstall}
+          <p class="faint meta">
+            Tip: on Android, Chrome’s menu → “Install app” gives Nudge its own icon and a window without the address
+            bar.
+          </p>
+        {/if}
       {/if}
     </section>
 

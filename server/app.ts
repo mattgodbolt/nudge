@@ -7,6 +7,7 @@ import type { AppDeps } from './contracts.js';
 import { registerApiRoutes } from './routes/api.js';
 import { registerAuthRoutes } from './routes/auth.js';
 import { registerEventRoutes } from './routes/events.js';
+import { registerPushRoutes } from './routes/push.js';
 import { HttpError } from './routes/util.js';
 import { registerSecurity, type SecurityOptions } from './security.js';
 
@@ -47,6 +48,7 @@ export function buildApp(deps: AppDeps, opts: BuildAppOptions = {}): FastifyInst
 
   registerApiRoutes(app, deps);
   registerAuthRoutes(app, deps, { devOrigins: opts.extraOrigins ?? devOrigins() });
+  registerPushRoutes(app, deps);
   registerEventRoutes(app, deps, opts.pingMs);
 
   const staticDir = deps.staticDir && existsSync(join(deps.staticDir, 'index.html')) ? deps.staticDir : null;
