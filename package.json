@@ -21,7 +21,8 @@
     "test:e2e": "playwright test",
     "typecheck": "tsc -p server --noEmit && svelte-check --tsconfig web/tsconfig.json",
     "lint": "prettier --check .",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "eval:classify": "tsx server/classify/eval.ts"
   },
   "dependencies": {
     "@fastify/static": "^10.1.10",
