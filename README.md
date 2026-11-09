@@ -91,6 +91,9 @@ Snoozing hides a comment until the time you pick; it returns to the top of the I
 shows for a day), and `z` undoes it. In the Snoozed view `Shift+U` unsnoozes. Labels (managed in Settings) are
 orthogonal to Inbox/Done: each gets a sidebar folder showing every comment carrying it, in any state.
 
+Selecting several: on a desktop, hover a row and click the tick on its avatar (or `x`); on a phone, long-press a row,
+then tap others to add or remove them. The bar above the list then applies Done, Snooze, Label etc. to all of them.
+
 Every triage action also has a button (thread header, row hover, multi-select bar, sidebar sync) whose tooltip
 shows the hotkey, read from the same keymap registry.
 

@@ -8,26 +8,80 @@
   import { phone } from '../lib/phone.svelte';
   import ActionButton from './ActionButton.svelte';
   import Avatar from './Avatar.svelte';
+  import Icon from './Icon.svelte';
   import LabelChips from './LabelChips.svelte';
 
   let {
     item,
     selected,
     checked = false,
+    selecting = false,
     now,
     showState = false,
     snoozedView = false,
     onclick,
+    ontoggle,
   }: {
     item: InboxItem;
     selected: boolean;
     checked?: boolean;
+    /** Some row is ticked: on a phone the ticks show on every row and a tap toggles instead of opening. */
+    selecting?: boolean;
     now: number;
     /** Label folders and All mix states, so each row says which one it is in. */
     showState?: boolean;
     snoozedView?: boolean;
     onclick: () => void;
+    ontoggle: () => void;
   } = $props();
+
+  // Touch has no hover or modifier keys, so a long press is how a multi-selection starts (as in Google Photos).
+  const LONG_PRESS_MS = 450;
+  const MOVE_SLOP = 10;
+  let pressTimer: ReturnType<typeof setTimeout> | undefined;
+  let pressFrom = { x: 0, y: 0 };
+  let touching = false;
+
+  function cancelPress() {
+    clearTimeout(pressTimer);
+    pressTimer = undefined;
+  }
+  function pressDown(e: PointerEvent) {
+    touching = e.pointerType !== 'mouse';
+    if (!touching || selecting) return;
+    pressFrom = { x: e.clientX, y: e.clientY };
+    cancelPress();
+    pressTimer = setTimeout(() => {
+      pressTimer = undefined;
+      swallowNextClick();
+      navigator.vibrate?.(15);
+      ontoggle();
+    }, LONG_PRESS_MS);
+  }
+  function pressMove(e: PointerEvent) {
+    if (pressTimer && Math.hypot(e.clientX - pressFrom.x, e.clientY - pressFrom.y) > MOVE_SLOP) cancelPress();
+  }
+  /**
+   * The release that ends a long press still produces a click. Selecting makes the bulk bar appear and the list
+   * shift, so that click can land on the bar (or another row), not just this one: eat it wherever it goes.
+   */
+  function swallowNextClick() {
+    const eat = (e: Event) => {
+      e.stopPropagation();
+      e.preventDefault();
+      off();
+    };
+    const off = () => {
+      clearTimeout(expire);
+      window.removeEventListener('click', eat, true);
+    };
+    const expire = setTimeout(off, 1000);
+    window.addEventListener('click', eat, true);
+  }
+  function rowClick(e: MouseEvent) {
+    if (e.ctrlKey || e.metaKey || (selecting && phone.value)) ontoggle();
+    else onclick();
+  }
 
   const c = $derived(item.comment);
   const gh = $derived(item.item.provider === 'github' ? item.item : null);
@@ -52,17 +106,43 @@
   class="row"
   class:selected
   class:checked
+  class:selecting
   class:read={!unread}
   data-testid="inbox-row"
   data-comment-id={c.id}
   role="option"
   aria-selected={selected}
   tabindex="-1"
-  {onclick}
+  onclick={rowClick}
   onkeydown={() => {}}
+  onpointerdown={pressDown}
+  onpointermove={pressMove}
+  onpointerup={cancelPress}
+  onpointercancel={cancelPress}
+  oncontextmenu={(e) => {
+    if (touching) e.preventDefault(); // Android's long-press menu would fight the selection
+  }}
 >
   <span class="dot" class:on={unread} title={unread ? 'Needs attention' : c.state.replace('_', ' ')}></span>
-  <Avatar url={c.authorAvatarUrl} name={todo ? 'Todo' : c.authorName} />
+  <span class="lead">
+    <Avatar url={c.authorAvatarUrl} name={todo ? 'Todo' : c.authorName} />
+    <button
+      class="tick"
+      class:on={checked}
+      role="checkbox"
+      aria-checked={checked}
+      aria-label="Select"
+      tabindex="-1"
+      data-testid="row-check"
+      onclick={(e) => {
+        e.stopPropagation();
+        ontoggle();
+      }}
+      onpointerdown={(e) => e.stopPropagation()}
+    >
+      {#if checked}<Icon name="check" size={14} />{/if}
+    </button>
+  </span>
   <div class="body">
     <div class="top">
       <span class="author truncate">{todo ? 'Todo' : c.authorName}</span>
@@ -187,6 +267,36 @@
   }
   .row.checked {
     background: var(--accent-soft);
+  }
+  .lead {
+    position: relative;
+    flex: none;
+    display: inline-flex;
+  }
+  /* Covers the avatar. Hidden until hover (desktop) or while a selection is under way; never on idle phone rows. */
+  .tick {
+    display: none;
+    position: absolute;
+    inset: 0;
+    padding: 0;
+    border-radius: 50%;
+    place-items: center;
+    cursor: pointer;
+    color: var(--on-accent, #fff);
+    background: var(--bg-elev);
+    border: 2px solid var(--border-strong);
+  }
+  .tick.on {
+    background: var(--accent);
+    border-color: var(--accent);
+  }
+  .row.selecting .tick {
+    display: grid;
+  }
+  @media (hover: hover) and (min-width: 900px) {
+    .row:hover .tick {
+      display: grid;
+    }
   }
   .dot {
     width: 6px;
@@ -330,6 +440,27 @@
     }
     .quick :global(.btn.action .lbl) {
       font-size: var(--fs-meta);
+    }
+  }
+  @media (max-width: 899px) {
+    .row {
+      -webkit-user-select: none;
+      user-select: none;
+      -webkit-touch-callout: none;
+    }
+    /* While selecting, a tap toggles the row; per-row actions would act on the wrong thing. */
+    .row.selecting .quick {
+      visibility: hidden;
+    }
+    .tick {
+      width: 28px;
+      height: 28px;
+      inset: auto;
+    }
+    .lead :global(img),
+    .lead :global(.fallback) {
+      width: 28px !important;
+      height: 28px !important;
     }
   }
   @media (prefers-reduced-motion: reduce) {

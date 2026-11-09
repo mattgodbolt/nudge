@@ -298,6 +298,7 @@
     {#if inbox.selectedIds.size > 0}
       <div class="bulk" role="toolbar" aria-label="Selected comments" data-testid="bulk-bar">
         <span class="badge accent">{inbox.selectedIds.size} selected</span>
+        <ActionButton id="sel.all" label="All" icon="check-all" {tile} testid="bulk-all" />
         <ActionButton id="triage.done" label="Done" icon="check" {tile} testid="bulk-done" />
         <ActionButton id="triage.replied" label="Replied" icon="check-all" {tile} testid="bulk-replied" />
         {#if view === 'snoozed'}
@@ -385,6 +386,8 @@
             now={sync.now}
             selected={item.comment.id === inbox.selectedId}
             checked={inbox.selectedIds.has(item.comment.id)}
+            selecting={inbox.selectedIds.size > 0}
+            ontoggle={() => inbox.toggleSelect(item.comment.id)}
             showState={view === 'all'}
             snoozedView={view === 'snoozed'}
             onclick={() => {

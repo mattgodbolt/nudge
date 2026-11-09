@@ -112,3 +112,18 @@ test('sort order: oldest first reverses the list, Shift+O cycles, and the choice
   await page.getByTestId('sort').selectOption('newest');
   await expect(page.getByTestId('inbox-row').first()).toHaveAttribute('data-comment-id', newestId!);
 });
+
+test('hovering a row shows a tick; ticking rows and pressing Done acts on all of them', async ({ page }) => {
+  const rows = page.getByTestId('inbox-row');
+  const first = rows.nth(0);
+  const second = rows.nth(1);
+  await expect(first.getByTestId('row-check')).toBeHidden();
+  await first.hover();
+  await first.getByTestId('row-check').click();
+  await second.hover();
+  await second.getByTestId('row-check').click();
+  await expect(page.getByTestId('bulk-bar')).toContainText('2 selected');
+  await page.getByTestId('bulk-done').click();
+  await expect(page.getByTestId('toast').first()).toContainText('2');
+  await expect(page.getByTestId('bulk-bar')).toHaveCount(0);
+});

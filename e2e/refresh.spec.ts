@@ -147,3 +147,49 @@ test('the "All caught up" screen has a real Sync now button that starts a sync',
   await page.getByTestId('empty-sync').click();
   await posted;
 });
+
+test.describe('multi-select on a touch phone', () => {
+  test.use({ viewport: { width: 412, height: 800 }, hasTouch: true, isMobile: true });
+
+  const press = async (page: Page, row: ReturnType<Page['getByTestId']>, ms: number) => {
+    const box = (await row.boundingBox())!;
+    const x = box.x + 200;
+    const y = box.y + 30;
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] });
+    await page.waitForTimeout(ms);
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  };
+
+  test('no tick until a long press; then taps toggle rows and the bar acts on them', async ({ page }) => {
+    await page.goto('/inbox');
+    await page.waitForSelector('[data-testid=inbox-row]');
+    const rows = page.getByTestId('inbox-row');
+    await expect(rows.first().getByTestId('row-check')).toBeHidden();
+
+    await press(page, rows.first(), 700);
+    await expect(page.getByTestId('bulk-bar')).toContainText('1 selected');
+    await expect(rows.nth(1).getByTestId('row-check')).toBeVisible();
+    await expect(page.locator('.inbox.thread-open')).toHaveCount(0); // the release did not open the item
+
+    await rows.nth(1).tap({ position: { x: 200, y: 30 } });
+    await expect(page.getByTestId('bulk-bar')).toContainText('2 selected');
+    await rows.nth(1).tap({ position: { x: 200, y: 30 } });
+    await expect(page.getByTestId('bulk-bar')).toContainText('1 selected');
+
+    await page.getByTestId('bulk-clear').tap();
+    await expect(page.getByTestId('bulk-bar')).toHaveCount(0);
+    await expect(rows.first().getByTestId('row-check')).toBeHidden();
+  });
+
+  test('a short tap still opens the item', async ({ page }) => {
+    await page.goto('/inbox');
+    await page.waitForSelector('[data-testid=inbox-row]');
+    await page
+      .getByTestId('inbox-row')
+      .first()
+      .tap({ position: { x: 200, y: 30 } });
+    await expect(page.locator('.inbox.thread-open')).toHaveCount(1);
+    await expect(page.getByTestId('bulk-bar')).toHaveCount(0);
+  });
+});
