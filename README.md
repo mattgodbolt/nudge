@@ -103,7 +103,7 @@ stops at budget minus a manual reserve.
 ## Development
 
 `npm test` (vitest), `npm run test:e2e` (Playwright, demo data), `npm run typecheck`, `npm run format`.
-Design notes: [docs/PLAN.md](docs/PLAN.md). OAuth posting design: [docs/OAUTH-PLAN.md](docs/OAUTH-PLAN.md). Design proposals (partly historical): [sources](docs/DESIGN-SOURCES.md), [LLM triage](docs/DESIGN-LLM-TRIAGE.md).
+Design notes: [docs/PLAN.md](docs/PLAN.md). OAuth posting design: [docs/OAUTH-PLAN.md](docs/OAUTH-PLAN.md). Design proposals (partly historical): [sources](docs/DESIGN-SOURCES.md), [LLM triage](docs/DESIGN-LLM-TRIAGE.md). Handover notes: [docs/HANDOVER.md](docs/HANDOVER.md).
 Known limitations: held-for-review comments are still invisible (viewing them needs OAuth reads, deferred), liking
 or hearting comments is not possible through the API, editing a posted reply is not supported, and deleted comments
 are not detected.
