@@ -80,3 +80,28 @@ export function registerSecurity(app: FastifyInstance, opts: SecurityOptions): v
     if (rejection) return reply.code(rejection.status).send(rejection.body);
   });
 }
+
+/**
+ * Startup sanity check on how the app is exposed. The Tailscale login header is only trustworthy when the sole route
+ * in is the local proxy, so a non-loopback bind is flagged, and naming a proxied hostname without saying who may use
+ * it would admit every device on the tailnet (the app can post replies as the owner), which is refused outright.
+ */
+export function checkExposure(cfg: { host: string; allowedHosts: string[]; allowedUsers: string[] }): {
+  fatal: string | null;
+  warnings: string[];
+} {
+  const warnings: string[] = [];
+  let fatal: string | null = null;
+  if (cfg.allowedHosts.length > 0 && cfg.allowedUsers.length === 0) {
+    fatal =
+      'NUDGE_ALLOWED_HOSTS is set but NUDGE_ALLOWED_USERS is empty, which would let every device on the tailnet use ' +
+      'this app. Set NUDGE_ALLOWED_USERS to your Tailscale login.';
+  }
+  if (!LOOPBACK.test(cfg.host)) {
+    warnings.push(
+      `Listening on ${cfg.host}, not loopback. This is only safe if the port is published to 127.0.0.1 alone (as ` +
+        'compose.yaml does) or firewalled: anyone who can reach it can send a forged Tailscale-User-Login header.',
+    );
+  }
+  return { fatal, warnings };
+}

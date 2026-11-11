@@ -2,8 +2,18 @@
   "name": "nudge",
   "version": "0.2.0",
   "private": true,
+  "license": "MIT",
+  "author": "Matt Godbolt <matt@godbolt.org>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mattgodbolt/nudge.git"
+  },
+  "homepage": "https://github.com/mattgodbolt/nudge",
+  "bugs": {
+    "url": "https://github.com/mattgodbolt/nudge/issues"
+  },
   "type": "module",
-  "description": "Local keyboard-driven inbox for YouTube comments",
+  "description": "Local keyboard-driven triage inbox for YouTube comments, GitHub and todos",
   "engines": {
     "node": ">=22"
   },

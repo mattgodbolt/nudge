@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { checkRequest } from './security.js';
+import { checkExposure, checkRequest } from './security.js';
 
-const NAME = 'phoenix.tailbf3b70.ts.net';
+const NAME = 'nudge.example.ts.net';
 const base = { allowedHosts: [NAME], port: 4517 };
 const post = { 'x-nudge': '1' };
 
@@ -37,5 +37,21 @@ describe('checkRequest behind tailscale serve', () => {
 
   it('is unchanged when nothing is configured', () => {
     expect(checkRequest('GET', { host: NAME }, { port: 4517 })?.body.code).toBe('bad_host');
+  });
+});
+
+describe('checkExposure', () => {
+  const ok = { host: '127.0.0.1', allowedHosts: [], allowedUsers: [] };
+  it('accepts the default loopback setup silently', () => {
+    expect(checkExposure(ok)).toEqual({ fatal: null, warnings: [] });
+  });
+  it('refuses a proxied hostname with no allowed users', () => {
+    expect(checkExposure({ ...ok, allowedHosts: [NAME] }).fatal).toMatch(/NUDGE_ALLOWED_USERS/);
+    expect(checkExposure({ ...ok, allowedHosts: [NAME], allowedUsers: ['me@example.com'] }).fatal).toBeNull();
+  });
+  it('warns, but does not refuse, on a non-loopback bind (containers need it)', () => {
+    const r = checkExposure({ ...ok, host: '0.0.0.0' });
+    expect(r.fatal).toBeNull();
+    expect(r.warnings).toHaveLength(1);
   });
 });

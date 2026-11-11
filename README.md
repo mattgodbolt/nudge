@@ -1,10 +1,39 @@
 # Nudge
 
-A local, keyboard-driven inbox for the comments on your YouTube videos (and on videos you merely appear in).
-Track channels, playlists and individual videos; every new comment lands in an inbox; reply or mark it done
-without leaving the keyboard. Single user, runs on `127.0.0.1`, data in a gitignored SQLite file.
+A local, keyboard-driven triage inbox. It pulls in the comments on your YouTube videos (and on videos you merely
+appear in), new pull requests and issues from GitHub accounts and organisations you follow, and your own todos, so
+all of them are cleared the same way: read, reply, snooze, label, done.
+
+Nudge is a personal tool for one person, not a SaaS. There are no accounts and no multi-user mode: it runs on your own
+machine (or a box on your LAN behind Tailscale), keeps its data in a local SQLite file and never writes to GitHub.
+
+![The inbox: todos, YouTube comments and GitHub items in one list](docs/screenshots/inbox.png)
+
+All screenshots in this README are the built-in demo mode: fake data, nothing real.
+
+## What it does
+
+- **YouTube:** track channels, playlists and individual videos; every new comment lands in the inbox. Reply from the
+  keyboard (copy-and-open, or post directly once you connect a Google account).
+- **GitHub:** follow a user or organisation; new PRs and issues arrive with who opened them (team, contributor,
+  first-timer, outsider, bot), the live conversation thread, and mute rules. See [GitHub](#github).
+- **Todos:** "Tell Nudge" (`c`) turns a sentence, typed or dictated, into a todo, or snoozes or completes the selected
+  item. See [Tell Nudge](#tell-nudge-todos-and-voice-commands).
+- **Triage tools:** done, snooze, undo for everything, labels, multi-select, search, filters, sort orders, a command
+  palette, and a quota meter for the YouTube API.
+- **Phone and notifications:** an installable PWA with Web Push. See [Install on your phone](#install-on-your-phone-and-get-notifications).
+- **Stats and usage:** per-source video and comment totals, plus private counters of which features you use.
+- **Demo mode:** a complete fake world, with no API keys or network, for trying it out.
+
+|                                                                                    |                                                                      |
+| ---------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| ![A GitHub pull request with its conversation](docs/screenshots/github-thread.png) | ![Replying to a YouTube comment](docs/screenshots/youtube-reply.png) |
+
+<img src="docs/screenshots/phone-inbox.png" alt="The inbox on a phone" width="260">
 
 ## Quick start
+
+Needs Node 22 or later.
 
 ```shell
 npm install
@@ -13,10 +42,62 @@ npm run dev      # the real thing (API on :4517, Vite on :5173)
 npm start        # production build served from :4517
 ```
 
+`npm run demo` keeps its data in `data/demo.db` and refuses to start against a database that holds real sources.
+`NUDGE_DEMO_GITHUB=1` adds a fake GitHub organisation to it.
+
+Data lives in `data/nudge.db` (gitignored) unless `NUDGE_DB` says otherwise.
+
 An API key is read from `YOUTUBE_API_KEY`, then the Settings screen, then `~/.nudge-key`.
 On first run, paste your channel URL or @handle when asked (or under **Settings > My channels**): comments by it
 are never inbox items, a reply from it auto-clears older comments in the same thread, and its uploads are tracked.
 Ticking "This is my channel" when adding a channel source does exactly the same thing.
+
+## Configuration
+
+All optional. Everything except the YouTube key can also be set in the app; keys saved in Settings live in the
+database.
+
+| Variable                                               | Meaning                                                                               |
+| ------------------------------------------------------ | ------------------------------------------------------------------------------------- |
+| `YOUTUBE_API_KEY`                                      | YouTube Data API key (else Settings, else `~/.nudge-key`)                             |
+| `NUDGE_PORT`                                           | API port, default `4517`                                                              |
+| `NUDGE_HOST`                                           | Listen address, default `127.0.0.1`                                                   |
+| `NUDGE_DB`                                             | SQLite path, default `data/nudge.db` (`:memory:` works)                               |
+| `NUDGE_ALLOWED_HOSTS`, `NUDGE_ALLOWED_USERS`           | Comma-separated extra hostnames and Tailscale logins, see [Security](#security-model) |
+| `NUDGE_GOOGLE_CLIENT_ID`, `NUDGE_GOOGLE_CLIENT_SECRET` | OAuth client for posting replies (else Settings, else `~/.nudge-google-client.json`)  |
+| `NUDGE_PUSH_SUBJECT`                                   | Contact `mailto:` sent to push services                                               |
+| `NUDGE_DEMO`, `NUDGE_DEMO_GITHUB`, `NUDGE_DEMO_POST`   | Demo mode, its fake GitHub organisation, and `api` to fake a connected Google account |
+| `NUDGE_DEMO_CLOCK=fixed`                               | Demo world stops growing on its own (used by the e2e tests)                           |
+
+GitHub and Anthropic tokens are entered in Settings only.
+
+## Security model
+
+Nudge has no login of its own. The server listens on loopback (`127.0.0.1`) only, and every request is checked:
+
+- the `Host` header must be loopback with the right port, or a name in `NUDGE_ALLOWED_HOSTS` (blocks DNS rebinding);
+- if `NUDGE_ALLOWED_USERS` is set, requests arriving on an allowed non-loopback host must carry a
+  `Tailscale-User-Login` header naming one of those users. `tailscale serve` sets that header from the caller's tailnet
+  identity, and it is only trustworthy because the app is reachable only through that local proxy;
+- changing requests must have a same-origin `Origin` (when sent) and the `X-Nudge: 1` header;
+- stored secrets (API keys, tokens) are never sent back to the browser, and Nudge never writes to GitHub.
+
+Do not expose the port anywhere else. The Tailscale header is only trusted because the app is reachable solely
+through the local proxy: anyone who can reach the port directly can forge it. Nudge refuses to start if
+`NUDGE_ALLOWED_HOSTS` is set without `NUDGE_ALLOWED_USERS` (that would admit every device on the tailnet), and warns
+when bound to a non-loopback address. Containers need `0.0.0.0` inside, so publish the port to `127.0.0.1` only, as
+`compose.yaml` does. See [Deploying](#deploying-docker--tailscale).
+
+## Your data and third parties
+
+- Comment text, author names and your refresh token are stored in the local SQLite database, indefinitely. You supply
+  your own YouTube API key and Google Cloud project, and you are responsible for complying with the
+  [YouTube API Services Terms](https://developers.google.com/youtube/terms/api-services-terms-of-service) and
+  Developer Policies (including how long you keep API data).
+- When the optional assistant, or the offline classifier tooling, is enabled, comment text and video titles are sent to
+  Anthropic using your own API key. Voice dictation in the browser may send audio to your browser vendor's service.
+- Nudge is not affiliated with or endorsed by YouTube, Google, GitHub or Anthropic. "YouTube" is a trademark of
+  Google LLC.
 
 ## Replying
 
@@ -91,6 +172,9 @@ Snoozing hides a comment until the time you pick; it returns to the top of the I
 shows for a day), and `z` undoes it. In the Snoozed view `Shift+U` unsnoozes. Labels (managed in Settings) are
 orthogonal to Inbox/Done: each gets a sidebar folder showing every comment carrying it, in any state.
 
+Also: `t` cycles the theme, `[` toggles the sidebar, `Shift+R` refreshes, `.` shows newly arrived items, `Shift+M`
+mutes (GitHub), `g v` filters to the current video and `g c` clears filters.
+
 Selecting several: on a desktop, hover a row and click the tick on its avatar (or `x`); on a phone, long-press a row,
 then tap others to add or remove them. The bar above the list then applies Done, Snooze, Label etc. to all of them.
 
@@ -105,39 +189,70 @@ stops at budget minus a manual reserve.
 
 ## Development
 
-`npm test` (vitest), `npm run test:e2e` (Playwright, demo data), `npm run typecheck`, `npm run format`.
-Design notes: [docs/PLAN.md](docs/PLAN.md). OAuth posting design: [docs/OAUTH-PLAN.md](docs/OAUTH-PLAN.md). Design proposals (partly historical): [sources](docs/DESIGN-SOURCES.md), [LLM triage](docs/DESIGN-LLM-TRIAGE.md).Known limitations: held-for-review comments are still invisible (viewing them needs OAuth reads, deferred), liking
+Svelte 5 + Vite in `web/`, a Fastify server in `server/`, SQLite via `better-sqlite3`, and types shared between
+them in `shared/` (`shared/api.ts` is the HTTP contract). The server is built from small injected pieces
+(`server/sync` for the engines and schedulers, `server/db` for the repository and migrations, `server/providers`
+for GitHub and Anthropic, `server/youtube`, `server/reply` for posting, `server/push`, `server/demo` for the fake
+world), and the web app talks to it over `/api` plus a server-sent event stream.
+
+| Command                           | What it does                                                         |
+| --------------------------------- | -------------------------------------------------------------------- |
+| `npm test`                        | Unit and component tests (vitest)                                    |
+| `npm run test:e2e`                | Playwright against several demo servers (ports 4518-4522, in-memory) |
+| `npm run typecheck`               | `tsc` for the server plus `svelte-check` for the web app             |
+| `npm run lint` / `npm run format` | Prettier check / write                                               |
+| `npm run build`                   | Production build into `dist/`                                        |
+
+Design notes: [docs/PLAN.md](docs/PLAN.md). OAuth posting design: [docs/OAUTH-PLAN.md](docs/OAUTH-PLAN.md). Design
+proposals (partly historical): [sources](docs/DESIGN-SOURCES.md), [LLM triage](docs/DESIGN-LLM-TRIAGE.md).
+
+Known limitations: held-for-review comments are still invisible (viewing them needs OAuth reads, deferred), liking
 or hearting comments is not possible through the API, editing a posted reply is not supported, and deleted comments
 are not detected.
+
+### Learning how you triage (offline tooling)
+
+Nudge records habit data (see [Habit context](#habit-context-private-local)) and has offline tools for studying it.
+None of this runs in the app; it all works on a copy of a database.
+
+- `npm run export:events -- <db> [--since <iso>]` dumps the `item_events` history as JSONL.
+- `npm run report:habits -- <db>` prints a read-only summary of how you triage.
+- `scripts/triage-eval/export.mjs <db>` exports a secrets-free slice of items (public text only) as JSONL.
+- `npm run eval:classify` (`server/classify`) evaluates an LLM triage classifier against your own decisions:
+  `sample` builds a set to label by hand, `run` classifies it (needs `ANTHROPIC_API_KEY` or `~/.nudge-eval-key`, and
+  asks to confirm the projected cost), `score` compares with your labels; `rank-sample` and `rank-score` do the same
+  for a priority ranking built from pairwise comparisons (Bradley-Terry). Output goes under `data/eval/`.
 
 ## Deploying (Docker + Tailscale)
 
 One box on your LAN runs the container; `tailscale serve` puts HTTPS in front of it, reachable only from your tailnet
 (phone included). The app listens on the host's loopback only and still checks Host, Origin and, optionally, your
-Tailscale identity. It has no password of its own, so do not publish the port anywhere else.
+Tailscale identity (see [Security model](#security-model)). It has no password of its own, so do not publish the port
+anywhere else. This is one way to run it, not a requirement.
 
 ```shell
-git clone git@github.com:mattgodbolt/nudge.git ~/nudge && cd ~/nudge
+git clone https://github.com/mattgodbolt/nudge.git ~/nudge && cd ~/nudge
 mkdir -p data
-cat > .env <<EOF2
+cat > .env <<EOF
 NUDGE_ALLOWED_HOSTS=<machine>.<tailnet>.ts.net
 NUDGE_ALLOWED_USERS=<your tailscale login>
 YOUTUBE_API_KEY=<your key>     # the container cannot see ~/.nudge-key; or paste it into Settings
-EOF2
+EOF
 docker compose up -d --build            # the image build runs the unit tests
 tailscale serve --bg --https=443 http://127.0.0.1:4517
 deploy/install-cron.sh                  # auto-update + nightly backup
 ```
 
-- **Auto-update:** `deploy/update.sh` (cron, every 5 minutes) fetches `origin/main`; on a new commit it takes a backup (and skips the update, to retry next time, if none could be made while the app
-  is up), builds (a failing test aborts the build and the old container keeps running), restarts, and rolls back to the
+- **Auto-update:** `deploy/update.sh` (cron, every 5 minutes) fetches `origin/main`; on a new commit it takes a backup
+  (and skips the update, to retry next time, if none could be made while the app is up), builds (a failing test aborts the build and the old container keeps running), restarts, and rolls back to the
   previous image if the new one is not healthy within ~90s. A commit that fails is remembered and not retried. See
   `data/update.log`.
 - **Backups:** `deploy/backup.sh` (cron, 03:15) snapshots the live database with SQLite's online backup API, verifies
-  it, keeps 7 in `data/backups/` and 14 on the NAS (`NUDGE_BACKUP_DIR`, default `/nas/BackedUp/nudge`). It exits
-  non-zero if the NAS copy fails. Separately, the app itself writes `data/backups/pre-migrate-v<N>-<time>.db` (newest 5
-  kept) before applying any schema migration to an existing database, and refuses to migrate if it cannot. Restore: stop the container, copy a snapshot over `data/nudge.db`, delete
-  `nudge.db-wal`/`-shm`, start it. Snapshots contain your Google token and API key, so keep them private.
+  it, keeps 7 in `data/backups/` and 14 in an off-box directory (`NUDGE_BACKUP_DIR`; the built-in default is a
+  NAS mount path, so set it to something that exists for you). It exits non-zero if that copy fails. Separately, the
+  app itself writes `data/backups/pre-migrate-v<N>-<time>.db` (newest 5 kept) before applying any schema migration to
+  an existing database, and refuses to migrate if it cannot. Restore: stop the container, copy a snapshot over
+  `data/nudge.db`, delete `nudge.db-wal`/`-shm`, start it. Snapshots contain your Google token and API key, so keep them private.
 - **Google sign-in** redirects to `http://127.0.0.1:4517/...`, which only works on the machine itself. Connect once
   with `ssh -L 4517:127.0.0.1:4517 <box>` and open `http://127.0.0.1:4517/settings` (the tokens then live in the
   database), or connect on your laptop and copy the database across.
@@ -153,7 +268,9 @@ assistant is off or fails, your words are saved as a plain todo, so nothing you 
   small spend limit). Without one, `c` just saves a todo.
 - Dictation uses the browser's built-in speech recognition (Chrome, Android, Safari), which Chrome sends to Google's
   servers. The phone keyboard's own mic button works in the same box if yours has none.
-- A todo with a due time stays hidden (Snoozed) until then, then comes back with a notification.
+- A todo with a due time stays hidden (Snoozed) until then, then comes back with a notification. Todos appear under
+  Todos in the sidebar and in the inbox, with your words kept alongside the cleaned-up title.
+- In demo mode the assistant is a local stand-in that understands the same three commands, so no key is needed.
 
 ## GitHub
 
@@ -252,3 +369,7 @@ rank of decisions, items passed over, open dwell) from a copy of the database.
 The app was called Youtubey. Existing setups keep working: `YOUTUBEY_*` environment variables, `~/.youtubey-key` and
 `~/.youtubey-google-client.json` are still read when the `NUDGE_*` / `~/.nudge-*` equivalents are absent, and
 `data/youtubey.db` is moved to `data/nudge.db` automatically on first start.
+
+## License
+
+[MIT](LICENSE).

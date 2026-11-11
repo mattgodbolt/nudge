@@ -141,13 +141,13 @@ describe('mutes', () => {
 describe('GitHub settings', () => {
   it('stores the token and my accounts, never sends the token back, and polls when the token changes', async () => {
     const res = await send('PUT', '/api/settings', {
-      github: { token: ' ghp_abcdefghijklmnop1234 ', myAccounts: ['mattgodbolt', 'mattgodbolt-molty'] },
+      github: { token: ' ghp_abcdefghijklmnop1234 ', myAccounts: ['mattgodbolt', 'example-bot'] },
     });
     expect(res.statusCode).toBe(200);
     expect(res.json().github).toEqual({
       configured: true,
       last4: '1234',
-      myAccounts: ['mattgodbolt', 'mattgodbolt-molty'],
+      myAccounts: ['mattgodbolt', 'example-bot'],
     });
     expect(JSON.stringify(res.json())).not.toContain('ghp_abcdefghijklmnop');
     expect(env.repo.getSettings().github.token).toBe('ghp_abcdefghijklmnop1234');

@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { buildApp } from './app.js';
 import type { AppDeps, GoogleAuth, PostGateway, ReplyPoster } from './contracts.js';
 import { createGoogleAuth } from './auth/google.js';
+import { checkExposure } from './security.js';
 import { loadConfig, migrateLegacyDb, resolveApiKey, resolveGoogleClient } from './config.js';
 import { openRepo } from './db/repo.js';
 import { createFakeClient } from './demo/fake-client.js';
@@ -42,6 +43,12 @@ function findStaticDir(): string | undefined {
 
 async function main(): Promise<void> {
   const config = loadConfig();
+  const exposure = checkExposure(config);
+  if (exposure.fatal) {
+    console.error(exposure.fatal);
+    process.exit(1);
+  }
+  for (const w of exposure.warnings) console.warn(w);
   if (migrateLegacyDb(config.dbPath)) console.log('Moved data/youtubey.db to data/nudge.db');
   const repo = openRepo(config.dbPath);
   if (config.demo) {
