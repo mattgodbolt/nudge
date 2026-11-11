@@ -54,6 +54,16 @@ button.on kbd{color:#fff;border-color:#fff8}
 <div class="row" id="verdicts"></div>
 <div class="hint">Best label (optional)</div>
 <div class="row" id="cats"></div>
+<details class="hint"><summary>What do the labels mean?</summary><ul>
+<li><b>question</b>: asks Matt something</li>
+<li><b>technical</b>: corrects, adds to or disagrees with technical content (what the video or PR says), without asking anything</li>
+<li><b>bug</b>: reports something broken</li>
+<li><b>idea</b>: asks for a feature or a future video</li>
+<li><b>collab</b>: sponsor, partnership or reuse request</li>
+<li><b>chat</b>: praise, thanks, jokes, banter</li>
+<li><b>support</b>: needs help with something</li>
+<li><b>bot</b>: automated PR, release or notification</li>
+<li><b>other</b>: none of these. Categories are optional; the verdict matters most.</li></ul></details>
 <div class="row"><button id="prev">← Back</button><button id="next">Next →</button><span class="hint">r reply · a action · n none · s spam · 1-9, 0 category · ← → move · labels save as you go</span></div>
 </main>
 <script>
@@ -133,6 +143,16 @@ button.on kbd{color:var(--acc-fg);border-color:currentColor}
 <div class="row" id="verdicts"></div>
 <div class="hint">Best label (optional)</div>
 <div class="row" id="cats"></div>
+<details class="hint"><summary>What do the labels mean?</summary><ul>
+<li><b>question</b>: asks Matt something</li>
+<li><b>technical</b>: corrects, adds to or disagrees with technical content (what the video or PR says), without asking anything</li>
+<li><b>bug</b>: reports something broken</li>
+<li><b>idea</b>: asks for a feature or a future video</li>
+<li><b>collab</b>: sponsor, partnership or reuse request</li>
+<li><b>chat</b>: praise, thanks, jokes, banter</li>
+<li><b>support</b>: needs help with something</li>
+<li><b>bot</b>: automated PR, release or notification</li>
+<li><b>other</b>: none of these. Categories are optional; the verdict matters most.</li></ul></details>
 <div class="row"><button id="prev">Back</button><button id="next">Next</button></div>
 <div class="hint">Keys: r (needs a reply), a (needs action: merge or review), n (nothing needed), s (spam) for the verdict; 1-9 and 0 for the label; left and right arrows to move. Each choice saves as you make it.</div>
 </main>
