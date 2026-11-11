@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CommentDTO, Counts, InboxItem } from '../../../../shared/types';
 import { InboxStore, compareItems } from './inbox.svelte';
 import { toasts } from './toasts.svelte';
+import { decisions } from '../decisions';
 
 function item(n: number, state: CommentDTO['state'] = 'inbox'): InboxItem {
   const id = `c${n}`;
@@ -94,6 +95,20 @@ describe('InboxStore', () => {
   it('loads and selects the first item', () => {
     expect(ids()).toEqual(['c1', 'c2', 'c3', 'c4']);
     expect(store.selectedId).toBe('c1');
+  });
+
+  it('reports the list as it was seen when an action is taken, before it changes', async () => {
+    const decide = vi.spyOn(decisions, 'decide');
+    store.move(2); // c3
+    await store.triage('done');
+    expect(decide).toHaveBeenCalledTimes(1);
+    expect(decide.mock.calls[0]![0]).toEqual({
+      action: 'done',
+      view: 'inbox',
+      list: ['c1', 'c2', 'c3', 'c4'].map((id) => ({ id, passable: true })),
+      targets: ['c3'],
+    });
+    decide.mockRestore();
   });
 
   it('moves selection and clamps', () => {

@@ -108,7 +108,43 @@ export const CLIENT_HEADER = 'X-Nudge';
  * POST   /api/auth/default {channelId}          -> GoogleAuthDTO
  * POST   /api/comments/:id/delete               -> 204 (deletes an own reply that this app posted; comments.delete, 50 units)
  * POST   /api/demo/tick                         -> 204 (demo mode only)
+ * POST   /api/item-events {events:[{kind:'decision'|'open', itemId, at?, to?, meta?}]} -> ItemEventsPostResult. At most
+ *   100 per request. Private context for learning the owner's triage habits: `decision` is what was decided about an
+ *   item and what was on screen; `open` is an item's detail being opened (meta.dwellMs when closed). Stored as
+ *   item_events rows with source 'user'. Unknown item ids are skipped (counted in `rejected`), meta keys outside the
+ *   allow-list in ITEM_EVENT_META are dropped, `at` outside the last 24h (or in the future) becomes now.
  * Errors: non-2xx with ApiError JSON. Reply-posting codes: auth_required(401) quota_exhausted(429) rate_limited(429)
  *   cannot_reply(422) comment_gone(404) text_too_long(400) bad_text(400) ineligible_account(403)
  *   duplicate_in_flight(409) post_failed(502) post_unconfirmed(502).
  */
+
+/** What the browser may report through POST /api/item-events. */
+export const ITEM_EVENT_KINDS = ['decision', 'open'] as const;
+export type ClientItemEventKind = (typeof ITEM_EVENT_KINDS)[number];
+export const ITEM_EVENT_INPUTS = ['key', 'button', 'palette', 'touch', 'other'] as const;
+export type ItemEventInput = (typeof ITEM_EVENT_INPUTS)[number];
+export const MAX_ITEM_EVENTS_PER_REQUEST = 100;
+
+export interface ItemEventPost {
+  kind: ClientItemEventKind;
+  itemId: string;
+  /** ISO time of the event; must be within the last 24h, else the server uses its own clock. */
+  at?: string;
+  /** decision: the action the API call carried; open: the view it was opened from. */
+  to?: string;
+  meta?: {
+    view?: string;
+    rank?: number | null;
+    listSize?: number;
+    above?: string[];
+    input?: ItemEventInput;
+    bulk?: boolean;
+    selectionSize?: number;
+    dwellMs?: number;
+  };
+}
+export interface ItemEventsPostResult {
+  accepted: number;
+  /** Events dropped: unknown item, bad kind, or unusable shape. */
+  rejected: number;
+}

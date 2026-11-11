@@ -1,6 +1,7 @@
 // Server-internal interfaces shared by the db / sync / http chunks.
 // Owned by the lead; implementers must conform to these and ask before changing them.
 import type { UsageStore } from './db/usage.js';
+import type { ClientEventStore } from './db/events.js';
 import type {
   LabelApplyResult,
   LabelColor,
@@ -248,6 +249,8 @@ export interface Repo {
   close(): void;
   /** Internal feature-use counters (migration 010). */
   usage: UsageStore;
+  /** Browser-reported decision/open events (POST /api/item-events). */
+  clientEvents: ClientEventStore;
   /* --- Web Push (migration 006) --- */
   listPushSubscriptions(): PushSubscriptionRow[];
   getPushSubscription(endpoint: string): PushSubscriptionRow | null;

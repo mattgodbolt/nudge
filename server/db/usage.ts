@@ -47,11 +47,12 @@ export function createUsage(db: Db, clock: () => Date = () => new Date()): Usage
     const rows = db
       .prepare('SELECT day, key, count FROM usage_daily WHERE day >= ? AND day <= ? ORDER BY day, key')
       .all(from, to) as UsageDTO['rows'];
+    // decision/open rows are context about a change, not changes, so counting them would double the numbers.
     // Computed here from the event log rather than copied into usage_daily, so the two can never disagree.
     const events = db
       .prepare(
         `SELECT substr(at, 1, 10) AS day, kind, source, COUNT(*) AS count FROM item_events
-          WHERE at >= ? AND at < ? GROUP BY day, kind, source ORDER BY day, kind, source`,
+          WHERE at >= ? AND at < ? AND kind NOT IN ('decision', 'open') GROUP BY day, kind, source ORDER BY day, kind, source`,
       )
       .all(`${from}T00:00:00.000Z`, nextDay(to)) as UsageDTO['events'];
     const used = new Set(rows.filter((r) => r.count > 0).map((r) => featureOf(r.key)));

@@ -7,6 +7,7 @@
   import { sources } from '../lib/stores/sources.svelte';
   import { ui } from '../lib/stores/ui.svelte';
   import { usage } from '../lib/usage';
+  import { decisions } from '../lib/decisions';
   import { fade } from 'svelte/transition';
   import { tick } from 'svelte';
 
@@ -56,6 +57,7 @@
         group: b.group,
         run: () => {
           usage.binding(b.id, 'palette');
+          decisions.noteInput('palette');
           b.run();
         },
       });

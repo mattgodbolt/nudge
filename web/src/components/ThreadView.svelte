@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { InboxItem } from '../../../shared/types';
   import { usage } from '../lib/usage';
+  import { decisions } from '../lib/decisions';
   import { inbox } from '../lib/stores/inbox.svelte';
   import { thread } from '../lib/stores/thread.svelte';
   import { ui } from '../lib/stores/ui.svelte';
@@ -17,6 +18,13 @@
   let { item, now }: { item: InboxItem; now: number } = $props();
   // Each thread is mounted once per open (the parent keys on it), so this counts opens, not renders.
   usage.count('view.thread');
+  // Opened now, closed when this thread unmounts or another item takes its place; dwell is measured in between.
+  $effect(() =>
+    decisions.open(
+      item.comment.id,
+      untrack(() => inbox.viewName),
+    ),
+  );
 
   let headerWidth = $state(1000);
   // Actions share the title row only in a roomy pane; otherwise they take a row of their own,

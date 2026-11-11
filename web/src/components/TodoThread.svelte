@@ -1,6 +1,8 @@
 <script lang="ts">
+  import { untrack } from 'svelte';
   import type { InboxItem } from '../../../shared/types';
   import { usage } from '../lib/usage';
+  import { decisions } from '../lib/decisions';
   import { relativeTime } from '../lib/format';
   import { phone } from '../lib/phone.svelte';
   import { formatSnoozeTime, recentlyWoken } from '../lib/snooze';
@@ -13,6 +15,13 @@
   let { item, now }: { item: InboxItem; now: number } = $props();
   // Each thread is mounted once per open (the parent keys on it), so this counts opens, not renders.
   usage.count('view.todo_thread');
+  // Opened now, closed when this thread unmounts or another item takes its place; dwell is measured in between.
+  $effect(() =>
+    decisions.open(
+      item.comment.id,
+      untrack(() => inbox.viewName),
+    ),
+  );
 
   const it = $derived(item.item);
   const tile = $derived(phone.value);

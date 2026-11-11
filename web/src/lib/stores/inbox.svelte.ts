@@ -4,6 +4,7 @@ import { api } from '../api';
 import { thread } from './thread.svelte';
 import { toasts } from './toasts.svelte';
 import { usage } from '../usage';
+import { decisions } from '../decisions';
 
 export interface InboxFilters {
   sourceId?: number;
@@ -126,6 +127,31 @@ export class InboxStore {
   );
   selected = $derived<InboxItem | null>(this.items[this.selectedIndex] ?? null);
   pendingCount = $derived(this.pending.size);
+
+  /** What the list on screen is, for habit context: search, a label folder, a source, else the inbox/done/... view. */
+  get viewName(): string {
+    const f = this.filters;
+    if (f.q) return 'search';
+    if (f.labelId !== undefined) return 'label';
+    if (f.sourceId !== undefined || f.feedId !== undefined || f.videoId !== undefined || f.repo !== undefined)
+      return 'source';
+    return this.view;
+  }
+
+  /** Habit context for an action on `ids`; call before the list mutates so rank and `above` are what was seen. */
+  #decide(action: string, ids: string[]) {
+    // In 'all' the list still holds finished items, which were not "passed over" by acting on something below them.
+    const all = this.view === 'all';
+    decisions.decide({
+      action,
+      view: this.viewName,
+      list: this.items.map((i) => ({
+        id: i.comment.id,
+        passable: !all || (i.comment.state === 'inbox' && !i.snoozedUntil),
+      })),
+      targets: ids,
+    });
+  }
 
   #generation = 0;
   #loadingMore = false;
@@ -341,6 +367,10 @@ export class InboxStore {
     const changes: Change[] = this.items
       .filter((i) => wanted.has(i.comment.id) && i.comment.state !== to)
       .map((before) => ({ before, after: { ...before, comment: { ...before.comment, state: to } } }));
+    this.#decide(
+      to,
+      changes.map((c) => c.before.comment.id),
+    );
     return this.#commit(changes, 'triage', request, opts);
   }
 
@@ -355,6 +385,7 @@ export class InboxStore {
       .filter((i) => wanted.has(i.comment.id) && (iso ? i.comment.state === 'inbox' : i.snoozedUntil !== null))
       .map((before) => ({ before, after: { ...before, snoozedUntil: iso } }));
     const ids = changes.map((c) => c.before.comment.id);
+    this.#decide(iso ? 'snooze' : 'unsnooze', ids);
     const n = ids.length;
     const message = iso
       ? n > 1
@@ -455,6 +486,7 @@ export class InboxStore {
     const ids = this.items.filter((i) => wanted.has(i.comment.id)).map((i) => i.comment.id);
     if (ids.length === 0) return false;
     usage.count('label.applied');
+    this.#decide('label', ids);
     if (ids.length > 1) usage.count('bulk.apply');
     const change = (item: InboxItem): InboxItem => {
       const labels = [...item.labels.filter((l) => !remove.includes(l) || add.includes(l))];

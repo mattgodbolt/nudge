@@ -23,6 +23,7 @@
     "lint": "prettier --check .",
     "format": "prettier --write .",
     "export:events": "tsx scripts/export-events.ts",
+    "report:habits": "tsx scripts/report-habits.ts",
     "eval:classify": "tsx server/classify/eval.ts"
   },
   "dependencies": {

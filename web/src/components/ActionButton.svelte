@@ -3,6 +3,7 @@
   import { invoke } from '../lib/keys/keymap.svelte';
   import { tip } from '../lib/tip.svelte';
   import { usage, viaOfEvent } from '../lib/usage';
+  import { decisions } from '../lib/decisions';
   import Icon from './Icon.svelte';
 
   type IconName = ComponentProps<typeof Icon>['name'];
@@ -41,7 +42,9 @@
   function click(e: MouseEvent) {
     e.stopPropagation(); // never let a button click select/open the row beneath it
     // The one place every button for a keymap binding goes through, whichever row or bar it sits in.
-    usage.binding(id, tile ? 'touch' : viaOfEvent(e));
+    const via = tile ? 'touch' : viaOfEvent(e);
+    usage.binding(id, via);
+    decisions.noteInput(via);
     if (onclick) onclick();
     else invoke(id);
     // A pointer click must not leave focus parked on the button; keyboard activation keeps it.

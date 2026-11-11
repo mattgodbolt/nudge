@@ -1,6 +1,7 @@
 import type * as T from '../../../shared/types';
 import type { DraftDTO, InboxPage, InboxQuery, SettingsUpdate, SyncRequest } from '../../../shared/api';
 import { CLIENT_HEADER } from '../../../shared/api';
+import type { ItemEventPost, ItemEventsPostResult } from '../../../shared/api';
 import type { UsageDTO, UsagePostResult } from '../../../shared/usage';
 
 export class ApiRequestError extends Error {
@@ -164,6 +165,9 @@ export const api = {
   /** keepalive lets the last batch survive the page closing. */
   postUsage: (counts: Record<string, number>) =>
     request<UsagePostResult>('POST', '/api/usage', { counts }, { keepalive: true }),
+  /** Private habit context (decision/open events); keepalive lets the last batch survive the page closing. */
+  postItemEvents: (events: ItemEventPost[]) =>
+    request<ItemEventsPostResult>('POST', '/api/item-events', { events }, { keepalive: true }),
   usage: (days: number) => request<UsageDTO>('GET', `/api/usage?days=${days}`),
   resetUsage: () => request<void>('DELETE', '/api/usage'),
   testKey: (apiKey?: string) => request<{ ok: boolean; message: string }>('POST', '/api/settings/test-key', { apiKey }),

@@ -237,6 +237,16 @@ Nudge counts which of its own features you use and how, so you can see what earn
   at view time, clearly labelled as such.
 - **Reset:** Settings > Usage data > Reset usage data deletes every counter (and only the counters).
 
+## Habit context (private, local)
+
+So Nudge can later learn how you triage, it records more than the new state: for each item you act on, one `decision`
+event (the action, the view, its position in the list, the ids of up to ten items above it that were passed over,
+whether it came from a key, button, the palette or touch, and whether it was a bulk action), and for each item you open,
+an `open` event (the view and how long it stayed open). They go to `POST /api/item-events` and are stored in the
+`item_events` table of your own database, as ids and counts only, never text. Demo mode and automated runs record
+nothing. `npm run report:habits -- <db>` prints a read-only summary (action mix, time to first action, snooze returns,
+rank of decisions, items passed over, open dwell) from a copy of the database.
+
 ## Naming
 
 The app was called Youtubey. Existing setups keep working: `YOUTUBEY_*` environment variables, `~/.youtubey-key` and

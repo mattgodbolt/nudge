@@ -1,5 +1,6 @@
 import { untrack } from 'svelte';
 import { usage } from '../usage';
+import { decisions } from '../decisions';
 
 export type Scope = 'global' | 'list' | 'thread' | 'composer' | 'palette' | 'help' | 'modal';
 export type Group = 'Navigation' | 'Triage' | 'Reply' | 'Go to' | 'App';
@@ -196,6 +197,7 @@ export class Keymap {
       }
       e.preventDefault();
       usage.binding(hit.id, 'kbd');
+      decisions.noteInput('kbd');
       hit.run(e);
       return true;
     }

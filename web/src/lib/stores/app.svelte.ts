@@ -8,6 +8,7 @@ import { sync } from './sync.svelte';
 import { theme } from './theme.svelte';
 import { router } from '../router.svelte';
 import { isAutomated, usage } from '../usage';
+import { decisions } from '../decisions';
 
 class AppStore {
   ready = $state(false);
@@ -26,6 +27,7 @@ class AppStore {
       sync.status = b.sync;
       theme.adopt(b.settings.theme);
       usage.start({ demo: b.settings.demo, automated: isAutomated() });
+      decisions.start({ demo: b.settings.demo, automated: isAutomated() });
       usage.count(`view.${router.route}`);
       this.error = null;
     } catch (e) {

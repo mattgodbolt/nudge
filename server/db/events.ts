@@ -20,11 +20,21 @@ import type { Db } from './db.js';
  * UI or API, `auto` a rule the app applied by itself (auto-clear after my reply, snooze wake-ups), `sync` state that
  * came from the remote service (closed or reopened upstream, new comments, ownership changes).
  *
+ *  - decision:     what the owner decided about an item, with the context it was decided in (written by the browser via
+ *                  POST /api/item-events, in addition to the state/snooze/label rows the action itself writes).
+ *                  to_value is the action as the API call carried it ('done', 'replied', 'inbox', 'snooze',
+ *                  'unsnooze', 'label'...); from_value is null. meta: { view, rank (0-based position in the list
+ *                  on screen, or null), listSize, above (ids of up to 10 items ranked just above that were still
+ *                  listed, i.e. passed over), input ('key'|'button'|'palette'|'touch'|'other'), bulk, selectionSize }.
+ *  - open:         the owner opened the item's detail. to_value is the view it was opened from; meta: { input,
+ *                  dwellMs? } where dwellMs is how long it stayed open (sent on close, dropped under 300 ms).
+ *
  * Not recorded, on purpose: an item's initial state when first seen (a bulk import would write thousands of rows;
  * the arrival time is items.first_seen_at and the first event's from_value says what it was), and the cascade when a
  * label or item is deleted.
  */
-export type EventKind = 'state' | 'snooze' | 'label_add' | 'label_remove' | 'reply' | 'mute' | 'unmute' | 'undo';
+export type EventKind =
+  'state' | 'snooze' | 'label_add' | 'label_remove' | 'reply' | 'mute' | 'unmute' | 'undo' | 'decision' | 'open';
 export type EventSource = 'user' | 'auto' | 'sync';
 
 export interface NewItemEvent {
@@ -105,6 +115,34 @@ export function createEvents(db: Db): Events {
   }
 
   return { record, recordStateMoves, originalEventId };
+}
+
+/** Writes browser-reported events (decision/open). Unlike `Events.record` these are not part of another change. */
+export interface ClientEventStore {
+  /** Insert the events whose item exists, in one transaction; returns how many were stored and how many were skipped. */
+  record(events: NewItemEvent[]): { accepted: number; unknown: number };
+}
+
+export function createClientEvents(db: Db): ClientEventStore {
+  return {
+    record(events) {
+      const exists = db.prepare('SELECT 1 FROM items WHERE id = ?');
+      const ev = createEvents(db);
+      let accepted = 0;
+      let unknown = 0;
+      db.transaction(() => {
+        for (const e of events) {
+          if (!exists.get(e.itemId)) {
+            unknown++;
+            continue;
+          }
+          ev.record(e);
+          accepted++;
+        }
+      })();
+      return { accepted, unknown };
+    },
+  };
 }
 
 /**

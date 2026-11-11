@@ -36,7 +36,7 @@ import type {
   YtVideo,
 } from '../contracts.js';
 import { openDb, type Db } from './db.js';
-import { createEvents } from './events.js';
+import { createClientEvents, createEvents } from './events.js';
 import { createFeedsRepo } from './feeds.js';
 import { createTodosRepo } from './todos.js';
 import { createUsage } from './usage.js';
@@ -1735,6 +1735,7 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
     ...todos,
     close: () => void db.close(),
     usage: createUsage(db, clock),
+    clientEvents: createClientEvents(db),
     listGoogleAccounts,
     upsertGoogleAccount,
     updateGoogleAccount,

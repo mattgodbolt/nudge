@@ -7,6 +7,7 @@
   import { ui } from '../lib/stores/ui.svelte';
   import { phone } from '../lib/phone.svelte';
   import { usage, viaOfEvent } from '../lib/usage';
+  import { decisions } from '../lib/decisions';
   import ActionButton from './ActionButton.svelte';
   import Avatar from './Avatar.svelte';
   import Icon from './Icon.svelte';
@@ -86,6 +87,7 @@
       ontoggle();
     } else {
       usage.action('thread_open', viaOfEvent(e));
+      decisions.noteInput(viaOfEvent(e));
       onclick();
     }
   }

@@ -11,6 +11,7 @@ import { registerPushRoutes } from './routes/push.js';
 import { registerGithubRoutes } from './routes/github.js';
 import { registerTodoRoutes } from './routes/todos.js';
 import { registerUsageRoutes } from './routes/usage.js';
+import { registerItemEventRoutes } from './routes/itemEvents.js';
 import { HttpError } from './routes/util.js';
 import { registerSecurity, type SecurityOptions } from './security.js';
 
@@ -55,6 +56,7 @@ export function buildApp(deps: AppDeps, opts: BuildAppOptions = {}): FastifyInst
   registerGithubRoutes(app, deps);
   registerTodoRoutes(app, deps);
   registerUsageRoutes(app, deps);
+  registerItemEventRoutes(app, deps);
   registerEventRoutes(app, deps, opts.pingMs);
 
   const staticDir = deps.staticDir && existsSync(join(deps.staticDir, 'index.html')) ? deps.staticDir : null;
