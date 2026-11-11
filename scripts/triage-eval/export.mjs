@@ -25,7 +25,8 @@ const rows = db
   .prepare(
     `SELECT i.id, i.provider, i.kind, i.container_key, i.container_title, i.title, i.author, i.body_plain,
             i.occurred_at, i.source_state, i.reason, i.data, i.state, i.state_source, i.state_changed_at,
-            c.thread_id, c.parent_id, v.channel_title,
+            c.thread_id, c.parent_id, c.author_channel_id, c.like_count, v.channel_title, v.published_at AS video_published_at,
+            v.view_count AS video_views,
             EXISTS (SELECT 1 FROM sources s WHERE s.kind = 'channel' AND s.is_own = 1 AND s.yt_id = v.channel_id) AS own_channel
        FROM items i LEFT JOIN comments c ON c.id = i.id LEFT JOIN videos v ON i.provider = 'youtube' AND v.id = i.container_key
       WHERE i.is_own = 0 AND i.provider IN ('youtube', 'github')
@@ -36,6 +37,34 @@ const rows = db
 const threadStmt = db.prepare(
   `SELECT id, is_own, author_name, text_plain, published_at FROM comments WHERE thread_id = ? ORDER BY published_at`,
 );
+// Author history, computed only from what existed BEFORE each item (no peeking at what happened after it).
+const allComments = db
+  .prepare('SELECT id, thread_id, author_channel_id, is_own, published_at FROM comments ORDER BY published_at')
+  .all();
+const byAuthor = new Map();
+const ownByThread = new Map();
+for (const c of allComments) {
+  if (c.is_own) {
+    if (!ownByThread.has(c.thread_id)) ownByThread.set(c.thread_id, []);
+    ownByThread.get(c.thread_id).push(c.published_at);
+  } else if (c.author_channel_id) {
+    if (!byAuthor.has(c.author_channel_id)) byAuthor.set(c.author_channel_id, []);
+    byAuthor.get(c.author_channel_id).push(c);
+  }
+}
+function authorHistory(authorId, at) {
+  const earlier = (byAuthor.get(authorId) ?? []).filter((x) => x.published_at < at);
+  // Earlier comments by this person that the owner answered (his reply came after theirs and before now).
+  const answered = earlier.filter((x) =>
+    (ownByThread.get(x.thread_id) ?? []).some((t) => t > x.published_at && t < at),
+  );
+  return { authorPriorComments: earlier.length, authorPriorAnswered: answered.length };
+}
+const ghByAuthor = new Map();
+for (const r of db.prepare("SELECT author, occurred_at FROM items WHERE provider = 'github' AND is_own = 0").all()) {
+  if (!ghByAuthor.has(r.author)) ghByAuthor.set(r.author, []);
+  ghByAuthor.get(r.author).push(r.occurred_at);
+}
 const threadCache = new Map();
 const thread = (id) => {
   if (!threadCache.has(id)) threadCache.set(id, threadStmt.all(id));
@@ -63,6 +92,14 @@ for (const r of rows) {
     out.channel = cap(r.channel_title, 80) || null;
     // Whether the video is on one of the owner's own channels: he can commit to making content there, not elsewhere.
     out.ownChannel = !!r.own_channel;
+    out.meta = {
+      ...authorHistory(r.author_channel_id, r.occurred_at),
+      likes: r.like_count ?? 0,
+      videoAgeDays: r.video_published_at
+        ? Math.max(0, Math.round((Date.parse(r.occurred_at) - Date.parse(r.video_published_at)) / 864e5))
+        : null,
+      videoViews: r.video_views ?? null,
+    };
     out.isReply = !!r.parent_id;
     out.thread = before.map((x) => ({ own: !!x.is_own, text: cap(x.text_plain, 300) }));
     // Ground truth, not classifier input: did the channel answer later in this thread?
@@ -74,6 +111,9 @@ for (const r of rows) {
     } catch {
       /* leave empty */
     }
+    out.meta = {
+      authorPriorItems: (ghByAuthor.get(r.author) ?? []).filter((t) => t < r.occurred_at).length,
+    };
     out.github = {
       association: g.association ?? null,
       authorType: g.authorType ?? null,

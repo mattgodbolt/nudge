@@ -15,6 +15,19 @@ export interface EvalItem {
   /** YouTube: the channel the video is on, and whether it is one of the owner's own channels. */
   channel?: string | null;
   ownChannel?: boolean;
+  /**
+   * Context that is not the text: author history up to this item, likes, video age and views. Exported, but NOT shown
+   * to the classifier: shown as a <context> hint it left recall unchanged and lowered no-reply precision (82.4% and
+   * 87.3% to 81.8% on the dev half). Kept as raw material for the priority work (#27).
+   */
+  meta?: {
+    authorPriorComments?: number;
+    authorPriorAnswered?: number;
+    authorPriorItems?: number;
+    likes?: number;
+    videoAgeDays?: number | null;
+    videoViews?: number | null;
+  };
   isReply?: boolean;
   thread?: { own: boolean; text: string }[];
   /** Ground truth, never classifier input: the channel's later answer in the same thread. */
