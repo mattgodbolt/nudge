@@ -45,6 +45,20 @@ describe('snapshotBeforeMigrating', () => {
     db.close();
   });
 
+  it('snapshots a v9 database before the usage_daily migration, leaving the copy without that table', () => {
+    const dir = tmp();
+    oldDb(join(dir, 'nudge.db'), 9);
+    const db = openDb(join(dir, 'nudge.db'));
+    expect(db.prepare("SELECT name FROM sqlite_master WHERE name = 'usage_daily'").get()).toBeTruthy();
+    const [name] = snaps(dir);
+    expect(name).toMatch(/^pre-migrate-v9-.*\.db$/);
+    const copy = new Database(join(dir, 'backups', name!), { readonly: true });
+    expect(copy.prepare("SELECT name FROM sqlite_master WHERE name = 'usage_daily'").get()).toBeUndefined();
+    expect(copy.prepare('SELECT title FROM videos').get()).toEqual({ title: 'precious' });
+    copy.close();
+    db.close();
+  });
+
   it('takes nothing for a fresh database, an up-to-date one or an in-memory one', () => {
     const dir = tmp();
     openDb(join(dir, 'nudge.db')).close();

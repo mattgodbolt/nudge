@@ -7,6 +7,7 @@
   import { sources } from '../lib/stores/sources.svelte';
   import { ui } from '../lib/stores/ui.svelte';
   import { assistant } from '../lib/stores/assistant.svelte';
+  import { usage, viaOfEvent } from '../lib/usage';
   import { phone } from '../lib/phone.svelte';
   import { resync } from '../lib/resync.svelte';
   import { formatNumber } from '../lib/format';
@@ -122,7 +123,10 @@
     <button
       class="btn ghost sm refresh"
       class:busy={resync.busy}
-      onclick={() => void resync.run()}
+      onclick={(e) => {
+        usage.action('sync', viaOfEvent(e));
+        void resync.run();
+      }}
       disabled={resync.busy}
       title="Refresh (Shift+R)"
       aria-label="Refresh"
@@ -149,7 +153,14 @@
     ><Kbd keys="$mod+k" />
   </button>
 
-  <button class="btn ghost search tell" data-testid="tell-nudge" onclick={() => assistant.show()}>
+  <button
+    class="btn ghost search tell"
+    data-testid="tell-nudge"
+    onclick={(e) => {
+      usage.action('assistant_open', viaOfEvent(e));
+      assistant.show();
+    }}
+  >
     <Icon name="mic" size={14} /><span class="grow">Tell Nudge…</span><Kbd label="c" />
   </button>
 

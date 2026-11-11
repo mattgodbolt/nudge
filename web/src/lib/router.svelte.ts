@@ -1,3 +1,5 @@
+import { usage } from './usage';
+
 export type RouteName = 'inbox' | 'done' | 'all' | 'snoozed' | 'label' | 'sources' | 'source' | 'settings' | 'stats';
 
 export interface RouteState {
@@ -68,7 +70,12 @@ class Router {
   }
 
   private sync() {
+    const prev = this.state;
     this.state = parseLocation(window.location.pathname, window.location.search);
+    // Opening a view: counted once per change of view. The view the app starts on is counted at boot, once usage runs.
+    if (prev.route !== this.state.route || prev.params.id !== this.state.params.id) {
+      usage.count(`view.${this.state.route}`);
+    }
   }
 
   navigate(

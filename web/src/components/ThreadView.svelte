@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { InboxItem } from '../../../shared/types';
+  import { usage } from '../lib/usage';
   import { inbox } from '../lib/stores/inbox.svelte';
   import { thread } from '../lib/stores/thread.svelte';
   import { ui } from '../lib/stores/ui.svelte';
@@ -14,6 +15,8 @@
   import { tick, untrack } from 'svelte';
 
   let { item, now }: { item: InboxItem; now: number } = $props();
+  // Each thread is mounted once per open (the parent keys on it), so this counts opens, not renders.
+  usage.count('view.thread');
 
   let headerWidth = $state(1000);
   // Actions share the title row only in a roomy pane; otherwise they take a row of their own,

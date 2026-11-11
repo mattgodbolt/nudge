@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { InboxItem } from '../../../shared/types';
+  import { usage } from '../lib/usage';
   import { authorChip, reasonChip, refLabel, statusChip } from '../lib/github';
   import { relativeTime } from '../lib/format';
   import { renderMarkdown } from '../lib/sanitize';
@@ -14,6 +15,8 @@
   import LabelChips from './LabelChips.svelte';
 
   let { item, now }: { item: InboxItem; now: number } = $props();
+  // Each thread is mounted once per open (the parent keys on it), so this counts opens, not renders.
+  usage.count('view.github_thread');
 
   const it = $derived(item.item);
   const g = $derived(it.github);

@@ -3,6 +3,7 @@ import type { InboxPage } from '../../../../shared/api';
 import { api } from '../api';
 import { thread } from './thread.svelte';
 import { toasts } from './toasts.svelte';
+import { usage } from '../usage';
 
 export interface InboxFilters {
   sourceId?: number;
@@ -173,6 +174,12 @@ export class InboxStore {
       return;
     }
     const viewChanged = view !== this.view;
+    // Counts only: that a search ran or a filter was applied, never what it was.
+    if (filters.q && filters.q !== this.filters.q) usage.count('search.run');
+    const filterKeys = ['sourceId', 'videoId', 'labelId', 'feedId', 'repo', 'kind', 'audience'] as const;
+    if (filterKeys.some((k) => filters[k] !== undefined && filters[k] !== this.filters[k])) {
+      usage.count('filter.applied');
+    }
     this.view = view;
     this.filters = { ...filters };
     if (viewChanged) this.selectedIds = new Set();
@@ -370,6 +377,7 @@ export class InboxStore {
     opts: { message?: string | null; onError?: (e: unknown) => void } = {},
   ): Promise<boolean> {
     if (changes.length === 0) return false;
+    if (changes.length > 1) usage.count('bulk.apply');
 
     const prevCounts = $state.snapshot(this.counts) as Counts;
     const prevSelected = this.selectedId;
@@ -446,6 +454,8 @@ export class InboxStore {
     const wanted = new Set(this.targetIds(only));
     const ids = this.items.filter((i) => wanted.has(i.comment.id)).map((i) => i.comment.id);
     if (ids.length === 0) return false;
+    usage.count('label.applied');
+    if (ids.length > 1) usage.count('bulk.apply');
     const change = (item: InboxItem): InboxItem => {
       const labels = [...item.labels.filter((l) => !remove.includes(l) || add.includes(l))];
       for (const l of add) if (!labels.includes(l)) labels.push(l);

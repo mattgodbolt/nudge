@@ -6,6 +6,7 @@ import { mount } from 'svelte';
 import App from './App.svelte';
 import { openFromNotification } from './lib/push';
 import { router } from './lib/router.svelte';
+import { usage } from './lib/usage';
 
 mount(App, { target: document.getElementById('app')! });
 
@@ -13,6 +14,7 @@ mount(App, { target: document.getElementById('app')! });
 if ('serviceWorker' in navigator && window.isSecureContext) {
   navigator.serviceWorker.addEventListener('message', (e) => {
     if (e.data?.type === 'nudge.open') {
+      usage.count('push.open');
       openFromNotification(e.data.url, (r) => router.navigate(r.route, r.query, { id: r.params.id }));
     }
   });

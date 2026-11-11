@@ -100,7 +100,22 @@ export function parseCommand(reply: Json, now: Date): AssistantResult {
     .join('')
     .trim()
     .slice(0, 500);
-  return { actions, reply: text };
+  const u: Json = reply.usage && typeof reply.usage === 'object' ? reply.usage : null;
+  const n = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) && v > 0 ? Math.round(v) : 0);
+  return {
+    actions,
+    reply: text,
+    ...(u
+      ? {
+          tokens: {
+            inputTokens: n(u.input_tokens),
+            cacheReadTokens: n(u.cache_read_input_tokens),
+            cacheWriteTokens: n(u.cache_creation_input_tokens),
+            outputTokens: n(u.output_tokens),
+          },
+        }
+      : {}),
+  };
 }
 
 export function createLlmClient(opts: { clock?: () => Date } = {}): LlmClient {

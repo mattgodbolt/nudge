@@ -6,6 +6,7 @@
   import { labels } from '../lib/stores/labels.svelte';
   import { sources } from '../lib/stores/sources.svelte';
   import { ui } from '../lib/stores/ui.svelte';
+  import { usage } from '../lib/usage';
   import { fade } from 'svelte/transition';
   import { tick } from 'svelte';
 
@@ -53,7 +54,10 @@
         label: b.description,
         hint: b.keys[0] ? keyLabels(b.keys[0]).join(' ') : undefined,
         group: b.group,
-        run: () => b.run(),
+        run: () => {
+          usage.binding(b.id, 'palette');
+          b.run();
+        },
       });
     }
     out.push({

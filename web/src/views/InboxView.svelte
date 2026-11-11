@@ -25,6 +25,7 @@
   import Kbd from '../components/Kbd.svelte';
   import ActionButton from '../components/ActionButton.svelte';
   import Icon from '../components/Icon.svelte';
+  import { usage } from '../lib/usage';
   import { onMount, tick, untrack } from 'svelte';
   import type { InboxView } from '../../../shared/types';
 
@@ -377,7 +378,10 @@
         rowHeight={phone.value ? 156 : 84}
         selectedIndex={inbox.selectedIndex}
         onNearEnd={() => void inbox.loadMore()}
-        onRefresh={() => resync.run()}
+        onRefresh={() => {
+          usage.action('sync', 'touch');
+          return resync.run();
+        }}
         key={(i) => i.comment.id}
       >
         {#snippet row(item, _index)}

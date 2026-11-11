@@ -6,6 +6,8 @@ import { settings } from './settings.svelte';
 import { sources } from './sources.svelte';
 import { sync } from './sync.svelte';
 import { theme } from './theme.svelte';
+import { router } from '../router.svelte';
+import { isAutomated, usage } from '../usage';
 
 class AppStore {
   ready = $state(false);
@@ -23,6 +25,8 @@ class AppStore {
       sync.quota = b.quota;
       sync.status = b.sync;
       theme.adopt(b.settings.theme);
+      usage.start({ demo: b.settings.demo, automated: isAutomated() });
+      usage.count(`view.${router.route}`);
       this.error = null;
     } catch (e) {
       this.error = e instanceof Error ? e.message : 'Could not reach the Nudge server';

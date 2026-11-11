@@ -207,3 +207,30 @@ describe('older code meeting a newer database', () => {
     expect(() => migrate(db)).toThrow(/newer|only understands/);
   });
 });
+
+describe('migration 010 (usage_daily)', () => {
+  it('adds the counters table to a v9 database without touching existing rows', () => {
+    const db = new Database(':memory:');
+    db.exec(MIGRATIONS.slice(0, 9).join('\n'));
+    db.pragma('user_version = 9');
+    db.prepare("INSERT INTO videos (id, title) VALUES ('v', 'T')").run();
+    db.prepare(
+      "INSERT INTO item_events (item_id, at, kind, source) VALUES ('i', '2026-01-01T00:00:00.000Z', 'state', 'user')",
+    ).run();
+    expect(db.prepare("SELECT name FROM sqlite_master WHERE name = 'usage_daily'").get()).toBeUndefined();
+
+    migrate(db);
+
+    expect(db.pragma('user_version', { simple: true })).toBe(MIGRATIONS.length);
+    expect(db.prepare('SELECT title FROM videos').get()).toEqual({ title: 'T' });
+    expect(db.prepare('SELECT COUNT(*) AS n FROM item_events').get()).toEqual({ n: 1 });
+    db.prepare("INSERT INTO usage_daily (day, key, count) VALUES ('2026-11-11', 'done.kbd', 1)").run();
+    // One row per day and key.
+    expect(() =>
+      db.prepare("INSERT INTO usage_daily (day, key, count) VALUES ('2026-11-11', 'done.kbd', 1)").run(),
+    ).toThrow();
+    expect(() =>
+      db.prepare("INSERT INTO usage_daily (day, key, count) VALUES ('2026-11-11', 'x', NULL)").run(),
+    ).toThrow();
+  });
+});

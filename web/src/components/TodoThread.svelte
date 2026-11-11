@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { InboxItem } from '../../../shared/types';
+  import { usage } from '../lib/usage';
   import { relativeTime } from '../lib/format';
   import { phone } from '../lib/phone.svelte';
   import { formatSnoozeTime, recentlyWoken } from '../lib/snooze';
@@ -10,6 +11,8 @@
   import LabelChips from './LabelChips.svelte';
 
   let { item, now }: { item: InboxItem; now: number } = $props();
+  // Each thread is mounted once per open (the parent keys on it), so this counts opens, not renders.
+  usage.count('view.todo_thread');
 
   const it = $derived(item.item);
   const tile = $derived(phone.value);

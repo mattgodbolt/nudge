@@ -1,5 +1,6 @@
 // Server-internal interfaces shared by the db / sync / http chunks.
 // Owned by the lead; implementers must conform to these and ask before changing them.
+import type { UsageStore } from './db/usage.js';
 import type {
   LabelApplyResult,
   LabelColor,
@@ -245,6 +246,8 @@ export interface PushSubscriptionRow extends PushPrefs {
 }
 export interface Repo {
   close(): void;
+  /** Internal feature-use counters (migration 010). */
+  usage: UsageStore;
   /* --- Web Push (migration 006) --- */
   listPushSubscriptions(): PushSubscriptionRow[];
   getPushSubscription(endpoint: string): PushSubscriptionRow | null;
@@ -572,6 +575,8 @@ export interface AssistantResult {
   actions: AssistantAction[];
   /** What the assistant said back, if anything (e.g. why it did nothing). */
   reply: string;
+  /** Tokens the call used, when the provider reported them (the demo assistant has none). */
+  tokens?: { inputTokens: number; cacheReadTokens: number; cacheWriteTokens: number; outputTokens: number };
 }
 export class LlmError extends Error {
   constructor(

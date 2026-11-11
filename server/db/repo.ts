@@ -39,6 +39,7 @@ import { openDb, type Db } from './db.js';
 import { createEvents } from './events.js';
 import { createFeedsRepo } from './feeds.js';
 import { createTodosRepo } from './todos.js';
+import { createUsage } from './usage.js';
 import { htmlToPlain } from './text.js';
 import { tierFor, unitsPerDay } from './tiers-lite.js';
 
@@ -1733,6 +1734,7 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
     ...feedMethods,
     ...todos,
     close: () => void db.close(),
+    usage: createUsage(db, clock),
     listGoogleAccounts,
     upsertGoogleAccount,
     updateGoogleAccount,

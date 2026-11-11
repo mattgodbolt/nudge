@@ -4,6 +4,7 @@ import type { AssistantOutcome } from '../../../../shared/types';
 import { inbox } from './inbox.svelte';
 import { toasts } from './toasts.svelte';
 import { ui } from './ui.svelte';
+import { usage } from '../usage';
 
 /** The "tell Nudge" box: dictate or type a command; the server's assistant does the right thing. */
 class AssistantStore {
@@ -51,6 +52,7 @@ class AssistantStore {
     };
     this.#rec = rec;
     this.listening = true;
+    usage.count('assistant.voice');
     try {
       rec.start();
     } catch {

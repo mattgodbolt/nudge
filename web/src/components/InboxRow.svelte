@@ -6,6 +6,7 @@
   import { inbox } from '../lib/stores/inbox.svelte';
   import { ui } from '../lib/stores/ui.svelte';
   import { phone } from '../lib/phone.svelte';
+  import { usage, viaOfEvent } from '../lib/usage';
   import ActionButton from './ActionButton.svelte';
   import Avatar from './Avatar.svelte';
   import Icon from './Icon.svelte';
@@ -55,6 +56,7 @@
       pressTimer = undefined;
       swallowNextClick();
       navigator.vibrate?.(15);
+      usage.action('select_toggle', 'touch');
       ontoggle();
     }, LONG_PRESS_MS);
   }
@@ -79,8 +81,13 @@
     window.addEventListener('click', eat, true);
   }
   function rowClick(e: MouseEvent) {
-    if (e.ctrlKey || e.metaKey || (selecting && phone.value)) ontoggle();
-    else onclick();
+    if (e.ctrlKey || e.metaKey || (selecting && phone.value)) {
+      usage.action('select_toggle', viaOfEvent(e));
+      ontoggle();
+    } else {
+      usage.action('thread_open', viaOfEvent(e));
+      onclick();
+    }
   }
 
   const c = $derived(item.comment);
@@ -136,6 +143,7 @@
       data-testid="row-check"
       onclick={(e) => {
         e.stopPropagation();
+        usage.action('select_toggle', viaOfEvent(e));
         ontoggle();
       }}
       onpointerdown={(e) => e.stopPropagation()}

@@ -1,6 +1,7 @@
 import type * as T from '../../../shared/types';
 import type { DraftDTO, InboxPage, InboxQuery, SettingsUpdate, SyncRequest } from '../../../shared/api';
 import { CLIENT_HEADER } from '../../../shared/api';
+import type { UsageDTO, UsagePostResult } from '../../../shared/usage';
 
 export class ApiRequestError extends Error {
   constructor(
@@ -21,7 +22,12 @@ export const retry = { delaysMs: [1000, 2000, 4000, 8000] };
 const TRANSIENT = new Set([0, 502, 503, 504]);
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
-async function request<R>(method: string, path: string, body?: unknown, opts: { allow404?: boolean } = {}): Promise<R> {
+async function request<R>(
+  method: string,
+  path: string,
+  body?: unknown,
+  opts: { allow404?: boolean; keepalive?: boolean } = {},
+): Promise<R> {
   // Only reads are retried: repeating a write that may have reached the server could do it twice.
   const delays = method === 'GET' ? retry.delaysMs : [];
   for (let attempt = 0; ; attempt++) {
@@ -38,7 +44,7 @@ async function requestOnce<R>(
   method: string,
   path: string,
   body?: unknown,
-  opts: { allow404?: boolean } = {},
+  opts: { allow404?: boolean; keepalive?: boolean } = {},
 ): Promise<R> {
   const headers: Record<string, string> = { [CLIENT_HEADER]: '1' };
   let payload: string | undefined;
@@ -48,7 +54,7 @@ async function requestOnce<R>(
   }
   let res: Response;
   try {
-    res = await fetch(path, { method, headers, body: payload });
+    res = await fetch(path, { method, headers, body: payload, keepalive: opts.keepalive });
   } catch (e) {
     throw new ApiRequestError(e instanceof Error ? e.message : 'Network error', 0, 'network');
   }
@@ -155,5 +161,10 @@ export const api = {
     request<T.AssistantResponse>('POST', '/api/assistant', body),
   deleteTodo: (id: string) => request<void>('DELETE', `/api/todos/${encodeURIComponent(id)}`),
   testLlm: (apiKey?: string) => request<{ ok: boolean; message: string }>('POST', '/api/settings/test-llm', { apiKey }),
+  /** keepalive lets the last batch survive the page closing. */
+  postUsage: (counts: Record<string, number>) =>
+    request<UsagePostResult>('POST', '/api/usage', { counts }, { keepalive: true }),
+  usage: (days: number) => request<UsageDTO>('GET', `/api/usage?days=${days}`),
+  resetUsage: () => request<void>('DELETE', '/api/usage'),
   testKey: (apiKey?: string) => request<{ ok: boolean; message: string }>('POST', '/api/settings/test-key', { apiKey }),
 };

@@ -5,6 +5,7 @@
   import { toasts } from '../lib/stores/toasts.svelte';
   import EmptyState from '../components/EmptyState.svelte';
   import Icon from '../components/Icon.svelte';
+  import UsagePanel from '../components/UsagePanel.svelte';
 
   let stats = $state<StatsDTO | null>(null);
   let loading = $state(true);
@@ -139,6 +140,8 @@
       A video listed in several sources counts once in the totals above but appears in each source's row.
     </p>
   {/if}
+
+  <UsagePanel />
 </div>
 
 <style>

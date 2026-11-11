@@ -220,6 +220,23 @@ How it works:
 - Restoring a database backup keeps your subscriptions only if the backup is recent; otherwise a device re-registers
   itself the next time you open Settings.
 
+## Usage data (private, local)
+
+Nudge counts which of its own features you use and how, so you can see what earns its place. It is for you alone:
+
+- **What is collected:** counters per UTC day, such as `done.kbd` (marked done with the keyboard), `snooze.touch`,
+  `view.stats`, `search.run` (that a search ran), "Tell Nudge" calls, tool calls, failures and spend, sessions, rough
+  active minutes, phone vs desktop and installed app vs browser tab. The list of possible keys is fixed in
+  `shared/usage.ts`; the server drops anything else.
+- **What is never collected:** comment text, search strings, author names, item ids, label names, URLs or anything else
+  you typed or read. Keys name a feature, never the thing it was used on.
+- **Where it lives:** the `usage_daily` table in your own SQLite database. No third-party service, no network calls, no
+  cookies. Demo mode and automated test runs record nothing.
+- **Where to look:** the Usage section at the bottom of Stats (top features, keyboard vs button vs touch, per-day use,
+  assistant spend, devices, and features you never used). It also shows what happened to items, read from the event log
+  at view time, clearly labelled as such.
+- **Reset:** Settings > Usage data > Reset usage data deletes every counter (and only the counters).
+
 ## Naming
 
 The app was called Youtubey. Existing setups keep working: `YOUTUBEY_*` environment variables, `~/.youtubey-key` and

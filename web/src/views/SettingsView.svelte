@@ -101,6 +101,16 @@
       toasts.push({ message: 'GitHub token saved', kind: 'success', timeoutMs: 2500 });
     }
   }
+  async function resetUsage() {
+    if (!window.confirm('Delete all usage counts? This cannot be undone. Your inbox and its history are not touched.'))
+      return;
+    try {
+      await api.resetUsage();
+      toasts.push({ message: 'Usage data deleted', kind: 'success', timeoutMs: 2500 });
+    } catch (e) {
+      toasts.error(e instanceof Error ? e.message : 'Could not delete usage data');
+    }
+  }
   async function removeGithubToken() {
     if (await settings.save({ github: { token: null } }))
       toasts.push({ message: 'GitHub token removed', timeoutMs: 2500 });
@@ -702,6 +712,17 @@
         {/each}
       </div>
       <p class="faint meta">Press <kbd class="mono">t</kbd> anywhere to cycle.</p>
+    </section>
+
+    <section class="panel sec" data-testid="settings-usage">
+      <h2>Usage data</h2>
+      <p class="meta muted">
+        Nudge counts which features you use and how (keyboard, button, touch), so you can see what earns its place. Only
+        counts are kept, in this server's database: never what you typed, read or searched for. See them under Stats.
+      </p>
+      <div>
+        <button class="btn danger" data-testid="reset-usage" onclick={() => void resetUsage()}>Reset usage data</button>
+      </div>
     </section>
 
     <section class="panel sec" data-testid="settings-about">

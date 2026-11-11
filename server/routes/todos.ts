@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import type { AssistantOutcome } from '../../shared/types.js';
 import type { AssistantAction, AppDeps } from '../contracts.js';
 import { LlmError } from '../contracts.js';
+import { costMicros } from '../classify/anthropic.js';
 import { HttpError, asObject, bad, notFound, str } from './util.js';
 
 const TEXT_MAX = 4000;
@@ -17,6 +18,16 @@ export function roughTitle(text: string): string {
 
 export function registerTodoRoutes(app: FastifyInstance, deps: AppDeps): void {
   const { repo, bus } = deps;
+  // Analytics must never be the reason a command is lost.
+  const usage = {
+    add(counts: Record<string, number>) {
+      try {
+        repo.usage.add(counts);
+      } catch (e) {
+        console.error('usage counter failed', e);
+      }
+    },
+  };
   const emitInbox = (changedIds: string[], addedIds: string[] = []) =>
     bus.emit({ type: 'inbox.changed', counts: repo.counts(), addedIds, changedIds });
 
@@ -49,7 +60,16 @@ export function registerTodoRoutes(app: FastifyInstance, deps: AppDeps): void {
         );
         actions = r.actions;
         said = r.reply;
+        // Counts only: how often the assistant is used, what it did and what it cost. Never the words.
+        usage.add({
+          'assistant.call': 1,
+          ...(r.actions.length ? { 'assistant.tool_call': r.actions.length } : {}),
+          ...(r.tokens && costMicros(model, r.tokens) > 0
+            ? { 'assistant.cost_micros': costMicros(model, r.tokens) }
+            : {}),
+        });
       } catch (e) {
+        usage.add({ 'assistant.call': 1, 'assistant.fail': 1 });
         fallback = 'failed';
         error = e instanceof LlmError ? e.message : e instanceof Error ? e.message : String(e);
       }

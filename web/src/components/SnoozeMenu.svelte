@@ -2,6 +2,7 @@
   import { keymap } from '../lib/keys/keymap.svelte';
   import { inbox } from '../lib/stores/inbox.svelte';
   import { ui } from '../lib/stores/ui.svelte';
+  import { usage } from '../lib/usage';
   import {
     defaultCustomTime,
     formatSnoozeTime,
@@ -29,13 +30,14 @@
     ui.snoozeFor = null;
   }
 
-  async function snoozeAt(at: Date) {
+  async function snoozeAt(at: Date, how: 'preset' | 'custom') {
     const ids = ui.snoozeFor;
     if (!ids) return;
     if (at.getTime() <= Date.now()) {
       error = 'Pick a time in the future';
       return;
     }
+    usage.count(`snooze.${how}`);
     close();
     await inbox.snooze(at, ids, formatSnoozeTime(at, now));
   }
@@ -47,13 +49,13 @@
       return;
     }
     const p = presets[i];
-    if (p) void snoozeAt(p.at);
+    if (p) void snoozeAt(p.at, 'preset');
   }
 
   function confirmCustom() {
     const d = fromLocalInputValue(custom);
     if (!d) error = 'Pick a date and time';
-    else void snoozeAt(d);
+    else void snoozeAt(d, 'custom');
   }
 
   function enter() {

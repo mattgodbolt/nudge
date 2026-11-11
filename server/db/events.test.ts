@@ -538,7 +538,7 @@ describe('migration 009 (item_events)', () => {
   it('upgrades to 9, backfills user state, snooze and undo events, and skips malformed rows', () => {
     const d = v8();
     migrate(d);
-    expect(d.pragma('user_version', { simple: true })).toBe(9);
+    expect(d.pragma('user_version', { simple: true })).toBe(MIGRATIONS.length);
     expect(rows(d)).toEqual([
       {
         item_id: 'a',
@@ -620,7 +620,7 @@ describe('migration 009 (item_events)', () => {
     const tables = () =>
       d
         .prepare(
-          "SELECT name, sql FROM sqlite_master WHERE name != 'item_events' AND name NOT LIKE 'idx_item_events%' ORDER BY name",
+          "SELECT name, sql FROM sqlite_master WHERE name != 'item_events' AND name NOT LIKE 'idx_item_events%' AND name NOT LIKE '%usage_daily%' ORDER BY name",
         )
         .all();
     const before = tables();
@@ -631,7 +631,7 @@ describe('migration 009 (item_events)', () => {
     const first = rows(d);
     migrate(d);
     expect(rows(d)).toEqual(first);
-    expect(d.pragma('user_version', { simple: true })).toBe(9);
+    expect(d.pragma('user_version', { simple: true })).toBe(MIGRATIONS.length);
     expect(d.pragma('integrity_check', { simple: true })).toBe('ok');
   });
 

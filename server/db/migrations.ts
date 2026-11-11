@@ -322,4 +322,13 @@ SELECT item_id, at, kind, from_value, to_value, 'user', meta FROM (
   ORDER BY at, action_id, ord
 );
 `,
+  /* 010 usage_daily: aggregated feature-use counters (internal analytics; counts only, never content) */ `
+-- One row per UTC day per allow-listed key (the allow-list lives in shared/usage.ts). Additive only: nothing here
+-- touches an existing table. Safe to delete wholesale: "Reset usage data" does exactly that.
+CREATE TABLE usage_daily (
+  day TEXT NOT NULL,
+  key TEXT NOT NULL,
+  count INTEGER NOT NULL,
+  PRIMARY KEY (day, key));
+`,
 ];
