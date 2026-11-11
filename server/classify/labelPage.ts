@@ -11,6 +11,8 @@ function labelData(sample: { stratum: string; item: EvalItem }[]) {
     provider: i.provider,
     kind: i.kind,
     container: i.container,
+    channel: i.channel ?? null,
+    ownChannel: i.ownChannel ?? null,
     title: i.title,
     author: i.author,
     text: i.text,
@@ -77,7 +79,7 @@ function el(t,c,x){const e=document.createElement(t);if(c)e.className=c;if(x!==u
 function render(){
  const d=DATA[i],l=labels[d.id]||{};
  $('pos').textContent=(i+1)+' / '+DATA.length+' · '+Object.keys(labels).length+' labelled';
- let m=d.provider+' · '+d.kind+' · '+d.container+' · '+(d.author||'');
+ let m=d.provider+' · '+d.kind+' · '+d.container+' · '+(d.author||'')+(d.channel?' · channel: '+d.channel+(d.ownChannel?' (yours)':''):'');
  if(d.github)m+=' · '+[d.github.authorType,d.github.association].filter(Boolean).join('/')+(d.github.labels.length?' · ['+d.github.labels.join(', ')+']':'');
  $('meta').textContent=m;
  const t=$('thread');t.replaceChildren();
@@ -165,7 +167,7 @@ function status(){const n=Object.keys(labels).length;$('pos').textContent=(i+1)+
  $('status').textContent=failed?'Not saving: labels stay in this tab only':col?'Saved to the page database':'';$('status').className=failed?'hint':'saved'}
 function render(){
  const d=DATA[i],l=labels[d.id]||{};status();
- let m=d.provider+' · '+d.kind+' · '+d.container+' · '+(d.author||'');
+ let m=d.provider+' · '+d.kind+' · '+d.container+' · '+(d.author||'')+(d.channel?' · channel: '+d.channel+(d.ownChannel?' (yours)':''):'');
  if(d.github)m+=' · '+[d.github.authorType,d.github.association].filter(Boolean).join('/')+(d.github.labels.length?' · ['+d.github.labels.join(', ')+']':'');
  $('meta').textContent=m;
  const t=$('thread');t.replaceChildren();

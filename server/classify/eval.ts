@@ -1,6 +1,6 @@
 // Offline evaluation for LLM triage (issues #9, #10). Run with tsx; never imported by the server.
 //
-//   npm run eval:classify -- sample [--round 2]      build data/eval/label-sample.json and label.html (round 2: a fresh batch)
+//   npm run eval:classify -- sample [--round N]      build the labelling set (round 2 and later: a fresh batch, N>1)
 //   npm run eval:classify -- run --set scored        classify (asks to confirm the projected cost; add --yes)
 //   npm run eval:classify -- score --labels data/eval/labels.json
 //
@@ -71,48 +71,46 @@ function loadHand(): Map<string, Verdict> {
   return new Map(Object.entries(raw).flatMap(([id, l]) => (l.verdict ? [[id, l.verdict] as const] : [])));
 }
 
-/** Round 2 is a fresh, unseen batch for the final held-out score: it never reuses a round-1 item. */
+/** Round 1 is label-sample.json; round N is label-sample-N.json. */
+const roundFile = (n: number): string => `${DIR}/label-sample${n <= 1 ? '' : `-${n}`}.json`;
+const idsIn = (file: string): string[] =>
+  existsSync(file) ? (JSON.parse(readFileSync(file, 'utf8')) as { item: EvalItem }[]).map((s) => s.item.id) : [];
+const MAX_ROUNDS = 9;
+
+/** A later round is a fresh, unseen batch for a held-out score: it never reuses an item from an earlier round. */
 function cmdSample(): void {
-  const round2 = arg('round') === '2';
-  const first = `${DIR}/label-sample.json`;
-  const exclude = new Set(
-    round2 ? (JSON.parse(readFileSync(first, 'utf8')) as { item: EvalItem }[]).map((s) => s.item.id) : [],
-  );
-  const sample = buildSample(items(), Number(arg('seed', round2 ? '2' : '1')), {
+  const round = Number(arg('round', '1'));
+  const exclude = new Set<string>();
+  for (let r = 1; r < round; r++) for (const id of idsIn(roundFile(r))) exclude.add(id);
+  const sample = buildSample(items(), Number(arg('seed', String(round))), {
     exclude,
-    scale: round2 ? 1.2 : 1,
+    scale: round > 1 ? 1.2 : 1,
   });
-  if (round2) {
-    writeFileSync(`${DIR}/label-sample-2.json`, JSON.stringify(sample, null, 1));
-    writeFileSync(`${DIR}/label-artifact-2.html`, labelArtifactHtml(sample, 'labels2'));
-  } else {
-    writeFileSync(first, JSON.stringify(sample, null, 1));
-    writeFileSync(`${DIR}/label.html`, labelPageHtml(sample));
-  }
+  writeFileSync(roundFile(round), JSON.stringify(sample, null, 1));
+  if (round > 1) writeFileSync(`${DIR}/label-artifact-${round}.html`, labelArtifactHtml(sample, `labels${round}`));
+  else writeFileSync(`${DIR}/label.html`, labelPageHtml(sample));
   const by = new Map<string, number>();
   for (const s of sample) by.set(s.stratum, (by.get(s.stratum) ?? 0) + 1);
   console.log(`${sample.length} items:`, Object.fromEntries(by));
   console.log(
-    `Open ${DIR}/label.html in a browser, label them, press "Download labels.json" and save it as ${DIR}/labels.json`,
+    round > 1
+      ? `Publish ${DIR}/label-artifact-${round}.html as an artifact; labels land in its "labels${round}" collection.`
+      : `Open ${DIR}/label.html in a browser, label them, press "Download labels.json" and save it as ${DIR}/labels.json`,
   );
 }
 
 function targetSet(all: EvalItem[]): EvalItem[] {
-  const which = arg('set', 'scored');
+  const which = arg('set', 'scored')!;
   if (which === 'all') return all;
-  const file = `${DIR}/label-sample${which === 'sample2' ? '-2' : ''}.json`;
-  const sampleIds = new Set(
-    existsSync(file) ? (JSON.parse(readFileSync(file, 'utf8')) as { item: EvalItem }[]).map((s) => s.item.id) : [],
-  );
+  const round = /^sample(\d*)$/.exec(which);
+  const sampleIds = new Set(idsIn(roundFile(round?.[1] ? Number(round[1]) : 1)));
   if (which === 'labelled') {
-    // Both labelled rounds together, for studies that pool them.
-    const ids2 = existsSync(`${DIR}/label-sample-2.json`)
-      ? (JSON.parse(readFileSync(`${DIR}/label-sample-2.json`, 'utf8')) as { item: EvalItem }[]).map((s) => s.item.id)
-      : [];
-    const both = new Set([...sampleIds, ...ids2]);
-    return all.filter((i) => both.has(i.id));
+    // Every labelled round together, for studies that pool them.
+    const every = new Set<string>();
+    for (let r = 1; r <= MAX_ROUNDS; r++) for (const id of idsIn(roundFile(r))) every.add(id);
+    return all.filter((i) => every.has(i.id));
   }
-  if (which === 'sample' || which === 'sample2') return all.filter((i) => sampleIds.has(i.id));
+  if (round) return all.filter((i) => sampleIds.has(i.id));
   // scored: the sample plus everything the owner's own behaviour gives a weak label to (since 2025, to stay current).
   return all.filter((i) => sampleIds.has(i.id) || (weakTruth(i) !== null && i.occurredAt >= '2025-01-01'));
 }
