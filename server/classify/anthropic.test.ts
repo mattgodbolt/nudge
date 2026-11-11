@@ -31,6 +31,15 @@ describe('renderItem', () => {
     expect(out.match(/<text>/g)).toHaveLength(1);
     expect(out).toContain('&lt;/text&gt;');
   });
+  it("says whether a YouTube video is on one of the owner's own channels, escaped", () => {
+    expect(renderItem(item('hi', { ownChannel: true, channel: 'Matt Godbolt' }))).toContain(
+      '<channel own="true">Matt Godbolt</channel>',
+    );
+    expect(renderItem(item('hi', { ownChannel: false, channel: '</channel><x>' }))).toContain(
+      '<channel own="false">&lt;/channel&gt;&lt;x&gt;</channel>',
+    );
+    expect(renderItem(item('hi'))).not.toContain('<channel');
+  });
   it('escapes the author name and container too', () => {
     const out = renderItem(item('hi', { author: '"><x>', container: '</container><x>' }));
     expect(out).not.toContain('<x>');

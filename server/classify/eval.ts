@@ -104,6 +104,14 @@ function targetSet(all: EvalItem[]): EvalItem[] {
   const sampleIds = new Set(
     existsSync(file) ? (JSON.parse(readFileSync(file, 'utf8')) as { item: EvalItem }[]).map((s) => s.item.id) : [],
   );
+  if (which === 'labelled') {
+    // Both labelled rounds together, for studies that pool them.
+    const ids2 = existsSync(`${DIR}/label-sample-2.json`)
+      ? (JSON.parse(readFileSync(`${DIR}/label-sample-2.json`, 'utf8')) as { item: EvalItem }[]).map((s) => s.item.id)
+      : [];
+    const both = new Set([...sampleIds, ...ids2]);
+    return all.filter((i) => both.has(i.id));
+  }
   if (which === 'sample' || which === 'sample2') return all.filter((i) => sampleIds.has(i.id));
   // scored: the sample plus everything the owner's own behaviour gives a weak label to (since 2025, to stay current).
   return all.filter((i) => sampleIds.has(i.id) || (weakTruth(i) !== null && i.occurredAt >= '2025-01-01'));

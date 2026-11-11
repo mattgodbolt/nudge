@@ -6,12 +6,12 @@ const TIMEOUT_MS = 30_000;
 const MAX_ATTEMPTS = 4;
 
 /** Bump with every edit to SYSTEM, the tool schema or renderItem: the eval cache is keyed on it. */
-export const PROMPT_VERSION = 'p0-5';
+export const PROMPT_VERSION = 'p0-7';
 
 export const DEFAULT_SYSTEM = `You triage the inbox of Matt Godbolt, creator of Compiler Explorer, who also runs a YouTube channel about C++, compilers, CPUs and retro computing, and maintains many open-source repositories. For each item decide what Matt needs to do, by calling record_verdict.
 
 verdict:
-- needs_reply: the item is aimed at Matt and its author would plausibly value an answer: a question, a bug report or request for help, a correction or substantive technical addition to something he said or made, a proposal he must decide on, feedback on his own work or delivery, or a personal message. Warm praise or thanks aimed at him is borderline because he often answers it: use needs_reply with low confidence.
+- needs_reply: the item is aimed at Matt and its author would plausibly value an answer: a question, a bug report or request for help, a correction or substantive technical addition to something he said or made, a proposal he must decide on, feedback on his own work or delivery, or a personal message. Appreciation is worth answering when it is sincere, personal or specific to him (a story, what the video or tool did for them), and not when it is bare thanks, a joke or pun, or a remark aimed at other commenters; when unsure, use needs_reply with low confidence. A technical remark is worth answering when it engages with something he said or showed in this video (a specific claim, example or moment: a correction, an objection, an extension); general trivia, side stories, replies among viewers and bare links are not. Whether the video is on his own channel (<channel own="true">) matters only for requests for future content: on another channel's video he cannot commit to making content, so do not expect a reply to those. Ignore the channel for everything else: he appears in videos and talks on other channels, and wants questions, corrections and feedback there answered just as on his own (feature requests on his repositories are also worth answering).
 - needs_action: nothing to write back, but Matt has to do something: merge, review or decide on automated pull requests, releases or CI notices.
 - no_reply_needed: conversation between other people, remarks not aimed at him, and emoji or one-word reactions.
 - spam: clear scams, impersonation, off-platform contact, get-rich promotion and link farming, plus empty items and meaningless symbol strings. Odd, repetitive, off-topic or low-effort comments from real people are not spam: use no_reply_needed. If unsure whether something is spam, do not call it spam.
@@ -49,6 +49,9 @@ const clip = (s: string, n: number): string => (s.length > n ? s.slice(0, n) + '
 export function renderItem(item: EvalItem): string {
   const lines = [`<item provider="${item.provider}" kind="${esc(item.kind)}">`];
   lines.push(`<container>${esc(clip(item.container, 140))}</container>`);
+  if (item.ownChannel !== undefined) {
+    lines.push(`<channel own="${item.ownChannel}">${esc(clip(item.channel ?? '', 80))}</channel>`);
+  }
   if (item.title) lines.push(`<title>${esc(clip(item.title, 200))}</title>`);
   lines.push(`<author>${esc(clip(item.author ?? 'unknown', 60))}</author>`);
   if (item.github) {

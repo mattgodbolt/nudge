@@ -25,8 +25,9 @@ const rows = db
   .prepare(
     `SELECT i.id, i.provider, i.kind, i.container_key, i.container_title, i.title, i.author, i.body_plain,
             i.occurred_at, i.source_state, i.reason, i.data, i.state, i.state_source, i.state_changed_at,
-            c.thread_id, c.parent_id
-       FROM items i LEFT JOIN comments c ON c.id = i.id
+            c.thread_id, c.parent_id, v.channel_title,
+            EXISTS (SELECT 1 FROM sources s WHERE s.kind = 'channel' AND s.is_own = 1 AND s.yt_id = v.channel_id) AS own_channel
+       FROM items i LEFT JOIN comments c ON c.id = i.id LEFT JOIN videos v ON i.provider = 'youtube' AND v.id = i.container_key
       WHERE i.is_own = 0 AND i.provider IN ('youtube', 'github')
       ORDER BY i.occurred_at`,
   )
@@ -59,6 +60,9 @@ for (const r of rows) {
     const me = t.findIndex((x) => x.id === r.id);
     const before = me < 0 ? [] : t.slice(Math.max(0, me - THREAD_CONTEXT), me);
     const later = me < 0 ? [] : t.slice(me + 1).filter((x) => x.is_own);
+    out.channel = cap(r.channel_title, 80) || null;
+    // Whether the video is on one of the owner's own channels: he can commit to making content there, not elsewhere.
+    out.ownChannel = !!r.own_channel;
     out.isReply = !!r.parent_id;
     out.thread = before.map((x) => ({ own: !!x.is_own, text: cap(x.text_plain, 300) }));
     // Ground truth, not classifier input: did the channel answer later in this thread?

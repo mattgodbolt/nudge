@@ -12,6 +12,9 @@ export interface EvalItem {
   occurredAt: string;
   state: string;
   stateSource: string;
+  /** YouTube: the channel the video is on, and whether it is one of the owner's own channels. */
+  channel?: string | null;
+  ownChannel?: boolean;
   isReply?: boolean;
   thread?: { own: boolean; text: string }[];
   /** Ground truth, never classifier input: the channel's later answer in the same thread. */
