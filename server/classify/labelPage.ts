@@ -59,7 +59,6 @@ button.on kbd{color:#fff;border-color:#fff8}
 <li><b>technical</b>: corrects, adds to or disagrees with technical content (what the video or PR says), without asking anything</li>
 <li><b>bug</b>: reports something broken</li>
 <li><b>idea</b>: asks for a feature or a future video</li>
-<li><b>collab</b>: sponsor, partnership or reuse request</li>
 <li><b>chat</b>: praise, thanks, jokes, banter</li>
 <li><b>support</b>: needs help with something</li>
 <li><b>bot</b>: automated PR, release or notification</li>
@@ -148,7 +147,6 @@ button.on kbd{color:var(--acc-fg);border-color:currentColor}
 <li><b>technical</b>: corrects, adds to or disagrees with technical content (what the video or PR says), without asking anything</li>
 <li><b>bug</b>: reports something broken</li>
 <li><b>idea</b>: asks for a feature or a future video</li>
-<li><b>collab</b>: sponsor, partnership or reuse request</li>
 <li><b>chat</b>: praise, thanks, jokes, banter</li>
 <li><b>support</b>: needs help with something</li>
 <li><b>bot</b>: automated PR, release or notification</li>

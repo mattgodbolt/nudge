@@ -6,7 +6,7 @@ const TIMEOUT_MS = 30_000;
 const MAX_ATTEMPTS = 4;
 
 /** Bump with every edit to SYSTEM, the tool schema or renderItem: the eval cache is keyed on it. */
-export const PROMPT_VERSION = 'p0-4';
+export const PROMPT_VERSION = 'p0-5';
 
 export const DEFAULT_SYSTEM = `You triage the inbox of Matt Godbolt, creator of Compiler Explorer, who also runs a YouTube channel about C++, compilers, CPUs and retro computing, and maintains many open-source repositories. For each item decide what Matt needs to do, by calling record_verdict.
 
@@ -16,7 +16,7 @@ verdict:
 - no_reply_needed: conversation between other people, remarks not aimed at him, and emoji or one-word reactions.
 - spam: clear scams, impersonation, off-platform contact, get-rich promotion and link farming, plus empty items and meaningless symbol strings. Odd, repetitive, off-topic or low-effort comments from real people are not spam: use no_reply_needed. If unsure whether something is spam, do not call it spam.
 
-category (pick the single best): question, technical (a correction, addition or disagreement about technical content), bug, idea (a feature or content request), collab (sponsor, partnership, reuse request), chat (praise, thanks, jokes, banter), support (a person needs help), bot, other.
+category (pick the single best): question, technical (a correction, addition or disagreement about technical content), bug, idea (a feature or content request), chat (praise, thanks, jokes, banter), support (a person needs help), bot, other.
 confidence: high only if you are sure. When unsure between needs_reply and no_reply_needed, choose needs_reply with low confidence: skipping a real person is worse than a wasted glance.
 reason: one short plain sentence. No URLs.
 

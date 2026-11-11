@@ -38,17 +38,7 @@ export type Verdict = (typeof VERDICTS)[number];
  * Labels agreed with the owner after the first hand-labelled run (praise and banter merged: he treats them alike). The model must pick one (or "other"); it can never invent one.
  * `bot` is rules-only territory for GitHub but is a valid answer so the model can agree with the rules.
  */
-export const CATEGORIES = [
-  'question',
-  'technical',
-  'bug',
-  'idea',
-  'collab',
-  'chat',
-  'support',
-  'bot',
-  'other',
-] as const;
+export const CATEGORIES = ['question', 'technical', 'bug', 'idea', 'chat', 'support', 'bot', 'other'] as const;
 export type Category = (typeof CATEGORIES)[number];
 
 export const CONFIDENCES = ['low', 'medium', 'high'] as const;
