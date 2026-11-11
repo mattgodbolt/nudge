@@ -172,6 +172,8 @@ describe('GitHub poller', () => {
     await p.pollNow();
     expect(repo.listInbox({ view: 'inbox' }).total).toBe(1);
     expect(bus.of('inbox.changed').at(-1)!.addedIds).toEqual([githubItemId('org', 'app', 1)]);
+    // The lookup the poller already makes names the commenter for the chip, at no extra cost.
+    expect(repo.listInbox({ view: 'inbox' }).items[0]!.item.github?.lastCommenter).toBe('someone-else');
   });
 
   it('records a failure, backs off, and clears the error on the next success', async () => {

@@ -1,6 +1,12 @@
-import type { GithubAssociation } from '../../../shared/types.js';
+import type { GithubAssociation, GithubDiscussionEntry } from '../../../shared/types.js';
 import { GithubError } from '../../contracts.js';
-import type { GithubClient, GithubItemUpsert, GithubRate, GithubSearchPage } from '../../contracts.js';
+import type {
+  GithubClient,
+  GithubDiscussion,
+  GithubItemUpsert,
+  GithubRate,
+  GithubSearchPage,
+} from '../../contracts.js';
 import { githubItemId } from '../../db/feeds.js';
 
 const API = 'https://api.github.com';
@@ -16,6 +22,10 @@ const ASSOCIATIONS = new Set([
   'MANNEQUIN',
   'NONE',
 ]);
+
+/** Entries fetched per endpoint, and kept in the merged conversation. A thread longer than this shows its tail. */
+const PAGE = 50;
+const MERGED_MAX = 100;
 
 type Json = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
 
@@ -68,6 +78,89 @@ export function mapSearchItem(it: Json): GithubItemUpsert | null {
   };
 }
 
+const assocOf = (v: unknown): GithubAssociation | null =>
+  typeof v === 'string' && ASSOCIATIONS.has(v) ? (v as GithubAssociation) : null;
+
+const REVIEW_STATES: Record<string, NonNullable<GithubDiscussionEntry['reviewState']>> = {
+  APPROVED: 'approved',
+  CHANGES_REQUESTED: 'changes_requested',
+  COMMENTED: 'commented',
+  DISMISSED: 'dismissed',
+};
+
+function person(u: Json | null | undefined, association: unknown) {
+  return {
+    author: typeof u?.login === 'string' ? u.login : 'ghost',
+    avatarUrl: typeof u?.avatar_url === 'string' ? u.avatar_url : null,
+    authorType: typeof u?.type === 'string' ? u.type : null,
+    association: assocOf(association),
+  };
+}
+
+const ts = (v: unknown): string | null => {
+  const t = typeof v === 'string' ? Date.parse(v) : NaN;
+  return Number.isFinite(t) ? new Date(t).toISOString() : null;
+};
+
+/** An issue or PR conversation comment. Exported for tests. */
+export function mapIssueComment(c: Json): GithubDiscussionEntry | null {
+  const createdAt = ts(c.created_at);
+  if (!createdAt || c.id === undefined) return null;
+  return {
+    id: `c${c.id}`,
+    kind: 'comment',
+    ...person(c.user, c.author_association),
+    createdAt,
+    body: cleanBody(c.body),
+    url: typeof c.html_url === 'string' ? c.html_url : null,
+  };
+}
+
+/**
+ * A pull request review. A "commented" review with no text is only the envelope around inline comments (which are
+ * listed on their own), and a pending review is someone's unsent draft: both are noise here.
+ */
+export function mapReview(r: Json): GithubDiscussionEntry | null {
+  const reviewState = REVIEW_STATES[String(r.state)];
+  const createdAt = ts(r.submitted_at);
+  if (!reviewState || !createdAt || r.id === undefined) return null;
+  const body = cleanBody(r.body);
+  if (reviewState === 'commented' && !body) return null;
+  return {
+    id: `r${r.id}`,
+    kind: 'review',
+    ...person(r.user, r.author_association),
+    createdAt,
+    body,
+    url: typeof r.html_url === 'string' ? r.html_url : null,
+    reviewState,
+  };
+}
+
+/** An inline review comment on a diff. Exported for tests. */
+export function mapInlineComment(c: Json): GithubDiscussionEntry | null {
+  const createdAt = ts(c.created_at);
+  if (!createdAt || c.id === undefined || typeof c.path !== 'string') return null;
+  const line = c.line ?? c.original_line;
+  return {
+    id: `i${c.id}`,
+    kind: 'inline',
+    ...person(c.user, c.author_association),
+    createdAt,
+    body: cleanBody(c.body),
+    url: typeof c.html_url === 'string' ? c.html_url : null,
+    path: c.path,
+    line: typeof line === 'number' ? line : null,
+    replyTo: c.in_reply_to_id !== undefined && c.in_reply_to_id !== null ? `i${c.in_reply_to_id}` : null,
+  };
+}
+
+/** The last page number from a Link header, or null when there is only one page. */
+export function lastPageOf(link: string | null): number | null {
+  const m = link && /<[^>]*[?&]page=(\d+)[^>]*>;\s*rel="last"/.exec(link);
+  return m ? Number(m[1]) : null;
+}
+
 export function createGithubClient(opts: { fetch?: typeof fetch } = {}): GithubClient {
   const f = opts.fetch ?? fetch;
 
@@ -107,6 +200,25 @@ export function createGithubClient(opts: { fetch?: typeof fetch } = {}): GithubC
       throw new GithubError(`GitHub said ${res.status}${msg ? `: ${msg}` : ''}`, res.status);
     }
     return { res, body: (await res.json()) as Json | Json[] };
+  }
+
+  /**
+   * The newest PAGE items of a list endpoint that returns oldest first. Page 1 reveals (via the Link header) how many
+   * pages there are; the tail is then read from the last page, plus the one before it when the last is short.
+   */
+  async function newest(path: string, token: string | null): Promise<{ items: Json[]; cut: boolean }> {
+    const url = (page: number) => `${path}?per_page=${PAGE}&page=${page}`;
+    const first = await call(url(1), token);
+    // call() turns a 404 into a null body; here it means the item or repo is gone or invisible to this token.
+    if (!Array.isArray(first.body)) throw new GithubError('GitHub could not find that conversation', first.res.status);
+    const last = lastPageOf(first.res.headers.get('link'));
+    if (!last || last < 2) return { items: first.body.slice(-PAGE), cut: first.body.length > PAGE };
+    const tail: Json[] = [];
+    for (let page = last; page >= 1 && tail.length < PAGE; page--) {
+      const got = page === 1 ? first : await call(url(page), token);
+      if (Array.isArray(got.body)) tail.unshift(...got.body);
+    }
+    return { items: tail.slice(-PAGE), cut: true };
   }
 
   return {
@@ -153,6 +265,25 @@ export function createGithubClient(opts: { fetch?: typeof fetch } = {}): GithubC
       );
       const last = Array.isArray(body) ? body[0] : null;
       return typeof last?.user?.login === 'string' ? last.user.login : null;
+    },
+
+    async discussion(repo, number, kind, token): Promise<GithubDiscussion> {
+      const [owner, name] = repo.split('/');
+      const base = `/repos/${encodeURIComponent(owner ?? '')}/${encodeURIComponent(name ?? '')}`;
+      const lists = [{ ...(await newest(`${base}/issues/${number}/comments`, token)), map: mapIssueComment }];
+      if (kind === 'pr') {
+        const reviews = await newest(`${base}/pulls/${number}/reviews`, token);
+        const inline = await newest(`${base}/pulls/${number}/comments`, token);
+        lists.push({ ...reviews, map: mapReview }, { ...inline, map: mapInlineComment });
+      }
+      const all = lists
+        .flatMap((l) => l.items.map((i) => l.map(i)))
+        .filter((e): e is GithubDiscussionEntry => e !== null)
+        .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
+      return {
+        entries: all.slice(-MERGED_MAX),
+        olderCut: lists.some((l) => l.cut) || all.length > MERGED_MAX,
+      };
     },
   };
 }

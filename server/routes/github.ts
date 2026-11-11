@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import type { ImportMode, MuteKind } from '../../shared/types.js';
 import type { AppDeps } from '../contracts.js';
 import { GithubError } from '../contracts.js';
+import { createDiscussionService } from '../providers/github/discussion.js';
 import { HttpError, asObject, bad, bool, notFound, oneOf, str } from './util.js';
 
 const IMPORT_MODES = ['none', 'recent', 'all'] as const;
@@ -20,6 +21,36 @@ export function registerGithubRoutes(app: FastifyInstance, deps: AppDeps): void 
       bus.emit({ type: 'error', message: e instanceof Error ? e.message : String(e) });
     });
   };
+
+  const discussions = deps.githubClient
+    ? createDiscussionService({ client: deps.githubClient, getToken: () => repo.getSettings().github.token })
+    : null;
+
+  /**
+   * The conversation on one GitHub item, fetched live with the stored token (which never leaves the server). Any
+   * failure at GitHub is a 424 with a plain message (not 502: the web client retries 502 for a restarting server): the pane keeps showing what it has and notes the problem.
+   */
+  app.get<{ Params: { id: string } }>('/api/items/:id/discussion', async (req) => {
+    const found = repo.getItem(req.params.id);
+    const g = found?.item.github;
+    if (!found || found.item.provider !== 'github' || !g) throw notFound('Item');
+    if (!discussions) throw new HttpError(424, 'GitHub is not available', 'github_unavailable');
+    try {
+      return await discussions.get({
+        id: found.item.id,
+        repo: `${g.owner}/${g.repo}`,
+        number: g.number,
+        kind: found.item.kind === 'pr' ? 'pr' : 'issue',
+        comments: g.comments,
+        sourceState: found.item.sourceState,
+      });
+    } catch (e) {
+      if (e instanceof GithubError) {
+        throw new HttpError(424, e.message, e.status === 404 ? 'github_not_found' : 'github_unavailable');
+      }
+      throw e;
+    }
+  });
 
   app.get('/api/feeds', async () => ({ feeds: repo.listFeeds(), mutes: repo.listMuteRules() }));
 

@@ -96,7 +96,43 @@ export interface ItemDTO {
     comments: number;
     labels: string[];
     createdAt: string;
+    /** Login of the newest commenter, known only when the item came back as 'new_activity'. */
+    lastCommenter?: string | null;
+    /**
+     * When it came back as 'new_activity': the last moment Nudge saw the comment count unchanged. Comments after it
+     * are the ones that woke the item (they predate the sync that noticed them, so woke_at is too late a cut-off).
+     */
+    activitySince?: string | null;
   };
+}
+/** One entry of a pull request's or issue's conversation, normalised from three different GitHub endpoints. */
+export interface GithubDiscussionEntry {
+  /** Unique within the conversation: "c123" (comment), "r123" (review), "i123" (inline review comment). */
+  id: string;
+  kind: 'comment' | 'review' | 'inline';
+  author: string;
+  avatarUrl: string | null;
+  /** 'User' | 'Bot' ... as reported by GitHub. */
+  authorType: string | null;
+  association: GithubAssociation | null;
+  createdAt: string;
+  /** Markdown, untrusted: render it through the sanitiser only. */
+  body: string;
+  url: string | null;
+  /** Reviews only. */
+  reviewState?: 'approved' | 'changes_requested' | 'commented' | 'dismissed';
+  /** Inline comments only: the file, the line (null once outdated) and the entry id this replies to, if any. */
+  path?: string;
+  line?: number | null;
+  replyTo?: string | null;
+}
+export interface GithubDiscussionDTO {
+  /** Oldest first. */
+  entries: GithubDiscussionEntry[];
+  /** True when older entries were left out to keep the page small. */
+  olderCut: boolean;
+  /** ISO time this answer was fetched from GitHub (it may be served from a short cache). */
+  fetchedAt: string;
 }
 export type InboxOrder = 'newest' | 'oldest' | 'arrived' | 'source';
 export interface InboxItem {

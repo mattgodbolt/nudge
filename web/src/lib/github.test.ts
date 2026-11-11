@@ -1,6 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import type { ItemDTO } from '../../../shared/types';
-import { authorChip, reasonChip, refLabel, statusChip } from './github';
+import type { GithubDiscussionEntry } from '../../../shared/types';
+import {
+  authorChip,
+  entryChip,
+  inlineContext,
+  isNewEntry,
+  reasonChip,
+  refLabel,
+  reviewBadge,
+  statusChip,
+} from './github';
 
 const gh = (over: Partial<NonNullable<ItemDTO['github']>> = {}, top: Partial<ItemDTO> = {}): ItemDTO => ({
   id: 'gh:org/app#1',
@@ -68,5 +78,46 @@ describe('reasonChip / statusChip / refLabel', () => {
   });
   it('builds "owner/repo #n"', () => {
     expect(refLabel(gh({ number: 42 }))).toBe('org/app #42');
+  });
+});
+
+describe('reasonChip with a known commenter', () => {
+  it('names who commented', () => {
+    expect(reasonChip(gh({ lastCommenter: 'dave' }, { reason: 'new_activity' }))?.text).toBe('New comment from @dave');
+    expect(reasonChip(gh({ lastCommenter: null }, { reason: 'new_activity' }))?.text).toBe('New activity');
+  });
+});
+
+const entry = (over: Partial<GithubDiscussionEntry> = {}): GithubDiscussionEntry => ({
+  id: 'c1',
+  kind: 'comment',
+  author: 'erin',
+  avatarUrl: null,
+  authorType: 'User',
+  association: null,
+  createdAt: '2026-11-02T00:00:00.000Z',
+  body: '',
+  url: null,
+  ...over,
+});
+
+describe('discussion helpers', () => {
+  it('marks only entries after the cut-off, and nothing without one', () => {
+    expect(isNewEntry(entry(), '2026-11-01T00:00:00.000Z')).toBe(true);
+    expect(isNewEntry(entry(), '2026-11-03T00:00:00.000Z')).toBe(false);
+    expect(isNewEntry(entry(), null)).toBe(false);
+    expect(isNewEntry(entry(), 'garbage')).toBe(false);
+  });
+  it('badges reviews and describes inline context', () => {
+    expect(reviewBadge(entry({ reviewState: 'changes_requested' }))?.text).toBe('Changes requested');
+    expect(reviewBadge(entry())).toBeNull();
+    expect(inlineContext(entry({ path: 'a/b.ts', line: 3 }))).toBe('a/b.ts:3');
+    expect(inlineContext(entry({ path: 'a/b.ts', line: null }))).toBe('a/b.ts');
+    expect(inlineContext(entry())).toBeNull();
+  });
+  it('chips bots and outsiders', () => {
+    expect(entryChip(entry({ authorType: 'Bot' }))?.text).toBe('Bot');
+    expect(entryChip(entry({ association: 'NONE' }))?.text).toBe('Outside');
+    expect(entryChip(entry())).toBeNull();
   });
 });

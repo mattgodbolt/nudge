@@ -130,6 +130,28 @@ describe('closing, reopening and activity', () => {
     expect(row.wokeAt).not.toBeNull(); // floats to the top
   });
 
+  it('records who commented and the cut-off for "new" when a Done item comes back', () => {
+    const u = fresh(1);
+    repo.upsertGithubItems(feedId, [u]);
+    repo.triage([u.id], 'done');
+    repo.upsertGithubItems(feedId, [{ ...u, comments: 2, lastCommenter: 'dave' }]);
+    const g = repo.listInbox({ view: 'inbox' }).items[0]!.item.github!;
+    expect(g.lastCommenter).toBe('dave');
+    expect(g.activitySince).toEqual(expect.any(String));
+    // A later poll without a lookup keeps both while the count is unchanged.
+    repo.upsertGithubItems(feedId, [{ ...u, comments: 2 }]);
+    expect(repo.listInbox({ view: 'inbox' }).items[0]!.item.github).toMatchObject({
+      lastCommenter: 'dave',
+      activitySince: g.activitySince,
+    });
+  });
+
+  it('exposes no commenter for an item that is merely new', () => {
+    const u = fresh(1);
+    repo.upsertGithubItems(feedId, [{ ...u, lastCommenter: 'dave' }]);
+    expect(repo.listInbox({ view: 'inbox' }).items[0]!.item.github).not.toHaveProperty('lastCommenter');
+  });
+
   it('does not reopen for my own comment, on a closed item, or for the same comment count', () => {
     const u = fresh(1);
     repo.upsertGithubItems(feedId, [u]);

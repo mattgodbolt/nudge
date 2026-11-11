@@ -9,6 +9,7 @@
   import { ui } from '../lib/stores/ui.svelte';
   import ActionButton from './ActionButton.svelte';
   import Avatar from './Avatar.svelte';
+  import GithubDiscussion from './GithubDiscussion.svelte';
   import Icon from './Icon.svelte';
   import LabelChips from './LabelChips.svelte';
 
@@ -114,9 +115,14 @@
         <dd>{g.labels.join(', ')}</dd>
       {/if}
     </dl>
-    <p class="faint meta hint">
-      Replies, reviews and the full conversation live on GitHub: press <kbd class="mono">v</kbd> to open it.
-    </p>
+    <GithubDiscussion
+      itemId={it.id}
+      comments={g?.comments ?? 0}
+      since={it.reason === 'new_activity' ? (g?.activitySince ?? null) : null}
+      url={it.url}
+      {now}
+    />
+    <p class="faint meta hint">Replying happens on GitHub: press <kbd class="mono">v</kbd> to open it.</p>
   </div>
 </section>
 

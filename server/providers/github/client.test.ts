@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { GithubError } from '../../contracts.js';
-import { cleanBody, createGithubClient, mapSearchItem } from './client.js';
+import {
+  cleanBody,
+  createGithubClient,
+  lastPageOf,
+  mapInlineComment,
+  mapIssueComment,
+  mapReview,
+  mapSearchItem,
+} from './client.js';
 
 const issue = (over: Record<string, unknown> = {}) => ({
   number: 7,
@@ -142,5 +150,117 @@ describe('the client', () => {
     await c.ownerType('../evil', null);
     expect(new URL(seen.at(-1)!.url).host).toBe('api.github.com');
     expect(seen.at(-1)!.url).toContain('..%2Fevil');
+  });
+});
+
+const user = { login: 'erin', avatar_url: 'https://a/e.png', type: 'User' };
+const cmt = (id: number, at: string, over: Record<string, unknown> = {}) => ({
+  id,
+  user,
+  author_association: 'MEMBER',
+  body: `body ${id}`,
+  html_url: `https://github.com/org/app/issues/7#issuecomment-${id}`,
+  created_at: at,
+  ...over,
+});
+const at = (n: number) => new Date(Date.UTC(2026, 10, 1, 0, n)).toISOString();
+
+describe('discussion mapping', () => {
+  it('maps comments, skips empty COMMENTED and PENDING reviews, and links inline replies', () => {
+    expect(mapIssueComment(cmt(5, at(1), { body: 'hi <!-- x -->' }))).toMatchObject({
+      id: 'c5',
+      kind: 'comment',
+      author: 'erin',
+      association: 'MEMBER',
+      body: 'hi',
+    });
+    const review = (state: string, body: string) => ({ id: 9, user, state, body, submitted_at: at(2) });
+    expect(mapReview(review('APPROVED', ''))).toMatchObject({ kind: 'review', reviewState: 'approved' });
+    expect(mapReview(review('CHANGES_REQUESTED', 'no'))?.reviewState).toBe('changes_requested');
+    expect(mapReview(review('COMMENTED', 'text'))?.reviewState).toBe('commented');
+    expect(mapReview(review('COMMENTED', ''))).toBeNull();
+    expect(mapReview(review('PENDING', 'draft'))).toBeNull();
+    expect(
+      mapInlineComment(cmt(3, at(3), { path: 'a.ts', line: null, original_line: 12, in_reply_to_id: 2 })),
+    ).toMatchObject({ id: 'i3', kind: 'inline', path: 'a.ts', line: 12, replyTo: 'i2' });
+    expect(mapInlineComment(cmt(3, at(3)))).toBeNull(); // no path: not an inline comment
+  });
+
+  it('treats a deleted author as ghost and ignores unknown associations', () => {
+    expect(mapIssueComment(cmt(1, at(1), { user: null, author_association: 'WEIRD' }))).toMatchObject({
+      author: 'ghost',
+      association: null,
+    });
+  });
+
+  it('reads the last page from a Link header', () => {
+    const link =
+      '<https://api.github.com/x?per_page=50&page=2>; rel="next", <https://api.github.com/x?per_page=50&page=7>; rel="last"';
+    expect(lastPageOf(link)).toBe(7);
+    expect(lastPageOf(null)).toBeNull();
+  });
+});
+
+describe('discussion', () => {
+  const link = (last: number) => ({
+    link: `<https://api.github.com/x?per_page=50&page=2>; rel="next", <https://api.github.com/x?per_page=50&page=${last}>; rel="last"`,
+  });
+
+  it('fetches only issue comments for an issue, oldest first', async () => {
+    const { c, seen } = client(() => json([cmt(2, at(2)), cmt(1, at(1))]));
+    const d = await c.discussion('org/app', 7, 'issue', 'tok');
+    expect(seen.map((s) => new URL(s.url).pathname)).toEqual(['/repos/org/app/issues/7/comments']);
+    expect(d.entries.map((e) => e.id)).toEqual(['c1', 'c2']);
+    expect(d.olderCut).toBe(false);
+    expect(seen[0]!.headers.Authorization).toBe('Bearer tok');
+  });
+
+  it('merges comments, reviews and inline comments chronologically for a pull request', async () => {
+    const { c, seen } = client((url) => {
+      const p = new URL(url).pathname;
+      if (p.endsWith('/issues/7/comments')) return json([cmt(1, at(1)), cmt(4, at(4))]);
+      if (p.endsWith('/pulls/7/reviews')) {
+        return json([
+          { id: 2, user, state: 'CHANGES_REQUESTED', body: 'fix', submitted_at: at(2) },
+          { id: 8, user, state: 'COMMENTED', body: '', submitted_at: at(2) },
+        ]);
+      }
+      return json([cmt(3, at(3), { path: 'a.ts', line: 4 })]);
+    });
+    const d = await c.discussion('org/app', 7, 'pr', null);
+    expect(seen).toHaveLength(3);
+    expect(d.entries.map((e) => `${e.kind}:${e.id}`)).toEqual(['comment:c1', 'review:r2', 'inline:i3', 'comment:c4']);
+  });
+
+  it('keeps the newest 50 of a long thread, reading from the last pages, and says older ones were cut', async () => {
+    // 120 comments: pages of 50, 50, 20.
+    const pageOf = (n: number) =>
+      Array.from({ length: n === 3 ? 20 : 50 }, (_, i) => cmt((n - 1) * 50 + i + 1, at((n - 1) * 50 + i + 1)));
+    const { c, seen } = client((url) => json(pageOf(Number(new URL(url).searchParams.get('page'))), link(3)));
+    const d = await c.discussion('org/app', 7, 'issue', null);
+    expect(seen.map((s) => new URL(s.url).searchParams.get('page'))).toEqual(['1', '3', '2']);
+    expect(d.entries).toHaveLength(50);
+    expect(d.entries[0]!.id).toBe('c71');
+    expect(d.entries.at(-1)!.id).toBe('c120');
+    expect(d.olderCut).toBe(true);
+  });
+
+  it('keeps everything when the thread fits in one page', async () => {
+    const many = Array.from({ length: 50 }, (_, i) => cmt(i + 1, at(i)));
+    const d = await client(() => json(many)).c.discussion('org/app', 7, 'issue', null);
+    expect(d.entries).toHaveLength(50);
+    expect(d.olderCut).toBe(false);
+  });
+
+  it('fails clearly on 404, bad token and rate limits', async () => {
+    await expect(client(() => json({}, {}, 404)).c.discussion('org/app', 7, 'issue', 't')).rejects.toMatchObject({
+      status: 404,
+    });
+    await expect(client(() => json({}, {}, 401)).c.discussion('org/app', 7, 'issue', 't')).rejects.toThrow(/token/);
+    await expect(
+      client(() => json({}, { 'retry-after': '30' }, 429)).c.discussion('o/a', 1, 'pr', 't'),
+    ).rejects.toMatchObject({
+      status: 429,
+    });
   });
 });

@@ -13,6 +13,8 @@ let app: FastifyInstance;
 let env: ReturnType<typeof makeEnv>;
 let polled: (number | undefined)[];
 let whoami: GithubClient['whoami'];
+let discussion: GithubClient['discussion'];
+let discussionToken: string | null | undefined;
 
 const send = (method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE', url: string, payload?: unknown) =>
   app.inject({ method, url, headers: H, payload: payload as never });
@@ -20,6 +22,8 @@ const send = (method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE', url: string, 
 beforeEach(() => {
   env = makeEnv({});
   polled = [];
+  discussionToken = undefined;
+  discussion = async () => ({ entries: [], olderCut: false });
   whoami = async () => ({ login: 'me', scopes: ['notifications'] });
   const github: GithubPoller = {
     start() {},
@@ -43,7 +47,13 @@ beforeEach(() => {
     resolveApiKey: () => ({ key: 'k', source: 'env' }),
     demo: false,
     github,
-    githubClient: { whoami: (t) => whoami(t) } as GithubClient,
+    githubClient: {
+      whoami: (t) => whoami(t),
+      discussion: (r, n, k, t) => {
+        discussionToken = t;
+        return discussion(r, n, k, t);
+      },
+    } as GithubClient,
   });
 });
 afterEach(() => app.close());
@@ -189,5 +199,86 @@ describe('inbox filters', () => {
     expect((await send('GET', '/api/inbox?kind=repo')).statusCode).toBe(400);
     expect((await send('GET', '/api/inbox?audience=everyone')).statusCode).toBe(400);
     expect((await send('GET', '/api/inbox?audience=outside&kind=pr')).statusCode).toBe(200);
+  });
+});
+
+describe('discussion', () => {
+  const up = (n: number): GithubItemUpsert => ({
+    id: githubItemId('org', 'app', n),
+    kind: 'pr',
+    repo: 'org/app',
+    number: n,
+    title: `T${n}`,
+    author: 'carol',
+    authorAvatarUrl: null,
+    authorType: 'User',
+    association: 'NONE',
+    bodyPlain: '',
+    url: 'https://github.com/org/app/pull/1',
+    createdAt: new Date(Date.now() + 3_600_000).toISOString(),
+    updatedAt: new Date().toISOString(),
+    sourceState: 'open',
+    draft: false,
+    comments: 2,
+    labels: [],
+  });
+  const path = (n: number) => `/api/items/${encodeURIComponent(githubItemId('org', 'app', n))}/discussion`;
+  const seed = async () => {
+    const { id } = (await send('POST', '/api/feeds', { owner: 'org' })).json();
+    env.repo.upsertGithubItems(id, [up(1)]);
+  };
+
+  it('returns the conversation, fetched with the stored token, without leaking the token', async () => {
+    await seed();
+    env.repo.updateSettings({ github: { token: 'stored-token', myAccounts: [] } });
+    discussion = async () => ({
+      entries: [
+        {
+          id: 'c1',
+          kind: 'comment',
+          author: 'erin',
+          avatarUrl: null,
+          authorType: 'User',
+          association: 'MEMBER',
+          createdAt: '2026-11-01T00:00:00.000Z',
+          body: 'hello',
+          url: null,
+        },
+      ],
+      olderCut: false,
+    });
+    const res = await send('GET', path(1));
+    expect(res.statusCode).toBe(200);
+    expect(res.json().entries[0]).toMatchObject({ id: 'c1', body: 'hello' });
+    expect(res.json().fetchedAt).toEqual(expect.any(String));
+    expect(discussionToken).toBe('stored-token');
+    expect(res.body).not.toContain('stored-token');
+  });
+
+  it('refuses a foreign Host (the app-wide guard), and 404s unknown or non-GitHub items', async () => {
+    await seed();
+    const bare = await app.inject({ method: 'GET', url: path(1), headers: { ...H, host: 'evil.example' } });
+    expect(bare.statusCode).toBe(403);
+    expect((await send('GET', path(99))).statusCode).toBe(404);
+    expect((await send('GET', '/api/items/not-an-item/discussion')).statusCode).toBe(404);
+  });
+
+  it('answers a GitHub failure with 424 and a plain message, never the token', async () => {
+    await seed();
+    env.repo.updateSettings({ github: { token: 'stored-token', myAccounts: [] } });
+    discussion = async () => {
+      throw new GithubError('GitHub rejected the token (expired or revoked?)', 401);
+    };
+    const res = await send('GET', path(1));
+    expect(res.statusCode).toBe(424);
+    expect(res.json()).toEqual({
+      error: 'GitHub rejected the token (expired or revoked?)',
+      code: 'github_unavailable',
+    });
+    discussion = async () => {
+      throw new GithubError('GitHub could not find that conversation', 404);
+    };
+    // Different comment count so the earlier failure cannot matter; failures are not cached anyway.
+    expect((await send('GET', path(1))).json().code).toBe('github_not_found');
   });
 });

@@ -223,6 +223,9 @@ export function createFeedsRepo(deps: FeedsDeps) {
               comments: data.comments ?? 0,
               labels: Array.isArray(data.labels) ? data.labels : [],
               createdAt: data.createdAt ?? r.occurred_at,
+              ...(r.reason === 'new_activity'
+                ? { lastCommenter: data.lastCommenter ?? null, activitySince: data.activitySince ?? null }
+                : {}),
             },
           }
         : {}),
@@ -293,7 +296,16 @@ export function createFeedsRepo(deps: FeedsDeps) {
       for (const u of ups) {
         const isMine = mine.has(u.author.toLowerCase());
         const muted = muteHit(u);
+        const existing = get.get(u.id) as Row | undefined;
+        const prev = existing ? parseData(existing.data) : {};
+        const grew = !!existing && u.comments > (prev.comments ?? 0);
         const data = JSON.stringify({
+          // The newest commenter is only known when the poller looked it up for this very growth.
+          lastCommenter: u.lastCommenter ?? (grew ? undefined : prev.lastCommenter),
+          // Comments after the last poll that saw the old count are the ones that bring a Done item back. Kept while
+          // the item sits in the inbox so a second reply does not hide the first.
+          checkedAt: at,
+          activitySince: grew && existing.state !== 'inbox' ? (prev.checkedAt ?? null) : (prev.activitySince ?? null),
           number: u.number,
           draft: u.draft,
           association: u.association,
@@ -315,7 +327,6 @@ export function createFeedsRepo(deps: FeedsDeps) {
           muted: muted ? 1 : 0,
           at,
         };
-        const existing = get.get(u.id) as Row | undefined;
         if (!existing) {
           let state: CommentState = 'inbox';
           let reason: string | null = 'new';
@@ -338,7 +349,7 @@ export function createFeedsRepo(deps: FeedsDeps) {
           continue;
         }
         refresh.run(common);
-        const prevComments: number = parseData(existing.data).comments ?? 0;
+        const prevComments: number = prev.comments ?? 0;
         const wasOpen = existing.source_state === 'open';
         const state: CommentState = existing.state;
         if (isMine || muted) {

@@ -1,4 +1,4 @@
-import type { GithubAssociation } from '../../shared/types.js';
+import type { GithubAssociation, GithubDiscussionEntry } from '../../shared/types.js';
 import { GithubError, type GithubClient, type GithubItemUpsert } from '../contracts.js';
 import { githubItemId } from '../db/feeds.js';
 
@@ -99,6 +99,47 @@ export function createFakeGithubClient(now: () => number = Date.now) {
       },
       async latestCommenter() {
         return null;
+      },
+      async discussion(repo, number, kind) {
+        const it = items.find((i) => i.repo === repo && i.number === number);
+        const t0 = Date.parse(it?.createdAt ?? new Date(base).toISOString());
+        const at = (min: number) => new Date(t0 + min * 60_000).toISOString();
+        const maint = PEOPLE[0]!;
+        const bot = PEOPLE[4]!;
+        const entry = (n: number, p: Person, min: number, body: string): GithubDiscussionEntry => ({
+          id: `c${number}${n}`,
+          kind: 'comment',
+          author: p.login,
+          avatarUrl: null,
+          authorType: p.type,
+          association: p.association,
+          createdAt: at(min),
+          body,
+          url: null,
+        });
+        const entries: GithubDiscussionEntry[] = [
+          entry(1, bot, 1, 'Automated check finished: **all green**.'),
+          entry(2, maint, 30, `Thanks! Could you add a test for #${number}?\n\n<img src=x onerror=alert(1)>`),
+        ];
+        if (kind === 'pr') {
+          entries.push(
+            {
+              ...entry(3, maint, 45, 'Looks mostly fine, one nit inline.'),
+              id: `r${number}3`,
+              kind: 'review',
+              reviewState: 'changes_requested',
+            },
+            {
+              ...entry(4, maint, 46, 'Please rename this helper.'),
+              id: `i${number}4`,
+              kind: 'inline',
+              path: 'src/parser.cpp',
+              line: 42,
+              replyTo: null,
+            },
+          );
+        }
+        return { entries, olderCut: false };
       },
     } satisfies GithubClient,
   };

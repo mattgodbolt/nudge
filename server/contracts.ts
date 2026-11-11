@@ -28,6 +28,7 @@ import type {
   Capabilities,
   FeedDTO,
   GithubAssociation,
+  GithubDiscussionDTO,
   ItemDTO,
   MuteKind,
   MuteRuleDTO,
@@ -187,6 +188,8 @@ export interface GithubItemUpsert {
   labels: string[];
   /** Set by the poller when the comment count grew: was the newest comment mine? (undefined = unknown) */
   lastCommenterIsMe?: boolean;
+  /** Set alongside lastCommenterIsMe: who wrote it, for the "New comment from @login" chip. */
+  lastCommenter?: string;
 }
 export interface UpsertGithubResult {
   /** New arrivals that need attention. */
@@ -600,7 +603,11 @@ export interface GithubClient {
   search(q: string, page: number, token: string | null): Promise<GithubSearchPage>;
   /** Login of the newest comment on an issue or PR (given its comment count), or null. */
   latestCommenter(repo: string, number: number, commentCount: number, token: string | null): Promise<string | null>;
+  /** The conversation on an issue or PR (newest entries only), fetched live. Throws GithubError. */
+  discussion(repo: string, number: number, kind: 'pr' | 'issue', token: string | null): Promise<GithubDiscussion>;
 }
+/** What the client returns; the route adds `fetchedAt`. */
+export type GithubDiscussion = Omit<GithubDiscussionDTO, 'fetchedAt'>;
 export interface GithubPoller {
   start(): void;
   stop(): void;

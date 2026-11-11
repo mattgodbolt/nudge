@@ -101,6 +101,50 @@ test('who opened it: outside contributors, the team, contributors and bots filte
     .toBe(true);
 });
 
+test('a pull request shows its conversation: comments, review state, inline context, quiet bots, sanitised', async ({
+  page,
+}) => {
+  await openFeed(page);
+  await page.getByTestId('who-all').click();
+  await rows(page)
+    .filter({ has: page.getByTestId('row-kind').filter({ hasText: /^PR$/i }) })
+    .first()
+    .click();
+  const entries = page.getByTestId('gh-entry');
+  await expect(entries).toHaveCount(4);
+  await expect(page.getByTestId('gh-review-state')).toHaveText('Changes requested');
+  await expect(page.getByTestId('gh-inline-context')).toHaveText('src/parser.cpp:42');
+  await expect(entries.first()).toHaveClass(/bot/); // the bot's note is the quiet one
+  await expect(entries.nth(1)).not.toHaveClass(/bot/);
+  // Strangers' markdown goes through the sanitiser: the script-bearing attribute never reaches the page.
+  await expect(page.getByTestId('gh-discussion').locator('[onerror]')).toHaveCount(0);
+  // Nothing was newer than a wake-up here, so nothing is marked.
+  await expect(page.getByTestId('gh-new')).toHaveCount(0);
+  // Replying stays on GitHub, and the shortcuts still work with the conversation on screen.
+  await expect(page.getByTestId('act-open')).toBeVisible();
+  const title = page.locator('[data-testid=inbox-row][aria-selected=true]').getByTestId('row-title');
+  const first = await title.innerText();
+  await page.keyboard.press('j');
+  await expect.poll(() => title.innerText()).not.toBe(first);
+});
+
+test('when the conversation cannot be loaded, the pane keeps the description and says so', async ({ page }) => {
+  await page.route('**/api/items/*/discussion', (route) =>
+    route.fulfill({
+      status: 424,
+      contentType: 'application/json',
+      body: JSON.stringify({ error: 'GitHub rate limit reached; try again shortly', code: 'github_unavailable' }),
+    }),
+  );
+  await openFeed(page);
+  await page.getByTestId('who-all').click();
+  await rows(page).first().click();
+  await expect(page.getByTestId('gh-discussion-error')).toContainText("Couldn't load the conversation");
+  await expect(page.getByTestId('gh-discussion-error').getByRole('link')).toHaveAttribute('href', /github\.com/);
+  await expect(page.getByTestId('gh-body')).toContainText('Demo');
+  await expect(page.getByTestId('act-done')).toBeVisible();
+});
+
 test('opening an item shows its description and a link to GitHub; e marks it done', async ({ page }) => {
   await openFeed(page);
   await page.getByTestId('who-all').click();

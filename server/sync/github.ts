@@ -85,7 +85,10 @@ export function createGithubPoller(deps: GithubPollerDeps): GithubPoller & { tic
         if (!(m.state === 'done' || m.state === 'replied' || m.state === 'resolved')) continue;
         if (lookups++ >= maxLookups) break;
         const who = await client.latestCommenter(u.repo, u.number, u.comments, token).catch(() => null);
-        if (who) u.lastCommenterIsMe = mine.has(who.toLowerCase());
+        if (who) {
+          u.lastCommenterIsMe = mine.has(who.toLowerCase());
+          u.lastCommenter = who;
+        }
       }
 
       const result = repo.upsertGithubItems(feed.id, ups);

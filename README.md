@@ -177,7 +177,12 @@ repositories, so you can triage them with the same keys (`e` done, `b` snooze, `
 - **Who opened it:** every row says whether the author is on the team, a past contributor, a first-timer, an outsider
   or a bot, and the filter bar above the list narrows to any of those, or to just PRs or just issues.
 - **Closing and coming back:** closing or merging on GitHub moves an item to Done. A Done item returns to the top of
-  the inbox when someone other than you comments on it while it is open, and when it is reopened.
+  the inbox when someone other than you comments on it while it is open, and when it is reopened. The chip says who
+  ("New comment from @login") when Nudge looked it up.
+- **The conversation:** opening an item shows its discussion under the description, fetched live with your token
+  (kept a few minutes): the newest 50 comments, plus reviews and inline comments on pull requests, with replies
+  that woke the item marked "New". If GitHub cannot be reached the pane says so and keeps the description. Replying
+  stays on GitHub (`v` opens it).
 - **Mute:** `Shift+M` mutes a repository, an author, all bots, or one item. Muted items go to All (still searchable),
   never reopen, and never notify. Rules are listed, and removable, under Sources > GitHub; the toast after muting
   offers an undo.
