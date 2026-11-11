@@ -10,6 +10,10 @@ import { homedir } from 'node:os';
 import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { ClassifierError, PROMPT_VERSION, costMicros, createAnthropicClassifier } from './anthropic.js';
 import { labelArtifactHtml, labelPageHtml } from './labelPage.js';
+import { buildPairs, fitBradleyTerry, kendallTau, pairwiseAccuracy, selfConsistency } from './rank.js';
+import type { Comparison } from './rank.js';
+import { rankArtifactHtml } from './rankPage.js';
+import { rng } from './sample.js';
 import { applyRules } from './rules.js';
 import { buildSample } from './sample.js';
 import { score } from './score.js';
@@ -219,10 +223,110 @@ function cmdScore(): void {
     console.log(`  injection? ${r.id}: ${all.find((i) => i.id === r.id)?.text.slice(0, 100)}`);
 }
 
+/**
+ * Priority study (#27), step 1: pick the items worth ranking (things the owner wanted to see, from the labelled
+ * rounds) and the comparisons to ask about, and build the page he answers them on.
+ */
+function cmdRankSample(): void {
+  const nItems = Number(arg('items', '60'));
+  const hand = JSON.parse(readFileSync(`${DIR}/labels-all.json`, 'utf8')) as Record<string, { verdict?: Verdict }>;
+  const byId = new Map(items().map((i) => [i.id, i]));
+  const rand = rng(Number(arg('seed', '1')));
+  const shuffled = <T>(xs: T[]): T[] =>
+    xs
+      .map((x) => [rand(), x] as const)
+      .sort((a, b) => a[0] - b[0])
+      .map(([, x]) => x);
+  const pool = (v: Verdict, gh: boolean): EvalItem[] =>
+    shuffled(
+      Object.entries(hand)
+        .filter(([id, l]) => l.verdict === v && (byId.get(id)?.provider === 'github') === gh)
+        .flatMap(([id]) => byId.get(id) ?? []),
+    );
+  // Bot "actions" are few but must compete with replies, so they get a fixed share.
+  const chosen = [
+    ...pool('needs_action', true).slice(0, Math.round(nItems * 0.13)),
+    ...pool('needs_reply', true).slice(0, Math.round(nItems * 0.33)),
+  ];
+  chosen.push(...pool('needs_reply', false).slice(0, nItems - chosen.length));
+  const pairs = buildPairs(
+    chosen.map((i) => i.id),
+    Number(arg('rounds', '6')),
+    Number(arg('repeats', '15')),
+    Number(arg('seed', '1')),
+  );
+  writeFileSync(`${DIR}/rank-set.json`, JSON.stringify({ items: chosen, pairs }, null, 1));
+  writeFileSync(`${DIR}/rank-artifact.html`, rankArtifactHtml(chosen, pairs));
+  console.log(`${chosen.length} items, ${pairs.length} comparisons (${pairs.filter((p) => p.repeat).length} repeats).`);
+  console.log(`Publish ${DIR}/rank-artifact.html as an artifact; answers land in its "pairs" collection.`);
+}
+
+/**
+ * Priority study, step 2: fit the owner's comparisons, report how consistent he is, and score candidate rankers
+ * against them. `--comparisons` is a JSON array of {a, b, w: a|b|t, repeat?}; `--scores` an optional JSON map of
+ * item id to a candidate's priority (higher matters more). Baselines are built in.
+ */
+function cmdRankScore(): void {
+  const raw = JSON.parse(readFileSync(arg('comparisons', `${DIR}/rank-pairs.json`)!, 'utf8')) as {
+    a: string;
+    b: string;
+    w: string;
+    repeat?: boolean;
+  }[];
+  const all: (Comparison & { repeat?: boolean })[] = raw.map((r) => ({
+    a: r.a,
+    b: r.b,
+    winner: r.w === 'a' ? 'a' : r.w === 'b' ? 'b' : 'tie',
+    repeat: r.repeat,
+  }));
+  const byId = new Map(items().map((i) => [i.id, i]));
+  const firsts = all.filter((c) => !c.repeat);
+  const sc = selfConsistency(all);
+  const ties = all.filter((c) => c.winner === 'tie').length;
+  console.log(`${all.length} comparisons (${ties} ties). Self-consistency on re-asked pairs: ${sc.agree}/${sc.of}`);
+
+  // Held out by pair so the fit and the check never share a comparison.
+  const half = (c: Comparison, want: 'dev' | 'test'): boolean => splitOf(c.a + '|' + c.b) === want;
+  const fit = fitBradleyTerry(firsts.filter((c) => half(c, 'dev')));
+  const test = firsts.filter((c) => half(c, 'test'));
+  const ref = pairwiseAccuracy(test, (i) => fit.get(i));
+  console.log(
+    `Fit on half the pairs predicts the other half: ${pct(ref.accuracy)} of ${ref.decided} (the ceiling for any ranker)`,
+  );
+
+  const full = fitBradleyTerry(firsts);
+  const scorers: Record<string, Map<string, number>> = {
+    recency: new Map([...full.keys()].map((i) => [i, Date.parse(byId.get(i)?.occurredAt ?? '0')])),
+    'text length': new Map([...full.keys()].map((i) => [i, byId.get(i)?.text.length ?? 0])),
+    'bot or PR first': new Map([...full.keys()].map((i) => [i, byId.get(i)?.github?.authorType === 'Bot' ? 1 : 0])),
+  };
+  const scoresFile = arg('scores');
+  if (scoresFile) {
+    const s = JSON.parse(readFileSync(scoresFile, 'utf8')) as Record<string, number>;
+    scorers['candidate'] = new Map(Object.entries(s));
+  }
+  for (const [name, m] of Object.entries(scorers)) {
+    const acc = pairwiseAccuracy(firsts, (i) => m.get(i));
+    console.log(
+      `  ${name.padEnd(16)} pairwise ${pct(acc.accuracy)} of ${acc.decided}   tau vs fit ${kendallTau(m, full)?.toFixed(2) ?? 'n/a'}`,
+    );
+  }
+  console.log('  random           pairwise 50.0%');
+  const top = [...full].sort((a, b) => b[1] - a[1]);
+  const show = (label: string, xs: [string, number][]): void => {
+    console.log(label);
+    for (const [id] of xs) console.log(`   - ${byId.get(id)?.text.slice(0, 100) ?? id}`);
+  };
+  show('Most important (fit):', top.slice(0, 5));
+  show('Least important (fit):', top.slice(-5));
+}
+
 const cmd = process.argv[2];
 if (cmd === 'sample') cmdSample();
 else if (cmd === 'run') await cmdRun();
 else if (cmd === 'score') cmdScore();
+else if (cmd === 'rank-sample') cmdRankSample();
+else if (cmd === 'rank-score') cmdRankScore();
 else
   console.log(
     'usage: eval:classify sample | run [--set sample|scored|all] [--model M] [--limit N] [--yes] | score [--labels file]',

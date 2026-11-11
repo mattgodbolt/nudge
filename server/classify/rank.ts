@@ -1,0 +1,164 @@
+// Priority ranking, offline (issue #27). The owner gives pairwise comparisons ("which matters more?"); a
+// Bradley-Terry fit turns them into one score per item, which is the reference a model's priority is measured against.
+import { rng } from './sample.js';
+
+export interface Pair {
+  /** Position in the sequence shown to the owner: the comparison document is `p<n>`. */
+  n: number;
+  a: string;
+  b: string;
+  /** True for a deliberate re-ask of an earlier pair (sides swapped), to measure the owner's own consistency. */
+  repeat?: boolean;
+}
+
+/** a: the left item matters more; b: the right one; tie: about equal or cannot say. */
+export type Winner = 'a' | 'b' | 'tie';
+export interface Comparison {
+  a: string;
+  b: string;
+  winner: Winner;
+}
+
+/**
+ * `rounds` shuffles of the items, each paired off consecutively: every item appears once per round (so `rounds` times
+ * in all), no pair repeats, and any prefix of the sequence still covers the items evenly. A few earlier pairs are
+ * re-asked swapped near the end.
+ */
+export function buildPairs(ids: string[], rounds: number, repeats: number, seed = 1): Pair[] {
+  const rand = rng(seed);
+  const seen = new Set<string>();
+  const out: Pair[] = [];
+  const shuffle = <T>(xs: T[]): T[] => {
+    const a = [...xs];
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(rand() * (i + 1));
+      [a[i], a[j]] = [a[j]!, a[i]!];
+    }
+    return a;
+  };
+  for (let r = 0; r < rounds; r++) {
+    // A shuffle can pair two items that were already paired; reshuffle a few times, then accept the stragglers.
+    let order = shuffle(ids);
+    for (let attempt = 0; attempt < 50; attempt++) {
+      const clash = (o: string[]): boolean => {
+        for (let i = 0; i + 1 < o.length; i += 2) if (seen.has([o[i], o[i + 1]].sort().join('|'))) return true;
+        return false;
+      };
+      if (!clash(order)) break;
+      order = shuffle(ids);
+    }
+    for (let i = 0; i + 1 < order.length; i += 2) {
+      const a = order[i]!;
+      const b = order[i + 1]!;
+      const k = [a, b].sort().join('|');
+      if (seen.has(k)) continue;
+      seen.add(k);
+      out.push({ n: out.length, a, b });
+    }
+  }
+  const earlier = shuffle(out.slice(0, Math.max(0, out.length - 20))).slice(0, repeats);
+  for (const p of earlier) out.push({ n: out.length, a: p.b, b: p.a, repeat: true });
+  return out;
+}
+
+/**
+ * Bradley-Terry strengths by minorisation-maximisation, with a small prior (each item gets half a win and half a
+ * loss against a virtual average opponent) so an item that always wins or always loses stays finite. A tie counts as
+ * half a win to each side. Returns log-strengths centred on zero.
+ */
+export function fitBradleyTerry(comparisons: Comparison[], iterations = 200): Map<string, number> {
+  const ids = [...new Set(comparisons.flatMap((c) => [c.a, c.b]))];
+  const w = new Map(ids.map((i) => [i, 0.5])); // prior wins
+  const games = new Map<string, Map<string, number>>(); // total games between pairs
+  const bump = (a: string, b: string, n: number): void => {
+    if (!games.has(a)) games.set(a, new Map());
+    games.get(a)!.set(b, (games.get(a)!.get(b) ?? 0) + n);
+  };
+  for (const c of comparisons) {
+    const aw = c.winner === 'a' ? 1 : c.winner === 'tie' ? 0.5 : 0;
+    w.set(c.a, w.get(c.a)! + aw);
+    w.set(c.b, w.get(c.b)! + (1 - aw));
+    bump(c.a, c.b, 1);
+    bump(c.b, c.a, 1);
+  }
+  let p = new Map(ids.map((i) => [i, 1]));
+  for (let it = 0; it < iterations; it++) {
+    const next = new Map<string, number>();
+    for (const i of ids) {
+      // The virtual opponent has strength 1 and plays one game against everyone (the prior).
+      let denom = 1 / (p.get(i)! + 1);
+      for (const [j, n] of games.get(i) ?? []) denom += n / (p.get(i)! + p.get(j)!);
+      next.set(i, w.get(i)! / denom);
+    }
+    const geo = Math.exp([...next.values()].reduce((s, v) => s + Math.log(v), 0) / ids.length);
+    p = new Map([...next].map(([i, v]) => [i, v / geo]));
+  }
+  return new Map([...p].map(([i, v]) => [i, Math.log(v)]));
+}
+
+/** Share of decided comparisons (ties excluded) that a scoring orders the same way the owner did. */
+export function pairwiseAccuracy(
+  comparisons: Comparison[],
+  score: (id: string) => number | undefined,
+): { accuracy: number | null; decided: number; ties: number } {
+  let ok = 0;
+  let decided = 0;
+  let ties = 0;
+  for (const c of comparisons) {
+    if (c.winner === 'tie') {
+      ties++;
+      continue;
+    }
+    const a = score(c.a);
+    const b = score(c.b);
+    if (a === undefined || b === undefined) continue;
+    decided++;
+    // A scoring that gives both the same value is a coin flip, not a hit.
+    if (a === b) ok += 0.5;
+    else if (a > b === (c.winner === 'a')) ok++;
+  }
+  return { accuracy: decided ? ok / decided : null, decided, ties };
+}
+
+/** Kendall's tau-b between two scorings of the same items (ties handled). */
+export function kendallTau(xs: Map<string, number>, ys: Map<string, number>): number | null {
+  const ids = [...xs.keys()].filter((i) => ys.has(i));
+  let conc = 0;
+  let disc = 0;
+  let tx = 0;
+  let ty = 0;
+  for (let i = 0; i < ids.length; i++) {
+    for (let j = i + 1; j < ids.length; j++) {
+      const dx = Math.sign(xs.get(ids[i]!)! - xs.get(ids[j]!)!);
+      const dy = Math.sign(ys.get(ids[i]!)! - ys.get(ids[j]!)!);
+      if (dx === 0 && dy === 0) continue;
+      if (dx === 0) tx++;
+      else if (dy === 0) ty++;
+      else if (dx === dy) conc++;
+      else disc++;
+    }
+  }
+  const denom = Math.sqrt((conc + disc + tx) * (conc + disc + ty));
+  return denom === 0 ? null : (conc - disc) / denom;
+}
+
+/** How often the owner gave the same answer when a pair was asked twice (the ceiling for any model). */
+export function selfConsistency(comparisons: (Comparison & { repeat?: boolean })[]): {
+  agree: number;
+  of: number;
+} {
+  const first = new Map<string, Winner>();
+  let agree = 0;
+  let of = 0;
+  for (const c of comparisons) {
+    const k = [c.a, c.b].sort().join('|');
+    // Normalise to "did the alphabetically first id win".
+    const orient = (w: Winner): Winner => (w === 'tie' ? 'tie' : c.a < c.b === (w === 'a') ? 'a' : 'b');
+    if (!c.repeat) first.set(k, orient(c.winner));
+    else if (first.has(k)) {
+      of++;
+      if (first.get(k) === orient(c.winner)) agree++;
+    }
+  }
+  return { agree, of };
+}
