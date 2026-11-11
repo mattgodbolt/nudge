@@ -1,36 +1,64 @@
 import { describe, expect, it } from 'vitest';
-import { buildPairs, fitBradleyTerry, kendallTau, pairwiseAccuracy, selfConsistency } from './rank.js';
+import {
+  buildGroups,
+  fitBradleyTerry,
+  groupsToComparisons,
+  kendallTau,
+  pairwiseAccuracy,
+  selfConsistency,
+} from './rank.js';
 import type { Comparison } from './rank.js';
 
 const ids = Array.from({ length: 20 }, (_, i) => `x${i}`);
 
-describe('buildPairs', () => {
-  const pairs = buildPairs(ids, 5, 4, 7);
-  const base = pairs.filter((p) => !p.repeat);
+describe('buildGroups', () => {
+  const groups = buildGroups(ids, 4, 3, 3, 7);
+  const base = groups.filter((g) => !g.repeat);
   it('is deterministic for a seed and different for another', () => {
-    expect(buildPairs(ids, 5, 4, 7)).toEqual(pairs);
-    expect(buildPairs(ids, 5, 4, 8)).not.toEqual(pairs);
+    expect(buildGroups(ids, 4, 3, 3, 7)).toEqual(groups);
+    expect(buildGroups(ids, 4, 3, 3, 8)).not.toEqual(groups);
   });
-  it('shows each item about once per round, never against itself, with no repeated pair', () => {
-    const seen = new Set<string>();
+  it('shows every item once per round, in distinct groups of the right size', () => {
     const count = new Map<string, number>();
-    for (const p of base) {
-      expect(p.a).not.toBe(p.b);
-      const k = [p.a, p.b].sort().join('|');
+    const seen = new Set<string>();
+    for (const g of base) {
+      expect(g.ids).toHaveLength(4);
+      expect(new Set(g.ids).size).toBe(4);
+      const k = [...g.ids].sort().join('|');
       expect(seen.has(k)).toBe(false);
       seen.add(k);
-      for (const id of [p.a, p.b]) count.set(id, (count.get(id) ?? 0) + 1);
+      for (const id of g.ids) count.set(id, (count.get(id) ?? 0) + 1);
     }
-    for (const id of ids) expect(count.get(id)).toBeGreaterThanOrEqual(4);
-    for (const id of ids) expect(count.get(id)).toBeLessThanOrEqual(5);
+    for (const id of ids) expect(count.get(id)).toBe(3);
   });
-  it('re-asks some earlier pairs swapped, at the end, and numbers every pair in order', () => {
-    const repeats = pairs.filter((p) => p.repeat);
-    expect(repeats).toHaveLength(4);
-    expect(pairs.map((p) => p.n)).toEqual(pairs.map((_, i) => i));
+  it('groups time neighbours first, then mixes them', () => {
+    expect(new Set(base[0]!.ids)).toEqual(new Set(['x0', 'x1', 'x2', 'x3']));
+    expect(new Set(base[5]!.ids)).toEqual(new Set(['x2', 'x3', 'x4', 'x5']));
+  });
+  it('re-asks some earlier groups reshuffled at the end and numbers every group in order', () => {
+    const repeats = groups.filter((g) => g.repeat);
+    expect(repeats).toHaveLength(3);
+    expect(groups.map((g) => g.n)).toEqual(groups.map((_, i) => i));
     for (const r of repeats) {
-      expect(base.some((p) => p.a === r.b && p.b === r.a)).toBe(true);
+      expect(base.some((g) => [...g.ids].sort().join() === [...r.ids].sort().join())).toBe(true);
     }
+  });
+});
+
+describe('groupsToComparisons', () => {
+  it('orders ranked items, puts them above the unranked rest and ties the rest', () => {
+    const cs = groupsToComparisons([{ ids: ['p', 'q', 'r', 's'], order: ['q', 'p'] }]);
+    expect(cs).toContainEqual({ a: 'q', b: 'p', winner: 'a', repeat: undefined });
+    expect(cs.filter((c) => c.winner === 'a')).toHaveLength(5); // q>p, q>r, q>s, p>r, p>s
+    expect(cs.filter((c) => c.winner === 'tie')).toEqual([{ a: 'r', b: 's', winner: 'tie', repeat: undefined }]);
+  });
+  it('gives six comparisons for a fully ranked group and carries the repeat flag', () => {
+    const cs = groupsToComparisons([{ ids: ['a', 'b', 'c', 'd'], order: ['a', 'b', 'c', 'd'], repeat: true }]);
+    expect(cs).toHaveLength(6);
+    expect(cs.every((c) => c.repeat)).toBe(true);
+  });
+  it('ignores ranked ids that are not in the group', () => {
+    expect(groupsToComparisons([{ ids: ['a', 'b'], order: ['zzz', 'a'] }])).toHaveLength(1);
   });
 });
 
@@ -39,11 +67,14 @@ const truth = (i: number): number => -i;
 function simulate(noise: number, seed = 3): Comparison[] {
   let s = seed;
   const r = (): number => (s = (s * 1664525 + 1013904223) >>> 0) / 4294967296;
-  return buildPairs(ids, 8, 0, 1).map((p) => {
-    const d = truth(Number(p.a.slice(1))) - truth(Number(p.b.slice(1)));
-    const flip = r() < noise;
-    return { a: p.a, b: p.b, winner: d > 0 !== flip ? 'a' : 'b' };
-  });
+  const out: Comparison[] = [];
+  for (const g of buildGroups(ids, 4, 6, 0, 1)) {
+    // The owner orders each group by the true value, with some noise in what he perceives.
+    const seenValue = new Map(g.ids.map((id) => [id, truth(Number(id.slice(1))) + (r() - 0.5) * noise * 20]));
+    const order = [...g.ids].sort((x, y) => seenValue.get(y)! - seenValue.get(x)!);
+    out.push(...groupsToComparisons([{ ids: g.ids, order }]));
+  }
+  return out;
 }
 
 describe('fitBradleyTerry', () => {

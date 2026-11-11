@@ -2,12 +2,20 @@
 // Bradley-Terry fit turns them into one score per item, which is the reference a model's priority is measured against.
 import { rng } from './sample.js';
 
-export interface Pair {
-  /** Position in the sequence shown to the owner: the comparison document is `p<n>`. */
+/** A small set shown together; the owner orders it (as he would handle it) and may flag what must happen today. */
+export interface Group {
+  /** Position in the sequence shown: the answer document is `g<n>`. */
   n: number;
-  a: string;
-  b: string;
-  /** True for a deliberate re-ask of an earlier pair (sides swapped), to measure the owner's own consistency. */
+  ids: string[];
+  /** A deliberate re-ask of an earlier group with the order reshuffled, to measure his own consistency. */
+  repeat?: boolean;
+}
+
+/** One answered group: `order` is best-first among the items he ranked; anything left out is "the rest, equal". */
+export interface GroupAnswer {
+  ids: string[];
+  order: string[];
+  today?: string[];
   repeat?: boolean;
 }
 
@@ -20,14 +28,13 @@ export interface Comparison {
 }
 
 /**
- * `rounds` shuffles of the items, each paired off consecutively: every item appears once per round (so `rounds` times
- * in all), no pair repeats, and any prefix of the sequence still covers the items evenly. A few earlier pairs are
- * re-asked swapped near the end.
+ * Groups of `size` items. The ids are expected sorted by arrival time: the first round groups time neighbours (the
+ * closest thing to "what landed together in a day"), the second shifts those by half a group so neighbours mix, and
+ * later rounds are random shuffles. Every item appears once per round. A few earlier groups are re-asked at the end
+ * with their order reshuffled.
  */
-export function buildPairs(ids: string[], rounds: number, repeats: number, seed = 1): Pair[] {
+export function buildGroups(ids: string[], size: number, rounds: number, repeats: number, seed = 1): Group[] {
   const rand = rng(seed);
-  const seen = new Set<string>();
-  const out: Pair[] = [];
   const shuffle = <T>(xs: T[]): T[] => {
     const a = [...xs];
     for (let i = a.length - 1; i > 0; i--) {
@@ -36,28 +43,43 @@ export function buildPairs(ids: string[], rounds: number, repeats: number, seed 
     }
     return a;
   };
+  const out: Group[] = [];
+  const seen = new Set<string>();
+  const push = (members: string[]): void => {
+    const k = [...members].sort().join('|');
+    if (members.length < 2 || seen.has(k)) return;
+    seen.add(k);
+    out.push({ n: out.length, ids: shuffle(members) });
+  };
+  const half = Math.floor(size / 2);
   for (let r = 0; r < rounds; r++) {
-    // A shuffle can pair two items that were already paired; reshuffle a few times, then accept the stragglers.
-    let order = shuffle(ids);
-    for (let attempt = 0; attempt < 50; attempt++) {
-      const clash = (o: string[]): boolean => {
-        for (let i = 0; i + 1 < o.length; i += 2) if (seen.has([o[i], o[i + 1]].sort().join('|'))) return true;
-        return false;
-      };
-      if (!clash(order)) break;
-      order = shuffle(ids);
-    }
-    for (let i = 0; i + 1 < order.length; i += 2) {
-      const a = order[i]!;
-      const b = order[i + 1]!;
-      const k = [a, b].sort().join('|');
-      if (seen.has(k)) continue;
-      seen.add(k);
-      out.push({ n: out.length, a, b });
+    const order = r === 0 ? ids : r === 1 ? [...ids.slice(half), ...ids.slice(0, half)] : shuffle(ids);
+    for (let i = 0; i < order.length; i += size) {
+      const chunk = order.slice(i, i + size);
+      // A short last chunk borrows from the start so no group is a pair of leftovers.
+      push(chunk.length < size ? [...chunk, ...order.slice(0, size - chunk.length)] : chunk);
     }
   }
-  const earlier = shuffle(out.slice(0, Math.max(0, out.length - 20))).slice(0, repeats);
-  for (const p of earlier) out.push({ n: out.length, a: p.b, b: p.a, repeat: true });
+  const base = out.length;
+  for (const g of shuffle(out.slice(0, Math.max(0, base - 4))).slice(0, repeats)) {
+    out.push({ n: out.length, ids: shuffle(g.ids), repeat: true });
+  }
+  return out;
+}
+
+/** Ordered items beat later ones and the unranked rest; the rest tie among themselves. */
+export function groupsToComparisons(answers: GroupAnswer[]): (Comparison & { repeat?: boolean })[] {
+  const out: (Comparison & { repeat?: boolean })[] = [];
+  for (const g of answers) {
+    const ranked = g.order.filter((i) => g.ids.includes(i));
+    const rest = g.ids.filter((i) => !ranked.includes(i));
+    const add = (a: string, b: string, winner: Winner): void => void out.push({ a, b, winner, repeat: g.repeat });
+    for (let i = 0; i < ranked.length; i++) {
+      for (let j = i + 1; j < ranked.length; j++) add(ranked[i]!, ranked[j]!, 'a');
+      for (const u of rest) add(ranked[i]!, u, 'a');
+    }
+    for (let i = 0; i < rest.length; i++) for (let j = i + 1; j < rest.length; j++) add(rest[i]!, rest[j]!, 'tie');
+  }
   return out;
 }
 

@@ -10,8 +10,15 @@ import { homedir } from 'node:os';
 import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { ClassifierError, PROMPT_VERSION, costMicros, createAnthropicClassifier } from './anthropic.js';
 import { labelArtifactHtml, labelPageHtml } from './labelPage.js';
-import { buildPairs, fitBradleyTerry, kendallTau, pairwiseAccuracy, selfConsistency } from './rank.js';
-import type { Comparison } from './rank.js';
+import {
+  buildGroups,
+  fitBradleyTerry,
+  groupsToComparisons,
+  kendallTau,
+  pairwiseAccuracy,
+  selfConsistency,
+} from './rank.js';
+import type { Comparison, GroupAnswer } from './rank.js';
 import { rankArtifactHtml } from './rankPage.js';
 import { rng } from './sample.js';
 import { applyRules } from './rules.js';
@@ -225,7 +232,8 @@ function cmdScore(): void {
 
 /**
  * Priority study (#27), step 1: pick the items worth ranking (things the owner wanted to see, from the labelled
- * rounds) and the comparisons to ask about, and build the page he answers them on.
+ * rounds), group them four at a time (time neighbours first, since priority is mostly a daily question) and build the
+ * page he answers them on.
  */
 function cmdRankSample(): void {
   const nItems = Number(arg('items', '60'));
@@ -249,67 +257,61 @@ function cmdRankSample(): void {
     ...pool('needs_reply', true).slice(0, Math.round(nItems * 0.33)),
   ];
   chosen.push(...pool('needs_reply', false).slice(0, nItems - chosen.length));
-  const pairs = buildPairs(
+  chosen.sort((a, b) => a.occurredAt.localeCompare(b.occurredAt));
+  const groups = buildGroups(
     chosen.map((i) => i.id),
-    Number(arg('rounds', '6')),
-    Number(arg('repeats', '15')),
+    Number(arg('size', '4')),
+    Number(arg('rounds', '3')),
+    Number(arg('repeats', '4')),
     Number(arg('seed', '1')),
   );
-  writeFileSync(`${DIR}/rank-set.json`, JSON.stringify({ items: chosen, pairs }, null, 1));
-  writeFileSync(`${DIR}/rank-artifact.html`, rankArtifactHtml(chosen, pairs));
-  console.log(`${chosen.length} items, ${pairs.length} comparisons (${pairs.filter((p) => p.repeat).length} repeats).`);
-  console.log(`Publish ${DIR}/rank-artifact.html as an artifact; answers land in its "pairs" collection.`);
+  writeFileSync(`${DIR}/rank-set.json`, JSON.stringify({ items: chosen, groups }, null, 1));
+  writeFileSync(`${DIR}/rank-artifact.html`, rankArtifactHtml(chosen, groups));
+  console.log(`${chosen.length} items, ${groups.length} groups (${groups.filter((g) => g.repeat).length} repeats).`);
+  console.log(`Publish ${DIR}/rank-artifact.html as an artifact; answers land in its "groups" collection.`);
 }
 
 /**
- * Priority study, step 2: fit the owner's comparisons, report how consistent he is, and score candidate rankers
- * against them. `--comparisons` is a JSON array of {a, b, w: a|b|t, repeat?}; `--scores` an optional JSON map of
- * item id to a candidate's priority (higher matters more). Baselines are built in.
+ * Priority study, step 2: turn the owner's answered groups into comparisons, fit them, report how consistent he is,
+ * and score candidate rankers against them. `--groups` is a JSON array of answered groups ({ids, order, today?,
+ * repeat?}); `--scores` an optional JSON map of item id to a candidate's priority (higher matters more).
  */
 function cmdRankScore(): void {
-  const raw = JSON.parse(readFileSync(arg('comparisons', `${DIR}/rank-pairs.json`)!, 'utf8')) as {
-    a: string;
-    b: string;
-    w: string;
-    repeat?: boolean;
-  }[];
-  const all: (Comparison & { repeat?: boolean })[] = raw.map((r) => ({
-    a: r.a,
-    b: r.b,
-    winner: r.w === 'a' ? 'a' : r.w === 'b' ? 'b' : 'tie',
-    repeat: r.repeat,
-  }));
+  const answers = JSON.parse(readFileSync(arg('groups', `${DIR}/rank-groups.json`)!, 'utf8')) as GroupAnswer[];
+  const all = groupsToComparisons(answers);
   const byId = new Map(items().map((i) => [i.id, i]));
   const firsts = all.filter((c) => !c.repeat);
   const sc = selfConsistency(all);
   const ties = all.filter((c) => c.winner === 'tie').length;
-  console.log(`${all.length} comparisons (${ties} ties). Self-consistency on re-asked pairs: ${sc.agree}/${sc.of}`);
+  const flagged = new Set(answers.flatMap((a) => a.today ?? []));
+  console.log(
+    `${answers.length} groups, ${all.length} comparisons (${ties} ties); ${flagged.size} items flagged "do today". ` +
+      `Same answer when a pair was asked again: ${sc.agree}/${sc.of}`,
+  );
 
   // Held out by pair so the fit and the check never share a comparison.
   const half = (c: Comparison, want: 'dev' | 'test'): boolean => splitOf(c.a + '|' + c.b) === want;
   const fit = fitBradleyTerry(firsts.filter((c) => half(c, 'dev')));
-  const test = firsts.filter((c) => half(c, 'test'));
-  const ref = pairwiseAccuracy(test, (i) => fit.get(i));
-  console.log(
-    `Fit on half the pairs predicts the other half: ${pct(ref.accuracy)} of ${ref.decided} (the ceiling for any ranker)`,
+  const ref = pairwiseAccuracy(
+    firsts.filter((c) => half(c, 'test')),
+    (i) => fit.get(i),
   );
+  console.log(`Fit on half the pairs predicts the other half: ${pct(ref.accuracy)} of ${ref.decided} (the ceiling)`);
 
   const full = fitBradleyTerry(firsts);
+  const ids = [...full.keys()];
   const scorers: Record<string, Map<string, number>> = {
-    recency: new Map([...full.keys()].map((i) => [i, Date.parse(byId.get(i)?.occurredAt ?? '0')])),
-    'text length': new Map([...full.keys()].map((i) => [i, byId.get(i)?.text.length ?? 0])),
-    'bot or PR first': new Map([...full.keys()].map((i) => [i, byId.get(i)?.github?.authorType === 'Bot' ? 1 : 0])),
+    recency: new Map(ids.map((i) => [i, Date.parse(byId.get(i)?.occurredAt ?? '0')])),
+    'text length': new Map(ids.map((i) => [i, byId.get(i)?.text.length ?? 0])),
+    'bot or PR first': new Map(ids.map((i) => [i, byId.get(i)?.github?.authorType === 'Bot' ? 1 : 0])),
   };
   const scoresFile = arg('scores');
-  if (scoresFile) {
-    const s = JSON.parse(readFileSync(scoresFile, 'utf8')) as Record<string, number>;
-    scorers['candidate'] = new Map(Object.entries(s));
-  }
+  if (scoresFile)
+    scorers.candidate = new Map(Object.entries(JSON.parse(readFileSync(scoresFile, 'utf8')) as Record<string, number>));
   for (const [name, m] of Object.entries(scorers)) {
     const acc = pairwiseAccuracy(firsts, (i) => m.get(i));
-    console.log(
-      `  ${name.padEnd(16)} pairwise ${pct(acc.accuracy)} of ${acc.decided}   tau vs fit ${kendallTau(m, full)?.toFixed(2) ?? 'n/a'}`,
-    );
+    const tau = kendallTau(m, full)?.toFixed(2) ?? 'n/a';
+    console.log(`  ${name.padEnd(16)} pairwise ${pct(acc.accuracy)} of ${acc.decided}   tau vs fit ${tau}`);
   }
   console.log('  random           pairwise 50.0%');
   const top = [...full].sort((a, b) => b[1] - a[1]);
