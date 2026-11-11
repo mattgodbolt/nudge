@@ -8,6 +8,7 @@ import type {
   MuteRuleDTO,
 } from '../../shared/types.js';
 import type { Db } from './db.js';
+import type { Events } from './events.js';
 import type { FeedPollResult, FeedRow, GithubItemUpsert, NewFeed, UpsertGithubResult } from '../contracts.js';
 
 type Row = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -27,13 +28,14 @@ const MUTED_SQL = `(
 export interface FeedsDeps {
   db: Db;
   now: () => string;
+  events: Events;
   /** Logins that are me, lower-cased. */
   myAccounts: () => Set<string>;
   baselineFor: (mode: ImportMode) => string;
 }
 
 export function createFeedsRepo(deps: FeedsDeps) {
-  const { db, now } = deps;
+  const { db, now, events: ev } = deps;
 
   const feedRow = (r: Row): FeedRow => ({
     id: r.id,
@@ -154,6 +156,18 @@ export function createFeedsRepo(deps: FeedsDeps) {
   const listMuteRules = (): MuteRuleDTO[] =>
     (db.prepare('SELECT * FROM mute_rules ORDER BY id').all() as Row[]).map(muteDto);
 
+  /**
+   * A rule usually covers many items, so the event belongs to the rule: item_id is the item for `item` rules and ''
+   * otherwise. Items archived by a new rule get their own `state` events from the triage call that follows it.
+   */
+  const muteEvent = (kind: 'mute' | 'unmute', rule: MuteRuleDTO, extra: Record<string, unknown> = {}) => ({
+    itemId: rule.kind === 'item' ? rule.value : '',
+    at: now(),
+    kind,
+    source: 'user' as const,
+    meta: { ruleId: rule.id, ruleKind: rule.kind, value: rule.value, ...extra },
+  });
+
   /** Recompute the cached muted flag after rules change. */
   function recomputeMuted(): void {
     db.prepare(
@@ -174,17 +188,26 @@ export function createFeedsRepo(deps: FeedsDeps) {
     if (!MUTE_KINDS.includes(kind)) throw new Error(`Unknown mute kind ${kind}`);
     const v = kind === 'bots' ? '' : value.trim();
     return db.transaction(() => {
-      db.prepare('INSERT OR IGNORE INTO mute_rules (kind, value, created_at) VALUES (?, ?, ?)').run(kind, v, now());
+      const inserted =
+        db.prepare('INSERT OR IGNORE INTO mute_rules (kind, value, created_at) VALUES (?, ?, ?)').run(kind, v, now())
+          .changes > 0;
       const rule = muteDto(db.prepare('SELECT * FROM mute_rules WHERE kind = ? AND value = ?').get(kind, v) as Row);
       recomputeMuted();
-      return { rule, affectedIds: inboxIdsMuted() };
+      const affectedIds = inboxIdsMuted();
+      // Re-adding an existing rule is a no-op, so it is not a decision worth recording.
+      if (inserted) ev.record(muteEvent('mute', rule, { affected: affectedIds.length }));
+      return { rule, affectedIds };
     })();
   }
 
   function deleteMuteRule(id: number): boolean {
     return db.transaction(() => {
+      const rule = db.prepare('SELECT * FROM mute_rules WHERE id = ?').get(id) as Row | undefined;
       const gone = db.prepare('DELETE FROM mute_rules WHERE id = ?').run(id).changes > 0;
-      if (gone) recomputeMuted();
+      if (gone) {
+        recomputeMuted();
+        if (rule) ev.record(muteEvent('unmute', muteDto(rule)));
+      }
       return gone;
     })();
   }
@@ -276,7 +299,7 @@ export function createFeedsRepo(deps: FeedsDeps) {
       );
     const res: UpsertGithubResult = { added: [], reopened: [], changed: [] };
     const at = now();
-    const get = db.prepare('SELECT state, state_source, source_state, data FROM items WHERE id = ?');
+    const get = db.prepare('SELECT state, state_source, source_state, snoozed_until, data FROM items WHERE id = ?');
     const insert = db.prepare(
       `INSERT INTO items (id, provider, kind, feed_id, container_key, container_title, title, author, author_avatar_url,
          is_own, body_plain, url, occurred_at, source_state, reason, data, muted, state, state_source,
@@ -292,6 +315,31 @@ export function createFeedsRepo(deps: FeedsDeps) {
       `UPDATE items SET state = @state, state_source = 'sync', state_changed_at = @at, reason = @reason,
          woke_at = @woke, snoozed_until = NULL WHERE id = @id`,
     );
+    // Everything here comes from the remote service, so the source is 'sync' (a mute rule only blocks the reopen).
+    const moveTo = (existing: Row, id: string, to: CommentState, reason: string | null, woke: string | null): void => {
+      move.run({ id, state: to, at, reason, woke });
+      ev.record({
+        itemId: id,
+        at,
+        kind: 'state',
+        from: existing.state,
+        to,
+        source: 'sync',
+        meta: { reason: reason ?? 'closed_upstream' },
+      });
+      // The move also drops any snooze.
+      if (existing.snoozed_until) {
+        ev.record({
+          itemId: id,
+          at,
+          kind: 'snooze',
+          from: existing.snoozed_until,
+          to: null,
+          source: 'sync',
+          meta: { reason: reason ?? 'closed_upstream' },
+        });
+      }
+    };
     db.transaction(() => {
       for (const u of ups) {
         const isMine = mine.has(u.author.toLowerCase());
@@ -349,20 +397,25 @@ export function createFeedsRepo(deps: FeedsDeps) {
           continue;
         }
         refresh.run(common);
+        // My own comment on a thread is a reply made on GitHub; the first poll that sees the count grow with me as
+        // the newest commenter is the closest we get to when it happened.
+        if (grew && u.lastCommenterIsMe === true) {
+          ev.record({ itemId: u.id, at, kind: 'reply', source: 'sync', meta: { commenter: u.lastCommenter ?? null } });
+        }
         const prevComments: number = prev.comments ?? 0;
         const wasOpen = existing.source_state === 'open';
         const state: CommentState = existing.state;
         if (isMine || muted) {
           if (u.sourceState !== 'open' && state === 'inbox' && existing.state_source !== 'user') {
-            move.run({ id: u.id, state: 'resolved', at, reason: null, woke: null });
+            moveTo(existing, u.id, 'resolved', null, null);
           }
           res.changed.push(u.id);
           continue;
         }
         if (u.sourceState !== 'open' && state === 'inbox' && existing.state_source !== 'user') {
-          move.run({ id: u.id, state: 'resolved', at, reason: null, woke: null });
+          moveTo(existing, u.id, 'resolved', null, null);
         } else if (u.sourceState === 'open' && state === 'resolved' && !wasOpen) {
-          move.run({ id: u.id, state: 'inbox', at, reason: 'reopened', woke: at });
+          moveTo(existing, u.id, 'inbox', 'reopened', at);
           res.reopened.push(u.id);
         } else if (
           u.sourceState === 'open' &&
@@ -370,7 +423,7 @@ export function createFeedsRepo(deps: FeedsDeps) {
           u.comments > prevComments &&
           u.lastCommenterIsMe !== true
         ) {
-          move.run({ id: u.id, state: 'inbox', at, reason: 'new_activity', woke: at });
+          moveTo(existing, u.id, 'inbox', 'new_activity', at);
           res.reopened.push(u.id);
         }
         res.changed.push(u.id);
@@ -387,10 +440,27 @@ export function createFeedsRepo(deps: FeedsDeps) {
       db.prepare(
         "UPDATE items SET is_own = CASE WHEN lower(author) IN (SELECT value FROM json_each(?)) THEN 1 ELSE 0 END WHERE provider = 'github'",
       ).run(mine);
+      const meta = { reason: 'ownership_changed' };
+      ev.recordStateMoves(
+        "provider = 'github' AND is_own = 1 AND state != 'own' AND state_source != 'user'",
+        [],
+        "'own'",
+        'sync',
+        at,
+        meta,
+      );
       db.prepare(
         `UPDATE items SET state = 'own', state_source = 'sync', state_changed_at = ?
          WHERE provider = 'github' AND is_own = 1 AND state != 'own' AND state_source != 'user'`,
       ).run(at);
+      ev.recordStateMoves(
+        "provider = 'github' AND is_own = 0 AND state = 'own'",
+        [],
+        "CASE WHEN source_state = 'open' THEN 'inbox' ELSE 'resolved' END",
+        'sync',
+        at,
+        meta,
+      );
       db.prepare(
         `UPDATE items SET state_source = 'sync', state_changed_at = ?,
            state = CASE WHEN source_state = 'open' THEN 'inbox' ELSE 'resolved' END

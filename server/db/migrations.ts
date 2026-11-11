@@ -274,4 +274,52 @@ CREATE TABLE mute_rules (
   created_at TEXT NOT NULL,
   UNIQUE (kind, value));
 `,
+  /* 009 item_events: append-only history of what happens to items (training and evaluation data) */ `
+-- Deliberately no foreign key to items and no cascade: history must survive an item being deleted or re-imported.
+-- Additive only: nothing here touches an existing table.
+CREATE TABLE item_events (
+  id INTEGER PRIMARY KEY,
+  item_id TEXT NOT NULL,
+  at TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  from_value TEXT,
+  to_value TEXT,
+  source TEXT NOT NULL,
+  meta TEXT);
+CREATE INDEX idx_item_events_item ON item_events(item_id, at);
+CREATE INDEX idx_item_events_at ON item_events(at);
+
+-- Backfill from triage_actions, the only existing record of past decisions. Rows whose JSON is malformed (or not an
+-- array) and elements that are not objects with a text commentId are skipped, never an error: this runs against the
+-- live database. CASE is used wherever a json function could throw, because AND does not short-circuit in SQLite.
+-- Labels are not backfilled: item_labels has no timestamps, so any history would be invented.
+INSERT INTO item_events (item_id, at, kind, from_value, to_value, source, meta)
+SELECT item_id, at, kind, from_value, to_value, 'user', meta FROM (
+  WITH ch AS (
+    SELECT a.id AS action_id, a.created_at, a.to_state, a.undone_at,
+           CASE WHEN e.type = 'object' THEN json_extract(e.value, '$.commentId') END AS item_id,
+           CASE WHEN e.type = 'object' THEN json_extract(e.value, '$.from') END AS f,
+           CASE WHEN e.type = 'object' THEN json_extract(e.value, '$.to') END AS t
+    FROM triage_actions a,
+         json_each(CASE WHEN json_valid(a.changes)
+                        THEN CASE WHEN json_type(a.changes) = 'array' THEN a.changes ELSE '[]' END
+                        ELSE '[]' END) e
+  )
+  SELECT created_at AS at, action_id, 0 AS ord, item_id,
+         CASE WHEN to_state = 'snoozed' THEN 'snooze' ELSE 'state' END AS kind,
+         CASE WHEN typeof(f) IN ('text', 'null') THEN f END AS from_value,
+         CASE WHEN to_state = 'snoozed' THEN (CASE WHEN typeof(t) IN ('text', 'null') THEN t END) ELSE to_state END AS to_value,
+         json_object('backfilled', json('true'), 'actionId', action_id) AS meta
+  FROM ch WHERE typeof(item_id) = 'text' AND item_id != ''
+  UNION ALL
+  SELECT undone_at, action_id, 1, item_id, 'undo',
+         CASE WHEN to_state = 'snoozed' THEN (CASE WHEN typeof(t) IN ('text', 'null') THEN t END) ELSE to_state END,
+         CASE WHEN typeof(f) IN ('text', 'null') THEN f END,
+         json_object('backfilled', json('true'), 'actionId', action_id,
+                     'original', CASE WHEN to_state = 'snoozed' THEN 'snooze' ELSE 'state' END,
+                     'approximate', json('true'))
+  FROM ch WHERE undone_at IS NOT NULL AND typeof(item_id) = 'text' AND item_id != ''
+  ORDER BY at, action_id, ord
+);
+`,
 ];

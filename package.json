@@ -22,6 +22,7 @@
     "typecheck": "tsc -p server --noEmit && svelte-check --tsconfig web/tsconfig.json",
     "lint": "prettier --check .",
     "format": "prettier --write .",
+    "export:events": "tsx scripts/export-events.ts",
     "eval:classify": "tsx server/classify/eval.ts"
   },
   "dependencies": {

@@ -36,6 +36,7 @@ import type {
   YtVideo,
 } from '../contracts.js';
 import { openDb, type Db } from './db.js';
+import { createEvents } from './events.js';
 import { createFeedsRepo } from './feeds.js';
 import { createTodosRepo } from './todos.js';
 import { htmlToPlain } from './text.js';
@@ -131,9 +132,12 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
   );
   const ownIds = () => getSettings().ownChannelIds;
 
+  const ev = createEvents(db);
+
   const feeds = createFeedsRepo({
     db,
     now,
+    events: ev,
     myAccounts: () => new Set(getSettings().github.myAccounts.map((l) => l.toLowerCase())),
     baselineFor: (mode) => baselineFor(mode),
   });
@@ -739,11 +743,23 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
         .all(threadId, lastOwn) as Row[]
     ).map((x) => x.id as string);
     if (ids.length) {
+      const at = now();
+      for (const id of ids) {
+        ev.record({
+          itemId: id,
+          at,
+          kind: 'state',
+          from: 'inbox',
+          to: 'auto_replied',
+          source: 'auto',
+          meta: { reason: 'own_reply', threadId },
+        });
+      }
       db.prepare(
         `UPDATE items SET state = 'auto_replied', state_source = 'auto', state_changed_at = ?
          WHERE state = 'inbox' AND state_source != 'user'
            AND id IN (SELECT id FROM comments WHERE thread_id = ? AND published_at < ?)`,
-      ).run(now(), threadId, lastOwn);
+      ).run(at, threadId, lastOwn);
     }
     return ids;
   }
@@ -837,22 +853,49 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
       const ownLastReply =
         '(SELECT own_last_reply_at FROM threads WHERE id = (SELECT thread_id FROM comments WHERE id = items.id))';
       // Newly-own comments leave whatever (non-user) state they had.
+      const meta = { reason: 'ownership_changed' };
+      ev.recordStateMoves(
+        "provider = 'youtube' AND is_own = 1 AND state != 'own' AND state_source != 'user'",
+        [],
+        "'own'",
+        'sync',
+        at,
+        meta,
+      );
       db.prepare(
         `UPDATE items SET state = 'own', state_source = 'sync', state_changed_at = ?
          WHERE provider = 'youtube' AND is_own = 1 AND state != 'own' AND state_source != 'user'`,
       ).run(at);
       // No-longer-own comments go back to inbox/archived.
+      ev.recordStateMoves("provider = 'youtube' AND is_own = 0 AND state = 'own'", [], fallback, 'sync', at, meta);
       db.prepare(
         `UPDATE items SET state = ${fallback}, state_source = 'sync', state_changed_at = ?
          WHERE provider = 'youtube' AND is_own = 0 AND state = 'own'`,
       ).run(at);
       // Auto-cleared rows whose justifying own reply has vanished go back.
+      ev.recordStateMoves(
+        `provider = 'youtube' AND state = 'auto_replied' AND state_source = 'auto'
+           AND NOT COALESCE(occurred_at < ${ownLastReply}, 0)`,
+        [],
+        fallback,
+        'sync',
+        at,
+        meta,
+      );
       db.prepare(
         `UPDATE items SET state = ${fallback}, state_source = 'sync', state_changed_at = ?
          WHERE provider = 'youtube' AND state = 'auto_replied' AND state_source = 'auto'
            AND NOT COALESCE(occurred_at < ${ownLastReply}, 0)`,
       ).run(at);
       // Re-run auto-clear everywhere.
+      ev.recordStateMoves(
+        `provider = 'youtube' AND state = 'inbox' AND state_source != 'user' AND occurred_at < ${ownLastReply}`,
+        [],
+        "'auto_replied'",
+        'auto',
+        at,
+        { reason: 'own_reply' },
+      );
       db.prepare(
         `UPDATE items SET state = 'auto_replied', state_source = 'auto', state_changed_at = ?
          WHERE provider = 'youtube' AND state = 'inbox' AND state_source != 'user' AND occurred_at < ${ownLastReply}`,
@@ -1144,16 +1187,17 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
   function triage(ids: string[], to: CommentState): TriageResult {
     return db.transaction(() => {
       const at = now();
-      const get = db.prepare('SELECT state, state_source FROM items WHERE id = ?');
+      const get = db.prepare('SELECT state, state_source, snoozed_until FROM items WHERE id = ?');
       const set = db.prepare("UPDATE items SET state = ?, state_source = 'user', state_changed_at = ? WHERE id = ?");
       const changes: { commentId: string; from: CommentState; to: CommentState }[] = [];
       const stored: { commentId: string; from: CommentState; fromSource: string }[] = [];
+      const woken: { id: string; from: string }[] = [];
       // Moving something back to the inbox must show it, so it also loses any snooze (even if already in 'inbox').
       const unsnooze = db.prepare('UPDATE items SET snoozed_until = NULL WHERE id = ? AND snoozed_until IS NOT NULL');
       for (const id of new Set(ids)) {
         const r = get.get(id) as Row | undefined;
         if (!r || r.state === 'own') continue;
-        if (to === 'inbox') unsnooze.run(id);
+        if (to === 'inbox' && unsnooze.run(id).changes > 0) woken.push({ id, from: r.snoozed_until });
         if (r.state === to) continue;
         set.run(to, at, id);
         changes.push({ commentId: id, from: r.state, to });
@@ -1162,7 +1206,30 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
       const res = db
         .prepare('INSERT INTO triage_actions (created_at, to_state, changes) VALUES (?, ?, ?)')
         .run(at, to, JSON.stringify(stored));
-      return { actionId: Number(res.lastInsertRowid), changes, counts: counts() };
+      const actionId = Number(res.lastInsertRowid);
+      for (const c of changes) {
+        ev.record({
+          itemId: c.commentId,
+          at,
+          kind: 'state',
+          from: c.from,
+          to: c.to,
+          source: 'user',
+          meta: { actionId },
+        });
+      }
+      for (const w of woken) {
+        ev.record({
+          itemId: w.id,
+          at,
+          kind: 'snooze',
+          from: w.from,
+          to: null,
+          source: 'user',
+          meta: { actionId, via: 'triage' },
+        });
+      }
+      return { actionId, changes, counts: counts() };
     })();
   }
 
@@ -1188,7 +1255,18 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
       const changes: TriageResult['changes'] = [];
       for (const c of stored) {
         const res = restore.run(c.from, c.fromSource ?? 'user', at, c.commentId, a.to_state);
-        if (res.changes) changes.push({ commentId: c.commentId, from: a.to_state, to: c.from });
+        if (res.changes) {
+          changes.push({ commentId: c.commentId, from: a.to_state, to: c.from });
+          ev.record({
+            itemId: c.commentId,
+            at,
+            kind: 'undo',
+            from: a.to_state,
+            to: c.from,
+            source: 'user',
+            meta: { actionId, original: 'state', originalEventId: ev.originalEventId(c.commentId, actionId) },
+          });
+        }
       }
       db.prepare('UPDATE triage_actions SET undone_at = ? WHERE id = ?').run(at, actionId);
       return { actionId, changes, counts: counts() };
@@ -1219,7 +1297,19 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
       const res = db
         .prepare('INSERT INTO triage_actions (created_at, to_state, changes) VALUES (?, ?, ?)')
         .run(at, 'snoozed', JSON.stringify(stored));
-      return { actionId: Number(res.lastInsertRowid), changes, counts: counts() };
+      const actionId = Number(res.lastInsertRowid);
+      for (const c of changes) {
+        ev.record({
+          itemId: c.commentId,
+          at,
+          kind: 'snooze',
+          from: c.from,
+          to: c.to,
+          source: 'user',
+          meta: { actionId },
+        });
+      }
+      return { actionId, changes, counts: counts() };
     })();
   }
 
@@ -1238,12 +1328,22 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
          WHERE id = ? AND state = 'inbox' AND snoozed_until IS ?`,
       );
       const changes: SnoozeResult['changes'] = [];
+      const at = now();
       for (const c of stored) {
         if (restore.run(c.from, c.fromWoke, c.commentId, c.to).changes) {
           changes.push({ commentId: c.commentId, from: c.to, to: c.from });
+          ev.record({
+            itemId: c.commentId,
+            at,
+            kind: 'undo',
+            from: c.to,
+            to: c.from,
+            source: 'user',
+            meta: { actionId, original: 'snooze', originalEventId: ev.originalEventId(c.commentId, actionId) },
+          });
         }
       }
-      db.prepare('UPDATE triage_actions SET undone_at = ? WHERE id = ?').run(now(), actionId);
+      db.prepare('UPDATE triage_actions SET undone_at = ? WHERE id = ?').run(at, actionId);
       return { actionId, changes, counts: counts() };
     })();
   }
@@ -1252,9 +1352,23 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
     return db.transaction(() => {
       const at = now();
       const due = db
-        .prepare('SELECT id, state FROM items WHERE snoozed_until IS NOT NULL AND snoozed_until <= ?')
+        .prepare('SELECT id, state, snoozed_until FROM items WHERE snoozed_until IS NOT NULL AND snoozed_until <= ?')
         .all(at) as Row[];
       if (due.length === 0) return { woken: [], counts: counts() };
+      // Only inbox items are recorded: waking anything else changes nothing the user sees.
+      for (const r of due) {
+        if (r.state === 'inbox') {
+          ev.record({
+            itemId: r.id,
+            at,
+            kind: 'snooze',
+            from: r.snoozed_until,
+            to: null,
+            source: 'auto',
+            meta: { reason: 'wake' },
+          });
+        }
+      }
       db.prepare(
         'UPDATE items SET woke_at = snoozed_until, snoozed_until = NULL WHERE snoozed_until IS NOT NULL AND snoozed_until <= ?',
       ).run(at);
@@ -1333,12 +1447,31 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
       const current = db.prepare('SELECT label_id FROM item_labels WHERE item_id = ? ORDER BY label_id');
       const ins = db.prepare('INSERT OR IGNORE INTO item_labels (item_id, label_id) VALUES (?, ?)');
       const del = db.prepare('DELETE FROM item_labels WHERE item_id = ? AND label_id = ?');
+      const names = new Map(
+        (db.prepare('SELECT id, name FROM labels').all() as Row[]).map((r) => [r.id as number, r.name as string]),
+      );
+      const at = now();
       const labels: Record<string, number[]> = {};
       for (const id of new Set(ids)) {
         if (!exists.get(id)) continue;
         let changed = false;
-        for (const l of toAdd) changed = ins.run(id, l).changes > 0 || changed;
-        for (const l of toRemove) changed = del.run(id, l).changes > 0 || changed;
+        for (const l of toAdd) {
+          if (ins.run(id, l).changes === 0) continue;
+          changed = true;
+          ev.record({ itemId: id, at, kind: 'label_add', to: names.get(l)!, source: 'user', meta: { labelId: l } });
+        }
+        for (const l of toRemove) {
+          if (del.run(id, l).changes === 0) continue;
+          changed = true;
+          ev.record({
+            itemId: id,
+            at,
+            kind: 'label_remove',
+            from: names.get(l)!,
+            source: 'user',
+            meta: { labelId: l },
+          });
+        }
         if (changed) labels[id] = (current.all(id) as Row[]).map((r) => r.label_id as number);
       }
       return { labels, counts: counts() };
@@ -1539,6 +1672,18 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
       saveDraft(p.commentId, p.body, 'posted');
       // Triage first so the target is a 'user' state that the auto-clear below must not touch.
       const t = triage([p.commentId], 'replied');
+      ev.record({
+        itemId: p.commentId,
+        at: now(),
+        kind: 'reply',
+        source: 'user',
+        meta: {
+          replyPostId: p.replyPostId,
+          postedCommentId: p.posted.id,
+          viaChannelId: p.viaChannelId,
+          actionId: t.actionId,
+        },
+      });
       const added = addReplies(target.thread_id, [p.posted]);
       finishReplyPost(p.replyPostId, {
         status: 'posted',
