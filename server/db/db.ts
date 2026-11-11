@@ -1,6 +1,6 @@
 import Database from 'better-sqlite3';
-import { chmodSync, mkdirSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { chmodSync, mkdirSync, readdirSync, rmSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { MIGRATIONS } from './migrations.js';
 
 export type Db = Database.Database;
@@ -44,12 +44,47 @@ function restrictPermissions(path: string): void {
   }
 }
 
+const PRE_MIGRATE_KEEP = 5;
+
+/**
+ * Before upgrading an existing database, keep a consistent copy of it next to the nightly backups. This is the last
+ * line of defence: it protects every way of starting the app (the deploy script, a manual docker run, a rollback by
+ * hand), not just the paths that remember to take a backup first. If the copy cannot be made the upgrade is refused:
+ * failing to start is recoverable, a migration with no way back may not be. Fresh databases have nothing to protect.
+ */
+export function snapshotBeforeMigrating(db: Db, path: string, at: Date = new Date()): string | null {
+  const current = db.pragma('user_version', { simple: true }) as number;
+  if (path === ':memory:' || path === '' || current === 0 || current >= MIGRATIONS.length) return null;
+  const dir = join(dirname(path), 'backups');
+  mkdirSync(dir, { recursive: true });
+  const dest = join(dir, `pre-migrate-v${current}-${at.toISOString().replace(/[-:.]/g, '')}.db`);
+  try {
+    // VACUUM INTO writes a self-contained, consistent file (no -wal/-shm sidecars) even while the DB is in WAL mode.
+    db.prepare('VACUUM INTO ?').run(dest);
+    chmodSync(dest, 0o600);
+  } catch (e) {
+    rmSync(dest, { force: true });
+    throw new Error(
+      `Refusing to migrate the database from schema v${current}: could not snapshot it first (${e instanceof Error ? e.message : e}).`,
+    );
+  }
+  // Keep the newest few. The nightly backup script only prunes its own nudge-*.db files, so these would pile up.
+  const old = readdirSync(dir)
+    .filter((f) => /^pre-migrate-v\d+-.*\.db$/.test(f))
+    .sort()
+    .reverse()
+    .slice(PRE_MIGRATE_KEEP);
+  for (const f of old) rmSync(join(dir, f), { force: true });
+  return dest;
+}
+
 export function openDb(path: string): Db {
   if (path !== ':memory:' && path !== '') mkdirSync(dirname(path), { recursive: true });
   const db = new Database(path);
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
   db.pragma('synchronous = NORMAL');
+  snapshotBeforeMigrating(db, path);
   migrate(db);
   if (path !== ':memory:' && path !== '') restrictPermissions(path);
   return db;

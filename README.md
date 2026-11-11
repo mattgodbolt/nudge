@@ -129,13 +129,14 @@ tailscale serve --bg --https=443 http://127.0.0.1:4517
 deploy/install-cron.sh                  # auto-update + nightly backup
 ```
 
-- **Auto-update:** `deploy/update.sh` (cron, every 5 minutes) fetches `origin/main`; on a new commit it takes a backup,
-  builds (a failing test aborts the build and the old container keeps running), restarts, and rolls back to the
+- **Auto-update:** `deploy/update.sh` (cron, every 5 minutes) fetches `origin/main`; on a new commit it takes a backup (and skips the update, to retry next time, if none could be made while the app
+  is up), builds (a failing test aborts the build and the old container keeps running), restarts, and rolls back to the
   previous image if the new one is not healthy within ~90s. A commit that fails is remembered and not retried. See
   `data/update.log`.
 - **Backups:** `deploy/backup.sh` (cron, 03:15) snapshots the live database with SQLite's online backup API, verifies
   it, keeps 7 in `data/backups/` and 14 on the NAS (`NUDGE_BACKUP_DIR`, default `/nas/BackedUp/nudge`). It exits
-  non-zero if the NAS copy fails. Restore: stop the container, copy a snapshot over `data/nudge.db`, delete
+  non-zero if the NAS copy fails. Separately, the app itself writes `data/backups/pre-migrate-v<N>-<time>.db` (newest 5
+  kept) before applying any schema migration to an existing database, and refuses to migrate if it cannot. Restore: stop the container, copy a snapshot over `data/nudge.db`, delete
   `nudge.db-wal`/`-shm`, start it. Snapshots contain your Google token and API key, so keep them private.
 - **Google sign-in** redirects to `http://127.0.0.1:4517/...`, which only works on the machine itself. Connect once
   with `ssh -L 4517:127.0.0.1:4517 <box>` and open `http://127.0.0.1:4517/settings` (the tokens then live in the

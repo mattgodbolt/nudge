@@ -20,9 +20,18 @@ git merge -q --ff-only origin/main
 # because a rollback may need it: an older build refuses to start against a schema newer than it understands.
 newest_backup() { ls -1t data/backups/nudge-*.db 2>/dev/null | head -1 || true; }
 backup_before=$(newest_backup)
-deploy/backup.sh || log "WARN: pre-update backup failed (continuing)"
+# The NAS copy can fail while the local snapshot succeeded; only a missing local snapshot is fatal.
+deploy/backup.sh || log "WARN: backup.sh reported a problem; checking for a fresh local snapshot"
 pre_backup=$(newest_backup)
 [ "$pre_backup" = "$backup_before" ] && pre_backup=""
+# Without a snapshot taken now, a bad migration could not be undone: put git back (so the next run retries) and stop.
+# Only while the app is up: backup.sh runs inside the container, and a crash-looping app must still be fixable (the
+# app also snapshots by itself before migrating, so that case is covered).
+if [ -z "$pre_backup" ] && [ -n "$(docker compose ps --status running -q nudge 2>/dev/null)" ]; then
+  log "ERROR: no pre-update snapshot was made; skipping this update (will retry)"
+  git reset -q --hard "$local_sha"
+  exit 1
+fi
 
 docker tag nudge:latest nudge:prev 2>/dev/null || true
 # A stalled download (e.g. compiling better-sqlite3) must not block every later update, so the build has a deadline.
