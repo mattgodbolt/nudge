@@ -253,6 +253,11 @@
   }
   .tablewrap {
     overflow-x: auto;
+    /* .page is a height-limited flex column: without this the table box is squeezed to a sliver on a phone. */
+    flex-shrink: 0;
+  }
+  .page > :global(*) {
+    flex-shrink: 0;
   }
   .num {
     text-align: right;
