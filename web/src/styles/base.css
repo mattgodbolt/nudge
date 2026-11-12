@@ -215,6 +215,11 @@ table.grid tr:last-child td {
 }
 
 /* Phone / touch: every control gets a >= 44px hit area. */
+/* Wording for keyboard users versus touch; the media query below swaps them. */
+.touch-only {
+  display: none;
+}
+
 @media (max-width: 899px), (pointer: coarse) {
   button,
   a,
@@ -250,7 +255,14 @@ table.grid tr:last-child td {
     min-height: 44px;
     margin: -4px -6px -4px 0;
   }
-  kbd {
+  .keys-only {
+    display: none;
+  }
+  .touch-only {
+    display: inline;
+  }
+  /* Keycap hints are chrome and go. Inside a sentence they stay, or the sentence loses its subject ("marks it done"). */
+  kbd:not(p kbd) {
     display: none !important;
   }
   /* Links inside prose stay inline-looking but get a padded, finger-sized hit area. */

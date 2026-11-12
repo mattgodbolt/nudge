@@ -94,8 +94,11 @@
       {/if}
     </article>
     <p class="faint meta hint">
-      <kbd class="mono">e</kbd> marks it done, <kbd class="mono">s</kbd> snoozes it. Press <kbd class="mono">c</kbd> and say
-      “snooze this till Monday” to do it by voice.
+      <span class="keys-only"
+        ><kbd class="mono">e</kbd> marks it done, <kbd class="mono">s</kbd> snoozes it. Press
+        <kbd class="mono">c</kbd> and say “snooze this till Monday” to do it by voice.</span
+      >
+      <span class="touch-only">Use the buttons above, or tap the mic and say “snooze this till Monday”.</span>
     </p>
   </div>
 </section>
