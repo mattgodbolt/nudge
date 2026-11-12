@@ -156,6 +156,10 @@
     width: 100%;
     margin: 0 auto;
   }
+  /* The page scrolls; its sections must keep their natural height rather than shrink to fit the viewport. */
+  .page > :global(*) {
+    flex-shrink: 0;
+  }
   .head {
     display: flex;
     align-items: center;
