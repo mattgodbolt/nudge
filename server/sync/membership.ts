@@ -24,7 +24,8 @@ export async function fetchAllPlaylistItems(
 
 /**
  * Attach videos to a source and fill in metadata for the newly seen ones (batched, 1 unit per 50).
- * Videos the API doesn't return (private/deleted) are flagged missing so they're never polled.
+ * Videos the API doesn't return (private/deleted, or too new) are flagged missing so they aren't polled, and are
+ * looked up again at every membership refresh until they turn up.
  * Stubs left without metadata by an earlier failed getVideos (null meta_refreshed_at) are retried here too,
  * so they don't sit in the default tier with no publish date.
  */
@@ -41,7 +42,9 @@ export async function attachVideos(
   const fetchIds = new Set(added);
   for (const i of items) {
     const row = repo.getVideoSyncRow(i.videoId);
-    if (row && !row.missing && !row.metaRefreshedAt) fetchIds.add(i.videoId);
+    // A video flagged missing that never got metadata is retried too: a freshly published video is listed in its
+    // playlist a little before videos.list can return it, and it must not stay missing forever. One unit per 50 ids.
+    if (row && !row.metaRefreshedAt) fetchIds.add(i.videoId);
   }
   if (!fetchIds.size) return { added, missing: [] };
   const wanted = [...fetchIds];

@@ -399,6 +399,30 @@ describe('membership', () => {
     expect(env.yt.count('playlistItems')).toBe(2);
     expect(env.repo.getVideoSyncRow('vidPRIVATE01')?.missing).toBe(true);
   });
+
+  it('recovers a brand-new video that the playlist listed before videos.list could return it', async () => {
+    const env = makeEnv();
+    env.yt.playlists.set('PLabcdefghijk', [V1, V2]);
+    env.yt.videos.set(V1, ytVideo(V1, ago(env, DAY)));
+    const src = env.repo.addSource({
+      kind: 'playlist',
+      ytId: 'PLabcdefghijk',
+      title: 'P',
+      thumbnailUrl: null,
+      isOwn: false,
+      importMode: 'all',
+    });
+    await env.engine.run({ trigger: 'poll', scope: 'all' });
+    expect(env.repo.getVideoSyncRow(V2)?.missing).toBe(true);
+
+    env.yt.videos.set(V2, ytVideo(V2, ago(env, 60_000)));
+    env.clock.advance(61 * 60_000);
+    await env.engine.run({ trigger: 'poll', scope: 'all' });
+    const row = env.repo.getVideoSyncRow(V2);
+    expect(row?.missing).toBe(false);
+    expect(row?.lastError).toBeNull();
+    expect(env.repo.listVideos(src.id).find((v) => v.id === V2)?.title).toBe(`Video ${V2}`);
+  });
 });
 
 describe('events', () => {

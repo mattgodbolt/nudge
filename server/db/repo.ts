@@ -284,7 +284,9 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
         view_count = excluded.view_count, comment_count = excluded.comment_count,
         duration_seconds = COALESCE(excluded.duration_seconds, duration_seconds),
         like_count = COALESCE(excluded.like_count, like_count),
-        meta_refreshed_at = excluded.meta_refreshed_at`);
+        meta_refreshed_at = excluded.meta_refreshed_at,
+        last_error = CASE WHEN missing = 1 THEN NULL ELSE last_error END,
+        missing = 0`);
     const at = now();
     const retitle = db.prepare("UPDATE items SET container_title = ? WHERE provider = 'youtube' AND container_key = ?");
     db.transaction(() => {
