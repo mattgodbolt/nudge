@@ -5,6 +5,7 @@ import { buildApp } from './app.js';
 import type { AppDeps, GoogleAuth, PostGateway, ReplyPoster } from './contracts.js';
 import { createGoogleAuth } from './auth/google.js';
 import { checkExposure } from './security.js';
+import { createAccessVerifier } from './auth/access.js';
 import { loadConfig, migrateLegacyDb, resolveApiKey, resolveGoogleClient } from './config.js';
 import { openRepo } from './db/repo.js';
 import { createFakeClient } from './demo/fake-client.js';
@@ -188,6 +189,11 @@ async function main(): Promise<void> {
     port: config.port || undefined,
     allowedHosts: config.allowedHosts,
     allowedUsers: config.allowedUsers,
+    accessHosts: config.accessHosts,
+    verifyAccess:
+      config.accessHosts.length > 0
+        ? createAccessVerifier({ teamDomain: config.accessTeamDomain, aud: config.accessAud })
+        : undefined,
   });
 
   await app.listen({ host: config.host, port: config.port });

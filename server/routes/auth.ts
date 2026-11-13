@@ -9,7 +9,9 @@ export interface AuthRouteOptions {
 
 /** The UI origin to return to: the request's own Origin if trusted, else the Host it was sent to. */
 function returnOriginFor(origin: string | undefined, host: string | undefined, dev: string[]): string {
-  const own = `http://${host ?? '127.0.0.1'}`;
+  // Anything not loopback is reached through a TLS front (tailscale serve, Cloudflare), so the browser's origin is https.
+  const h = host ?? '127.0.0.1';
+  const own = `${/^(127\.0\.0\.1|localhost)(:\d+)?$/i.test(h) ? 'http' : 'https'}://${h}`;
   if (origin && (origin === own || dev.includes(origin))) return origin;
   return own;
 }

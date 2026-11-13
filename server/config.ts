@@ -10,6 +10,11 @@ export interface Config {
   host: string;
   allowedHosts: string[];
   allowedUsers: string[];
+  /** Hostnames fronted by Cloudflare Access: these authenticate by its signed token, never by a Tailscale header. */
+  accessHosts: string[];
+  /** Cloudflare Access team domain (`<team>.cloudflareaccess.com`) and the Access application's audience tag. */
+  accessTeamDomain: string;
+  accessAud: string;
   /** Contact (mailto: or https: URL) given to push services in VAPID requests. */
   pushSubject: string;
   dbPath: string;
@@ -64,6 +69,19 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, home: string = 
     host: pick(env, 'HOST') || '127.0.0.1',
     allowedHosts: list(pick(env, 'ALLOWED_HOSTS')),
     allowedUsers: list(pick(env, 'ALLOWED_USERS')),
+    accessHosts: list(pick(env, 'ACCESS_HOSTS')).map((h) =>
+      h
+        .toLowerCase()
+        .replace(/^https?:\/\//, '')
+        .replace(/[/:.]+$/, '')
+        .replace(/:\d+$/, ''),
+    ),
+    accessTeamDomain: (pick(env, 'ACCESS_TEAM_DOMAIN') ?? '')
+      .trim()
+      .toLowerCase()
+      .replace(/^https?:\/\//, '')
+      .replace(/\/+$/, ''),
+    accessAud: pick(env, 'ACCESS_AUD')?.trim() ?? '',
     pushSubject: pick(env, 'PUSH_SUBJECT')?.trim() || 'mailto:nudge@example.invalid',
     dbPath: pick(env, 'DB') || DEFAULT_DB,
     demo: truthy(pick(env, 'DEMO')),

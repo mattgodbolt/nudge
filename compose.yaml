@@ -18,6 +18,14 @@ services:
       #   NUDGE_ALLOWED_USERS=you@example.com
       NUDGE_ALLOWED_HOSTS: ${NUDGE_ALLOWED_HOSTS:-}
       NUDGE_ALLOWED_USERS: ${NUDGE_ALLOWED_USERS:-}
+      # Cloudflare Access (optional): hosts behind it are authenticated by its signed token, not by a header, e.g.
+      #   NUDGE_ACCESS_HOSTS=nudge.example.com
+      #   NUDGE_ACCESS_TEAM_DOMAIN=your-team.cloudflareaccess.com
+      #   NUDGE_ACCESS_AUD=<the Access application's audience tag>
+      # and NUDGE_ALLOWED_USERS must then hold the exact email(s) allowed. Compose passes only the variables listed.
+      NUDGE_ACCESS_HOSTS: ${NUDGE_ACCESS_HOSTS:-}
+      NUDGE_ACCESS_TEAM_DOMAIN: ${NUDGE_ACCESS_TEAM_DOMAIN:-}
+      NUDGE_ACCESS_AUD: ${NUDGE_ACCESS_AUD:-}
       # Or paste the key into Settings (then it lives in the database and its backups instead).
       YOUTUBE_API_KEY: ${YOUTUBE_API_KEY:-}
     volumes:

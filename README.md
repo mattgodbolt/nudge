@@ -57,17 +57,18 @@ Ticking "This is my channel" when adding a channel source does exactly the same 
 All optional. Everything except the YouTube key can also be set in the app; keys saved in Settings live in the
 database.
 
-| Variable                                               | Meaning                                                                               |
-| ------------------------------------------------------ | ------------------------------------------------------------------------------------- |
-| `YOUTUBE_API_KEY`                                      | YouTube Data API key (else Settings, else `~/.nudge-key`)                             |
-| `NUDGE_PORT`                                           | API port, default `4517`                                                              |
-| `NUDGE_HOST`                                           | Listen address, default `127.0.0.1`                                                   |
-| `NUDGE_DB`                                             | SQLite path, default `data/nudge.db` (`:memory:` works)                               |
-| `NUDGE_ALLOWED_HOSTS`, `NUDGE_ALLOWED_USERS`           | Comma-separated extra hostnames and Tailscale logins, see [Security](#security-model) |
-| `NUDGE_GOOGLE_CLIENT_ID`, `NUDGE_GOOGLE_CLIENT_SECRET` | OAuth client for posting replies (else Settings, else `~/.nudge-google-client.json`)  |
-| `NUDGE_PUSH_SUBJECT`                                   | Contact `mailto:` sent to push services                                               |
-| `NUDGE_DEMO`, `NUDGE_DEMO_GITHUB`, `NUDGE_DEMO_POST`   | Demo mode, its fake GitHub organisation, and `api` to fake a connected Google account |
-| `NUDGE_DEMO_CLOCK=fixed`                               | Demo world stops growing on its own (used by the e2e tests)                           |
+| Variable                                                             | Meaning                                                                                                         |
+| -------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `YOUTUBE_API_KEY`                                                    | YouTube Data API key (else Settings, else `~/.nudge-key`)                                                       |
+| `NUDGE_PORT`                                                         | API port, default `4517`                                                                                        |
+| `NUDGE_HOST`                                                         | Listen address, default `127.0.0.1`                                                                             |
+| `NUDGE_DB`                                                           | SQLite path, default `data/nudge.db` (`:memory:` works)                                                         |
+| `NUDGE_ALLOWED_HOSTS`, `NUDGE_ALLOWED_USERS`                         | Comma-separated extra hostnames and Tailscale logins, see [Security](#security-model)                           |
+| `NUDGE_ACCESS_HOSTS`, `NUDGE_ACCESS_TEAM_DOMAIN`, `NUDGE_ACCESS_AUD` | Cloudflare Access: host(s) it fronts, team domain and application audience tag, see [Security](#security-model) |
+| `NUDGE_GOOGLE_CLIENT_ID`, `NUDGE_GOOGLE_CLIENT_SECRET`               | OAuth client for posting replies (else Settings, else `~/.nudge-google-client.json`)                            |
+| `NUDGE_PUSH_SUBJECT`                                                 | Contact `mailto:` sent to push services                                                                         |
+| `NUDGE_DEMO`, `NUDGE_DEMO_GITHUB`, `NUDGE_DEMO_POST`                 | Demo mode, its fake GitHub organisation, and `api` to fake a connected Google account                           |
+| `NUDGE_DEMO_CLOCK=fixed`                                             | Demo world stops growing on its own (used by the e2e tests)                                                     |
 
 GitHub and Anthropic tokens are entered in Settings only.
 
@@ -79,12 +80,22 @@ Nudge has no login of its own. The server listens on loopback (`127.0.0.1`) only
 - if `NUDGE_ALLOWED_USERS` is set, requests arriving on an allowed non-loopback host must carry a
   `Tailscale-User-Login` header naming one of those users. `tailscale serve` sets that header from the caller's tailnet
   identity, and it is only trustworthy because the app is reachable only through that local proxy;
+- hosts listed in `NUDGE_ACCESS_HOSTS` sit behind [Cloudflare Access](https://developers.cloudflare.com/cloudflare-one/policies/access/).
+  There the `Tailscale-User-Login` header means nothing. Instead the signed `Cf-Access-Jwt-Assertion` token is verified
+  (RS256 signature against the team's published keys, issuer `https://<NUDGE_ACCESS_TEAM_DOMAIN>`, audience
+  `NUDGE_ACCESS_AUD`, expiry), and the email in the verified token must equal one of `NUDGE_ALLOWED_USERS`
+  (exact match, never a domain). The plain `Cf-Access-Authenticated-User-Email` header is never read. Any failure
+  rejects the request, and so does Cloudflare traffic carrying a loopback `Host`. A stream that is already open (the live
+  event feed) is not re-checked, so it can outlive the token until the page reconnects. Conversely the token is ignored on every other host. Only the static files a browser fetches
+  without credentials to install the PWA (`/manifest.webmanifest`, `/sw.js`, the icons) are served to an Access host
+  without a token, so the Access policy needs a bypass for exactly those paths;
 - changing requests must have a same-origin `Origin` (when sent) and the `X-Nudge: 1` header;
 - stored secrets (API keys, tokens) are never sent back to the browser, and Nudge never writes to GitHub.
 
 Do not expose the port anywhere else. The Tailscale header is only trusted because the app is reachable solely
 through the local proxy: anyone who can reach the port directly can forge it. Nudge refuses to start if
-`NUDGE_ALLOWED_HOSTS` is set without `NUDGE_ALLOWED_USERS` (that would admit every device on the tailnet), and warns
+`NUDGE_ALLOWED_HOSTS` or `NUDGE_ACCESS_HOSTS` is set without `NUDGE_ALLOWED_USERS` (that would admit every device on
+the tailnet, or everyone Access lets in), if the Access settings are incomplete, and warns
 when bound to a non-loopback address. Containers need `0.0.0.0` inside, so publish the port to `127.0.0.1` only, as
 `compose.yaml` does. See [Deploying](#deploying-docker--tailscale).
 
