@@ -53,6 +53,9 @@ const CLIENT_PLAIN_KEYS = [
   'search.run', // a search ran (never what was searched for)
   'snooze.preset',
   'snooze.custom',
+  'snooze.until_activity', // an "until activity" snooze was chosen
+  'snooze.bucket', // a reason bucket was chosen with it
+  'nudge.copy', // the drafted nudge was copied
   'bulk.apply', // an action applied to more than one item at once
   'assistant.voice', // dictation started in "Tell Nudge"
   'push.open', // a push notification was tapped
@@ -71,6 +74,9 @@ export const SERVER_USAGE_KEYS = [
   'assistant.tool_call',
   'assistant.fail',
   'assistant.cost_micros', // micro-dollars
+  'snooze_ai.call', // the small model calls around snoozing (bucketing a reason, drafting a nudge)
+  'snooze_ai.fail',
+  'snooze_ai.cost_micros', // micro-dollars; counts toward the same daily cost cap as suggestions
 ] as const;
 
 export type ServerUsageKey = (typeof SERVER_USAGE_KEYS)[number];

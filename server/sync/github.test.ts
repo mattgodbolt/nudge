@@ -183,6 +183,52 @@ describe('GitHub poller', () => {
     expect(repo.listInbox({ view: 'inbox' }).items[0]!.item.github?.lastCommenter).toBe('someone-else');
   });
 
+  it('wakes an item parked until activity when someone else comments, but not for my own comment', async () => {
+    const id = githubItemId('org', 'app', 1);
+    script.pages = [[item(1)]];
+    const p = poller();
+    await p.pollNow();
+    repo.updateSettings({ github: { token: null, myAccounts: ['Me'] } });
+    repo.snooze([id], T(7 * 24 * 60), 'waiting', { bucket: 'waiting_on_them', untilActivity: true });
+
+    script.pages = [[item(1, { comments: 1 })]];
+    script.commenter = 'me';
+    await p.pollNow();
+    expect(repo.listInbox({ view: 'snoozed' }).total).toBe(1); // my own comment: still parked
+
+    script.pages = [[item(1, { comments: 2 })]];
+    script.commenter = 'carol';
+    await p.pollNow();
+    expect(repo.listInbox({ view: 'snoozed' }).total).toBe(0);
+    const woke = repo.listInbox({ view: 'inbox' }).items[0]!;
+    expect(woke).toMatchObject({ wakeCause: 'activity', snoozeBucket: 'waiting_on_them' });
+    // Announced as a wake (not a new arrival), the same event the timer waker emits.
+    const last = bus
+      .of('inbox.changed')
+      .filter((e) => e.reason === 'woke')
+      .at(-1)!;
+    expect(last.addedIds).toEqual([id]);
+  });
+
+  it('spends the same capped lookups on parked items as on Done ones, and never looks up an ordinary snooze', async () => {
+    script.pages = [[item(1), item(2), item(3)]];
+    const asked: number[] = [];
+    const p = createGithubPoller({
+      repo,
+      bus,
+      client: { ...fakeClient(script), latestCommenter: async (_r, n) => (asked.push(n), 'carol') },
+      clock: clock.now,
+      maxCommenterLookups: 1,
+    });
+    await p.pollNow();
+    const ids = [1, 2, 3].map((n) => githubItemId('org', 'app', n));
+    repo.snooze([ids[0]!, ids[1]!], T(7 * 24 * 60), null, { untilActivity: true });
+    repo.snooze([ids[2]!], T(7 * 24 * 60)); // an ordinary timed snooze needs no lookup
+    script.pages = [[item(1, { comments: 1 }), item(2, { comments: 1 }), item(3, { comments: 1 })]];
+    await p.pollNow();
+    expect(asked).toEqual([1]); // capped at one per poll, and item 3 was never asked about
+  });
+
   it('records a failure, backs off, and clears the error on the next success', async () => {
     script.fail = new GithubError('GitHub is unavailable (502)', 502);
     const p = poller();

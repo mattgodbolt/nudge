@@ -44,6 +44,8 @@ export function createFakeGithubClient(
 ) {
   const base = now();
   const items: GithubItemUpsert[] = [];
+  /** Who wrote the newest comment, for items someone has commented on since the start (see `comment`). */
+  const newest = new Map<string, string>();
   let seq = 0;
 
   function add(ageHours: number, over: Partial<GithubItemUpsert> = {}): GithubItemUpsert {
@@ -109,6 +111,15 @@ export function createFakeGithubClient(
     tick(): void {
       add(0, { kind: 'pr', createdAt: new Date(now()).toISOString(), updatedAt: new Date(now()).toISOString() });
     },
+    /** `author` comments on an item (demo "activity on demand"): the count grows and the item is updated now. */
+    comment(id: string, author: string): boolean {
+      const it = items.find((i) => i.id === id);
+      if (!it) return false;
+      it.comments++;
+      it.updatedAt = new Date(now()).toISOString();
+      newest.set(id, author);
+      return true;
+    },
     client: {
       async whoami() {
         return { login: 'demo-owner', scopes: ['public_repo'] };
@@ -138,8 +149,8 @@ export function createFakeGithubClient(
           .sort((a, b) => a.updatedAt.localeCompare(b.updatedAt));
         return { items: hits.slice((page - 1) * 100, page * 100), total: hits.length, rate: null };
       },
-      async latestCommenter() {
-        return null;
+      async latestCommenter(repo, number) {
+        return newest.get(githubItemId(repo.split('/')[0]!, repo.split('/')[1]!, number)) ?? null;
       },
       async recentComments(repo, number, commentCount) {
         // Deterministic: alternating the maintainer and the owner (who is "me" in demo mode), newest last.

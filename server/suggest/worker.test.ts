@@ -313,6 +313,24 @@ describe('suggestion worker', () => {
       expect(rows().find((r) => r.item_id === id(1))!.state_key).not.toBe(first);
     });
 
+    it('also tells the model the bucket and that the wait ran out with no activity, once it is back', async () => {
+      const w = worker();
+      await w.runOnce([id(1)]);
+      const first = rows().find((r) => r.item_id === id(1))!.state_key;
+      repo.snooze([id(1)], new Date(clock.now().getTime() + 3_600_000).toISOString(), 'wait for the author', {
+        bucket: 'waiting_on_them',
+        untilActivity: true,
+      });
+      await w.runOnce([id(1)]);
+      expect(seen.at(-1)!.snooze).toBeUndefined(); // still parked: nothing is asked about it
+      clock.advance(2 * 3_600_000);
+      repo.wakeSnoozed();
+      await w.runOnce([id(1)]);
+      expect(seen.at(-1)!.snoozeNote).toBe('wait for the author');
+      expect(seen.at(-1)!.snooze).toEqual({ bucket: 'waiting_on_them', untilActivity: true, wokeBy: 'fallback' });
+      expect(rows().find((r) => r.item_id === id(1))!.state_key).not.toBe(first);
+    });
+
     it('renders thread, snooze note and notes to the model as escaped data, and puts standing notes in the system prompt', async () => {
       const bodies: { system: { text: string }[]; messages: { content: string }[] }[] = [];
       const fetchImpl = (async (_u: unknown, init: { body: string }) => {

@@ -100,6 +100,7 @@ describe('settings', () => {
       manualReserve: 1000,
       backfillDays: 14,
       theme: 'system',
+      snoozeDays: { waiting_on_them: 7, waiting_on_merge: 3, in_flight: 7, lower_priority: 30 },
       github: { token: null, myAccounts: [] },
       llm: { apiKey: null, model: 'claude-haiku-5-5' },
     });

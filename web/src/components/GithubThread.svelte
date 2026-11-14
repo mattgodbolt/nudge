@@ -12,6 +12,8 @@
   import { inbox } from '../lib/stores/inbox.svelte';
   import { ui } from '../lib/stores/ui.svelte';
   import ItemActions from './ItemActions.svelte';
+  import NudgeDraft from './NudgeDraft.svelte';
+  import SnoozeNote from './SnoozeNote.svelte';
   import Avatar from './Avatar.svelte';
   import GithubDiscussion from './GithubDiscussion.svelte';
   import Icon from './Icon.svelte';
@@ -53,9 +55,7 @@
         <a href={it.containerUrl ?? '#'} target="_blank" rel="noopener noreferrer">{refLabel(it)}</a>
         · {it.kind === 'pr' ? 'Pull request' : 'Issue'}
       </div>
-      {#if item.snoozeWhy && item.comment.state === 'inbox'}
-        <div class="why faint" data-testid="thread-why">You snoozed this to: {item.snoozeWhy}</div>
-      {/if}
+      <SnoozeNote {item} />
       {#if item.snoozedUntil || woke || chips.length > 0 || stateText}
         <div class="tags">
           {#if stateText}<span class="badge" data-testid="thread-state">{stateText}</span>{/if}
@@ -64,7 +64,10 @@
           {/each}
           {#if item.snoozedUntil}
             <span class="snz" data-testid="thread-snoozed"
-              >⏰ Snoozed until {formatSnoozeTime(item.snoozedUntil, new Date(now))}</span
+              >⏰ Snoozed until {item.snoozeUntilActivity ? 'activity, or ' : ''}{formatSnoozeTime(
+                item.snoozedUntil,
+                new Date(now),
+              )}</span
             >
           {:else if woke}
             <span class="snz" data-testid="thread-woke">⏰ back from snooze</span>
@@ -81,6 +84,7 @@
   </header>
 
   <div class="scroll">
+    <NudgeDraft {item} />
     <article class="card" data-testid="gh-body">
       <div class="by">
         <Avatar url={it.authorAvatarUrl} name={it.author ?? '?'} />
@@ -150,12 +154,6 @@
   }
   .meta a {
     color: inherit;
-  }
-  /* What he said he would do on return: quiet, but never cut off. */
-  .why {
-    font-size: var(--fs-meta);
-    font-style: italic;
-    overflow-wrap: anywhere;
   }
   .tags {
     display: flex;

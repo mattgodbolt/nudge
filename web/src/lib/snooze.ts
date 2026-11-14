@@ -77,3 +77,25 @@ export function recentlyWoken(wokeAt: string | null, now: number, windowMs = 24 
   const t = Date.parse(wokeAt);
   return !Number.isNaN(t) && now - t >= 0 && now - t < windowMs;
 }
+
+/** "Nov 21", or "Tue" within the next week: the day alone, for places too narrow for a time of day. */
+export function formatSnoozeDay(when: Date | string, now: Date, locale?: string): string {
+  const d = typeof when === 'string' ? new Date(when) : when;
+  if (Number.isNaN(d.getTime())) return '';
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const days = (d.getTime() - startOfToday) / 86_400_000;
+  if (days >= 0 && days < 7) return d.toLocaleDateString(locale, { weekday: 'short' });
+  return d.toLocaleDateString(locale, {
+    month: 'short',
+    day: 'numeric',
+    ...(d.getFullYear() === now.getFullYear() ? {} : { year: 'numeric' }),
+  });
+}
+
+/**
+ * The quiet line under a row about its snooze: the owner's own words, and the reason bucket (kept apart so the caller
+ * can style it down). Empty text and no bucket means no line. A snooze with no words says only "Snoozed".
+ */
+export function snoozeLine(o: { why: string | null; bucket: string | null }): { text: string; bucket: string | null } {
+  return { text: o.why ? `You snoozed this to: ${o.why}` : '', bucket: o.bucket };
+}

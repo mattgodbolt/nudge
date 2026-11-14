@@ -12,6 +12,7 @@
   import CommentCard from './CommentCard.svelte';
   import Composer from './Composer.svelte';
   import ItemActions from './ItemActions.svelte';
+  import SnoozeNote from './SnoozeNote.svelte';
   import Icon from './Icon.svelte';
   import SuggestionChip from './SuggestionChip.svelte';
   import { tick, untrack } from 'svelte';
@@ -82,15 +83,16 @@
         {video?.channelTitle ?? ''}
         {#if video?.commentsDisabled}<span class="badge warn">Comments disabled</span>{/if}
       </div>
-      {#if item.snoozeWhy && item.comment.state === 'inbox'}
-        <div class="why faint" data-testid="thread-why">You snoozed this to: {item.snoozeWhy}</div>
-      {/if}
+      <SnoozeNote {item} />
       {#if item.snoozedUntil || woke || stateText}
         <div class="tags">
           {#if stateText}<span class="badge" data-testid="thread-state">{stateText}</span>{/if}
           {#if item.snoozedUntil}
             <span class="snz" data-testid="thread-snoozed"
-              >⏰ Snoozed until {formatSnoozeTime(item.snoozedUntil, new Date(now))}</span
+              >⏰ Snoozed until {item.snoozeUntilActivity ? 'activity, or ' : ''}{formatSnoozeTime(
+                item.snoozedUntil,
+                new Date(now),
+              )}</span
             >
           {:else if woke}
             <span class="snz" data-testid="thread-woke">⏰ back from snooze</span>
@@ -160,12 +162,6 @@
   .vt {
     min-width: 0;
     flex: 1;
-  }
-  /* What he said he would do on return: quiet, but never cut off. */
-  .why {
-    font-size: var(--fs-meta);
-    font-style: italic;
-    overflow-wrap: anywhere;
   }
   .tags {
     display: flex;

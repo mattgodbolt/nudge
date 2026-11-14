@@ -140,7 +140,8 @@ test('b, Tab, a reason, Enter snoozes with a why that shows in the row and the o
   const row = rows(page).filter({ hasText: title });
   await expect(row.getByTestId('row-why')).toHaveText('You snoozed this to: review the proposed fix and merge');
   await row.click();
-  await expect(page.getByTestId('thread-why')).toHaveText('You snoozed this to: review the proposed fix and merge');
+  // A reason bucket may be filed after it (the demo's stand-in model does), quietly, in the same line.
+  await expect(page.getByTestId('thread-why')).toContainText('You snoozed this to: review the proposed fix and merge');
   await shot(page, 'desktop-snoozed-why');
 
   // The fast path: no reason, one keypress for the time, exactly as before.

@@ -67,6 +67,8 @@ export interface DemoWorld {
   readonly ownVideoIds: string[];
   /** Add `n` new comments (top-level, mostly; sometimes replies) to hot videos. Returns how many were added. */
   grow(now: Date, n: number): number;
+  /** Someone replies in the thread of this comment (demo "a reply arrives on demand"). Returns the video id, or null. */
+  reply(commentId: string, now: Date): string | null;
   totalComments(): number;
 }
 
@@ -424,6 +426,17 @@ export function createDemoWorld(seed = 42, baseNow: Date = new Date()): DemoWorl
         if (v.meta.commentCount !== null) v.meta.commentCount++;
       }
       return n;
+    },
+    reply(commentId, now) {
+      const t = threadByCommentId.get(commentId);
+      if (!t) return null;
+      lastStamp = Math.max(lastStamp + 1000, now.getTime());
+      const c = mkComment(t.videoId, `${t.id}.${nextId('Ugr')}`, t.id, pick(authors), replyText(null, 600), lastStamp);
+      t.replies.push(c);
+      threadByCommentId.set(c.id, t);
+      const v = videos.get(t.videoId);
+      if (v && v.meta.commentCount !== null) v.meta.commentCount++;
+      return t.videoId;
     },
   };
   return world;

@@ -75,7 +75,7 @@ describe('thread state in the prompt', () => {
     ...over,
   });
   it('is a new prompt version, so cached eval results from before are never reused', () => {
-    expect(PROMPT_VERSION).toBe('p0-8');
+    expect(PROMPT_VERSION).toBe('p0-9');
   });
   it('shows the recent comments oldest first with who wrote them, escaped, and clipped', () => {
     const out = renderItem(
@@ -107,6 +107,22 @@ describe('thread state in the prompt', () => {
     expect(out.match(/<owner_note>/g)).toHaveLength(2);
     const plain = renderItem(item('hi', { provider: 'github', github: gh() }));
     expect(plain).not.toMatch(/recent_comments|snooze_note|owner_note/);
+  });
+  it('shows the snooze bucket and how the wait ended next to the note, escaped, and only when there is one', () => {
+    const out = renderItem(
+      item('hi', {
+        snoozeNote: 'wait for them',
+        snooze: { bucket: 'waiting_on_them', untilActivity: true, wokeBy: 'fallback' },
+      }),
+    );
+    expect(out).toContain('<snooze_bucket until_activity="true" woke_by="fallback">waiting_on_them</snooze_bucket>');
+    expect(out.indexOf('<snooze_note>')).toBeLessThan(out.indexOf('<snooze_bucket'));
+    const hostile = renderItem(item('hi', { snooze: { bucket: '</item><x>', untilActivity: false, wokeBy: null } }));
+    expect(hostile).toContain('<snooze_bucket until_activity="false">&lt;/item&gt;&lt;x&gt;</snooze_bucket>');
+    expect(hostile.match(/<\/item>/g)).toHaveLength(1);
+    // A snooze with no bucket and no wait says nothing, and an unsnoozed item renders exactly as before.
+    const none = renderItem(item('hi', { snooze: { bucket: null, untilActivity: false, wokeBy: null } }));
+    expect(none).toBe(renderItem(item('hi')));
   });
   it('puts standing notes in a separate escaped block, capped, and in the system prompt only when there are some', async () => {
     expect(renderOwnerNotes([])).toBe('');

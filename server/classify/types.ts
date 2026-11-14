@@ -48,6 +48,8 @@ export interface EvalItem {
   };
   /** Live suggestions only: why the owner snoozed this item, in his words (shown to the model as data). */
   snoozeNote?: string;
+  /** Live suggestions only: the reason bucket he chose, whether he was waiting on activity, and how the wait ended. */
+  snooze?: { bucket: string | null; untilActivity: boolean; wokeBy: 'activity' | 'fallback' | null };
   /** Live suggestions only: notes the owner made about this very item (data, newest first). */
   ownerNotes?: string[];
 }

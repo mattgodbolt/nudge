@@ -85,13 +85,15 @@ export function createGithubPoller(deps: GithubPollerDeps): GithubPoller & { tic
       }
       const truncated = stoppedAt.length > 0;
 
-      // Done items that gained comments only come back if someone other than me wrote the newest one.
+      // Done items that gained comments only come back if someone other than me wrote the newest one. The same
+      // question decides whether an item parked until activity wakes, so it shares the lookups (and their cap).
       const meta = repo.githubItemMeta(ups.map((u) => u.id));
       let lookups = 0;
       for (const u of ups) {
         const m = meta.get(u.id);
         if (!m || u.sourceState !== 'open' || u.comments <= m.comments) continue;
-        if (!(m.state === 'done' || m.state === 'replied' || m.state === 'resolved')) continue;
+        if (!(m.state === 'done' || m.state === 'replied' || m.state === 'resolved' || m.snoozedUntilActivity))
+          continue;
         if (lookups++ >= maxLookups) break;
         const who = await client.latestCommenter(u.repo, u.number, u.comments, token).catch(() => null);
         if (who) {
@@ -111,13 +113,23 @@ export function createGithubPoller(deps: GithubPollerDeps): GithubPoller & { tic
         error: null,
         rate,
       });
+      // Woken items are announced as a wake (a snooze ending), not as a new arrival: push settings tell them apart.
+      if (result.woken.length > 0) {
+        bus.emit({
+          type: 'inbox.changed',
+          counts: repo.counts(),
+          addedIds: result.woken,
+          changedIds: [],
+          reason: 'woke',
+        });
+      }
       const arrivals = [...result.added, ...result.reopened];
       if (arrivals.length > 0 || result.changed.length > 0) {
         bus.emit({
           type: 'inbox.changed',
           counts: repo.counts(),
           addedIds: arrivals,
-          changedIds: result.changed.filter((id) => !arrivals.includes(id)),
+          changedIds: result.changed.filter((id) => !arrivals.includes(id) && !result.woken.includes(id)),
           ...(arrivals.length > 0 ? { reason: 'sync' as const } : {}),
         });
       }

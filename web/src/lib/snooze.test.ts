@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   defaultCustomTime,
+  formatSnoozeDay,
   formatSnoozeTime,
+  snoozeLine,
   fromLocalInputValue,
   recentlyWoken,
   snoozePresets,
@@ -96,5 +98,28 @@ describe('recentlyWoken', () => {
     expect(recentlyWoken('2025-11-04T01:00:00Z', now)).toBe(true);
     expect(recentlyWoken('2025-11-03T11:00:00Z', now)).toBe(false);
     expect(recentlyWoken(null, now)).toBe(false);
+  });
+});
+
+describe('formatSnoozeDay', () => {
+  it('is the weekday within a week and the date beyond, with no time of day', () => {
+    const now = at(2025, 11, 4, 14, 30); // Tue
+    expect(formatSnoozeDay(at(2025, 11, 7, 8), now, 'en-US')).toBe('Fri');
+    expect(formatSnoozeDay(at(2025, 11, 21, 8), now, 'en-US')).toBe('Nov 21');
+    expect(formatSnoozeDay(at(2026, 1, 3, 8), now, 'en-US')).toBe('Jan 3, 2026');
+    expect(formatSnoozeDay('nonsense', now)).toBe('');
+  });
+});
+
+describe('snoozeLine', () => {
+  it("is the owner's words, with the bucket left for the caller to style", () => {
+    expect(snoozeLine({ why: 'wait for them', bucket: 'Waiting on them' })).toEqual({
+      text: 'You snoozed this to: wait for them',
+      bucket: 'Waiting on them',
+    });
+  });
+  it('has no text without words, and nothing at all with no bucket either', () => {
+    expect(snoozeLine({ why: null, bucket: 'In flight' })).toEqual({ text: '', bucket: 'In flight' });
+    expect(snoozeLine({ why: null, bucket: null })).toEqual({ text: '', bucket: null });
   });
 });

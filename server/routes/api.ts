@@ -1,6 +1,8 @@
 import type { FastifyInstance } from 'fastify';
 import { SUGGESTION_FILTERS } from '../../shared/api.js';
 import type { InboxQuery, SettingsUpdate, SyncRequest } from '../../shared/api.js';
+import { SNOOZE_BUCKETS, SNOOZE_DAYS_MAX, SNOOZE_DAYS_MIN, fallbackDate, isSnoozeBucket } from '../../shared/snooze.js';
+import type { SnoozeBucket } from '../../shared/types.js';
 import { parseSourceInput } from '../../shared/youtube-urls.js';
 import type { Bootstrap, TriageTarget, ImportMode, PollTier, SnoozeResult, TriageResult } from '../../shared/types.js';
 import type { AppDeps, StoredSettings } from '../contracts.js';
@@ -8,6 +10,7 @@ import { PostError, YtError } from '../contracts.js';
 import { isValidClientId, parseGoogleClientJson } from '../reply/google-client.js';
 import { setOwnChannelId } from '../sync/own-channels.js';
 import { LOGIN } from './github.js';
+import { bucketInBackground } from './snoozeAi.js';
 import { recordSnoozeContext } from './snoozeContext.js';
 import { HttpError, asObject, bad, bool, buildSettingsDto, int, notFound, oneOf, str } from './util.js';
 
@@ -46,6 +49,17 @@ function parseGithubUpdate(v: unknown): NonNullable<SettingsUpdate['github']> {
       throw bad('"github.myAccounts" must be a list of GitHub logins');
     }
     out.myAccounts = [...new Set((a as string[]).map((l) => l.trim()))];
+  }
+  return out;
+}
+
+/** Per-bucket follow-up days: only known buckets, whole days from 1 to 365. */
+function parseSnoozeDays(v: unknown): NonNullable<SettingsUpdate['snoozeDays']> {
+  const g = asObject(v);
+  const out: NonNullable<SettingsUpdate['snoozeDays']> = {};
+  for (const [k, val] of Object.entries(g)) {
+    if (!isSnoozeBucket(k)) throw bad(`"snoozeDays.${k}" is not a snooze bucket`);
+    out[k] = int(val, `snoozeDays.${k}`, { min: SNOOZE_DAYS_MIN, max: SNOOZE_DAYS_MAX });
   }
   return out;
 }
@@ -163,8 +177,16 @@ export function registerApiRoutes(app: FastifyInstance, deps: AppDeps): void {
   app.post('/api/snooze', async (req) => {
     const b = asObject(req.body);
     const ids = idList(b.commentIds, 'commentIds', 500);
+    const bucket: SnoozeBucket | null =
+      b.bucket === undefined || b.bucket === null ? null : oneOf(b.bucket, 'bucket', SNOOZE_BUCKETS);
+    if (b.untilActivity !== undefined && typeof b.untilActivity !== 'boolean')
+      throw bad('"untilActivity" must be a boolean');
+    const untilActivity = b.untilActivity === true && b.until !== null;
     let until: string | null = null;
-    if (b.until !== null) {
+    if (untilActivity && b.until === undefined) {
+      // No date given: the bucket's own follow-up from Settings. Until-activity always has a fallback date.
+      until = fallbackDate(new Date(), bucket, repo.getSettings().snoozeDays).toISOString();
+    } else if (b.until !== null) {
       const t = typeof b.until === 'string' ? new Date(b.until).getTime() : NaN;
       const delta = t - Date.now();
       if (Number.isNaN(t) || delta < MIN_SNOOZE_MS || delta > MAX_SNOOZE_MS) {
@@ -178,17 +200,21 @@ export function registerApiRoutes(app: FastifyInstance, deps: AppDeps): void {
     }
     // One short line of the owner's own words about why; optional, and one applies to every id.
     const why = typeof b.why === 'string' ? b.why.replace(/\s+/g, ' ').trim().slice(0, WHY_MAX) : '';
-    const result = repo.snooze(ids, until, until !== null && why ? why : null);
+    const result = repo.snooze(ids, until, until !== null && why ? why : null, {
+      bucket: until !== null ? bucket : null,
+      untilActivity,
+    });
     emitSnooze(result);
-    // Fire and forget: the GitHub lookups must never delay or fail the snooze. The helper never rejects.
-    if (until !== null && result.actionId !== null && deps.githubClient) {
-      void recordSnoozeContext(
-        repo,
-        deps.githubClient,
-        result.actionId,
-        result.changes.map((c) => c.commentId),
-        (msg, err) => req.log.warn({ err }, msg),
-      );
+    const changed = result.changes.map((c) => c.commentId);
+    // Fire and forget: neither the GitHub lookups nor the bucketing may delay or fail the snooze. Neither rejects.
+    if (until !== null && result.actionId !== null) {
+      if (deps.githubClient) {
+        void recordSnoozeContext(repo, deps.githubClient, result.actionId, changed, (msg, err) =>
+          req.log.warn({ err }, msg),
+        );
+      }
+      if (!bucket && why)
+        void bucketInBackground(deps, result.actionId, changed, (msg, err) => req.log.warn({ err }, msg));
     }
     return result;
   });
@@ -395,13 +421,15 @@ export function registerApiRoutes(app: FastifyInstance, deps: AppDeps): void {
       u.manualReserve = int(b.manualReserve, 'manualReserve', { min: 0, max: 1_000_000 });
     if (b.backfillDays !== undefined) u.backfillDays = int(b.backfillDays, 'backfillDays', { min: 0, max: 36500 });
     if (b.theme !== undefined) u.theme = oneOf(b.theme, 'theme', THEMES);
+    if (b.snoozeDays !== undefined) u.snoozeDays = parseSnoozeDays(b.snoozeDays);
     if (b.github !== undefined) u.github = parseGithubUpdate(b.github);
     const llm = b.llm === undefined ? undefined : parseLlmUpdate(b.llm);
     const googleClient = b.googleClient === undefined ? undefined : parseGoogleClientUpdate(b.googleClient);
 
     const before = repo.getSettings();
-    const { apiKey, googleClient: _ignored, github, llm: _llmIgnored, ...rest } = u;
+    const { apiKey, googleClient: _ignored, github, llm: _llmIgnored, snoozeDays, ...rest } = u;
     const patch: Parameters<typeof repo.updateSettings>[0] = { ...rest };
+    if (snoozeDays) patch.snoozeDays = { ...before.snoozeDays, ...snoozeDays };
     if (github) {
       patch.github = {
         token: github.token === undefined ? before.github.token : github.token?.trim() || null,
@@ -498,6 +526,17 @@ export function registerApiRoutes(app: FastifyInstance, deps: AppDeps): void {
     const tick = deps.demoTick;
     app.post('/api/demo/tick', async (_req, reply) => {
       tick();
+      return reply.code(204).send();
+    });
+  }
+  if (deps.demo && deps.demoControls) {
+    const controls = deps.demoControls;
+    app.post('/api/demo/comment', async (req) => {
+      const b = asObject(req.body);
+      return { ok: await controls.comment(str(b, 'itemId')!, b.me === true) };
+    });
+    app.post('/api/demo/advance', async (req, reply) => {
+      controls.advanceDays(int(asObject(req.body).days, 'days', { min: 1, max: 400 }));
       return reply.code(204).send();
     });
   }

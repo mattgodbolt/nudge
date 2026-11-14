@@ -6,6 +6,8 @@
   interface Props {
     items: T[];
     rowHeight: number;
+    /** Rows of a different height (section headings): the height of one item, when it is not `rowHeight`. */
+    heightOf?: (item: T) => number;
     selectedIndex: number;
     onNearEnd?: () => void;
     row: Snippet<[T, number]>;
@@ -14,14 +16,38 @@
     /** Pull down at the top of the list to run this (touch only). */
     onRefresh?: () => Promise<void> | void;
   }
-  let { items, rowHeight, selectedIndex, onNearEnd, row, key, overscan = 10, onRefresh }: Props = $props();
+  let { items, rowHeight, heightOf, selectedIndex, onNearEnd, row, key, overscan = 10, onRefresh }: Props = $props();
 
   let viewport: HTMLDivElement | undefined = $state();
   let scrollTop = $state(0);
   let height = $state(600);
 
-  const start = $derived(Math.max(0, Math.floor(scrollTop / rowHeight) - overscan));
-  const end = $derived(Math.min(items.length, Math.ceil((scrollTop + height) / rowHeight) + overscan));
+  // Where each row starts (and the total at the end). Uniform lists need no table.
+  const offsets = $derived.by(() => {
+    if (!heightOf) return null;
+    const o = new Array<number>(items.length + 1);
+    o[0] = 0;
+    for (let i = 0; i < items.length; i++) o[i + 1] = o[i]! + heightOf(items[i]!);
+    return o;
+  });
+  const topOf = (i: number): number => (offsets ? offsets[i]! : i * rowHeight);
+  const heightAt = (i: number): number => (heightOf ? heightOf(items[i]!) : rowHeight);
+  const totalHeight = $derived(offsets ? offsets[items.length]! : items.length * rowHeight);
+  /** The row covering vertical position y. */
+  function indexAt(y: number): number {
+    if (!offsets) return Math.floor(y / rowHeight);
+    let lo = 0;
+    let hi = items.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (offsets[mid + 1]! <= y) lo = mid + 1;
+      else hi = mid;
+    }
+    return lo;
+  }
+
+  const start = $derived(Math.max(0, indexAt(scrollTop) - overscan));
+  const end = $derived(Math.min(items.length, indexAt(scrollTop + height) + 1 + overscan));
   const visible = $derived(items.slice(start, end).map((item, i) => ({ item, index: start + i })));
 
   // Keep the cursor visible (block: "nearest" semantics).
@@ -29,8 +55,8 @@
     const idx = selectedIndex;
     const el = viewport;
     if (!el || idx < 0) return;
-    const top = idx * rowHeight;
-    const bottom = top + rowHeight;
+    const top = topOf(idx);
+    const bottom = top + heightAt(idx);
     if (top < el.scrollTop) el.scrollTop = top;
     else if (bottom > el.scrollTop + el.clientHeight) el.scrollTop = bottom - el.clientHeight;
   });
@@ -124,9 +150,9 @@
     tabindex="-1"
     aria-label="Comments"
   >
-    <div class="spacer" style:height="{items.length * rowHeight}px">
+    <div class="spacer" style:height="{totalHeight}px">
       {#each visible as { item, index } (key ? key(item) : index)}
-        <div class="slot" style:transform="translateY({index * rowHeight}px)" style:height="{rowHeight}px">
+        <div class="slot" style:transform="translateY({topOf(index)}px)" style:height="{heightAt(index)}px">
           {@render row(item, index)}
         </div>
       {/each}

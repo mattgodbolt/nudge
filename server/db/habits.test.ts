@@ -150,3 +150,94 @@ describe('snooze context', () => {
     expect(habitsReport(seed()).snoozeContext.byLastCommenter).toEqual({ mine: 0, theirs: 0, unknown: 1 });
   });
 });
+
+describe('snoozing until activity', () => {
+  function world() {
+    const db = openDb(':memory:');
+    for (const id of ['a', 'b', 'c', 'd', 'e']) {
+      db.prepare(
+        `INSERT INTO items (id, provider, kind, title, occurred_at, state, state_source, state_changed_at, first_seen_at)
+         VALUES (?, 'github', 'pr', 'SECRET', ?, 'inbox', 'sync', ?, ?)`,
+      ).run(id, T(0), T(0), T(0));
+    }
+    const r = createEvents(db).record;
+    const snooze = (itemId: string, min: number, meta: Record<string, unknown>) =>
+      r({ itemId, at: T(min), kind: 'snooze', from: null, to: T(min + 9999), source: 'user', meta });
+    const wake = (itemId: string, min: number, meta: Record<string, unknown>) =>
+      r({
+        itemId,
+        at: T(min),
+        kind: 'snooze',
+        from: T(min),
+        to: null,
+        source: 'auto',
+        meta: { reason: 'wake', ...meta },
+      });
+    // a: waited on them, activity after 60 min. b: waited on them, nothing for 7 days, then he marked it done.
+    // c: waited on merge, nothing, then dismissed. d: in flight, nothing, snoozed again. e: until activity, unsnoozed by hand.
+    snooze('a', 0, { bucket: 'waiting_on_them', untilActivity: true });
+    wake('a', 60, { cause: 'activity', untilActivity: true });
+    snooze('b', 0, { bucket: 'waiting_on_them', untilActivity: true });
+    wake('b', 7 * 1440, { cause: 'fallback', untilActivity: true });
+    r({
+      itemId: 'b',
+      at: T(7 * 1440 + 5),
+      kind: 'state',
+      from: 'inbox',
+      to: 'done',
+      source: 'user',
+      meta: { reason: 'done' },
+    });
+    snooze('c', 0, { bucket: 'waiting_on_merge', untilActivity: true });
+    wake('c', 3 * 1440, { cause: 'fallback', untilActivity: true });
+    r({
+      itemId: 'c',
+      at: T(3 * 1440 + 1),
+      kind: 'state',
+      from: 'inbox',
+      to: 'done',
+      source: 'user',
+      meta: { reason: 'no_action' },
+    });
+    snooze('d', 0, { bucket: 'in_flight', untilActivity: true });
+    wake('d', 7 * 1440, { cause: 'fallback', untilActivity: true });
+    snooze('d', 7 * 1440 + 2, { bucket: 'in_flight', untilActivity: true });
+    snooze('e', 0, { untilActivity: true });
+    r({ itemId: 'e', at: T(30), kind: 'snooze', from: T(9999), to: null, source: 'user', meta: { cause: 'manual' } });
+    wake('a', 99999, {}); // a plain timed wake carries no cause and is not counted
+    return habitsReport(db);
+  }
+
+  it('counts snoozes by bucket, how the waits ended, how long they took, and what he did after a fallback', () => {
+    const sb = world().snoozeBuckets;
+    expect(sb.byBucket).toEqual({ waiting_on_them: 2, waiting_on_merge: 1, in_flight: 2, none: 1 });
+    expect(sb.untilActivity).toBe(6);
+    expect(sb.wakeCauses).toEqual({ activity: 1, fallback: 3, manual: 1 });
+    expect(sb.medianMsToWake).toEqual({
+      activity: 60 * 60_000,
+      fallback: 7 * 86_400_000,
+      manual: 30 * 60_000,
+    });
+    expect(sb.afterFallback).toEqual({ done: 1, dismissed: 1, resnoozed: 1, other: 0, none: 0 });
+  });
+
+  it('prints them without any item text', () => {
+    const text = formatHabits(world());
+    expect(text).toContain('Snoozes by bucket: waiting_on_them 2');
+    expect(text).toContain(
+      'activity 20.0% (1/5), fallback with no activity 60.0% (3/5), unsnoozed by hand 20.0% (1/5)',
+    );
+    expect(text).toContain('median time to wake: activity 1.0h, fallback 7.0d, manual 30.0m');
+    expect(text).toContain('after a fallback wake he: done 1, dismissed 1, resnoozed 1');
+    expect(text).not.toContain('SECRET');
+  });
+
+  it('is all zeros when nothing was ever parked until activity', () => {
+    expect(habitsReport(seed()).snoozeBuckets).toMatchObject({
+      byBucket: { none: 1 },
+      untilActivity: 0,
+      wakeCauses: { activity: 0, fallback: 0, manual: 0 },
+      medianMsToWake: { activity: null, fallback: null, manual: null },
+    });
+  });
+});

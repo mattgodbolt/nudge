@@ -36,6 +36,18 @@ export interface HabitsReport {
     byComments: { '0': number; '1-3': number; '4+': number; unknown: number };
     byItemKind: Record<string, number>;
   };
+  /**
+   * What snoozing "until activity" is worth: snoozes by reason bucket (`none` = no bucket), how each until-activity
+   * snooze ended (something happened, the fallback date arrived with nothing, or the owner unsnoozed it himself),
+   * how long it took, and what he did next with items that came back with no activity.
+   */
+  snoozeBuckets: {
+    byBucket: Record<string, number>;
+    untilActivity: number;
+    wakeCauses: { activity: number; fallback: number; manual: number };
+    medianMsToWake: { activity: number | null; fallback: number | null; manual: number | null };
+    afterFallback: { done: number; dismissed: number; resnoozed: number; other: number; none: number };
+  };
   decisions: { total: number; withRank: number; rank0: number; deeper: number; byInput: Record<string, number> };
   /** Items that sat above an acted-on item: later actioned by the owner, or still not. */
   passedOver: { pairs: number; laterActioned: number; left: number };
@@ -151,6 +163,15 @@ export function habitsReport(db: Db): HabitsReport {
     byItemKind: {},
   };
   const snoozeAt: { item: string; at: number }[] = [];
+  // Until-activity bookkeeping: the item's latest user snooze, how its waits ended, and what he did after each fallback.
+  const lastSnooze = new Map<string, { at: number; untilActivity: boolean }>();
+  const byBucket: Record<string, number> = {};
+  let untilActivity = 0;
+  const wakeCauses = { activity: 0, fallback: 0, manual: 0 };
+  const wakeMs: Record<'activity' | 'fallback' | 'manual', number[]> = { activity: [], fallback: [], manual: [] };
+  const fallbackWakes: { item: string; at: number }[] = [];
+  /** Per item, what each user action was (done / dismissed / resnoozed / other), for the follow-up after a fallback. */
+  const nextActs = new Map<string, { at: number; what: 'done' | 'dismissed' | 'resnoozed' | 'other' }[]>();
   const dec: { at: number; meta: Record<string, any> }[] = []; // eslint-disable-line @typescript-eslint/no-explicit-any
   const judged = new Map<
     string,
@@ -196,9 +217,34 @@ export function habitsReport(db: Db): HabitsReport {
         });
       }
       (userActs.get(r.item_id) ?? userActs.set(r.item_id, []).get(r.item_id)!).push(t);
+      (nextActs.get(r.item_id) ?? nextActs.set(r.item_id, []).get(r.item_id)!).push({
+        at: t,
+        what: isSnooze
+          ? r.to_value
+            ? 'resnoozed'
+            : 'other'
+          : action === 'done'
+            ? 'done'
+            : action === 'dismissed'
+              ? 'dismissed'
+              : 'other',
+      });
+      if (isSnooze && !r.to_value && meta.cause === 'manual') {
+        // He ended a wait for activity himself.
+        const last = lastSnooze.get(r.item_id);
+        if (last?.untilActivity) {
+          wakeCauses.manual++;
+          wakeMs.manual.push(Math.max(0, t - last.at));
+        }
+      }
       if (isSnooze && r.to_value) {
         snoozed++;
         snoozeAt.push({ item: r.item_id, at: t });
+        const waiting = meta.untilActivity === true;
+        lastSnooze.set(r.item_id, { at: t, untilActivity: waiting });
+        const bucket = typeof meta.bucket === 'string' ? meta.bucket : 'none';
+        byBucket[bucket] = (byBucket[bucket] ?? 0) + 1;
+        if (waiting) untilActivity++;
         if (r.provider === 'github') {
           const known = typeof meta.lastCommenterIsMe === 'boolean' && 'lastCommenter' in meta;
           const who = !known ? 'unknown' : meta.lastCommenterIsMe ? 'mine' : meta.lastCommenter ? 'theirs' : 'unknown';
@@ -211,6 +257,13 @@ export function habitsReport(db: Db): HabitsReport {
       }
     } else if (r.kind === 'snooze' && r.source === 'auto' && !r.to_value) {
       (wakes.get(r.item_id) ?? wakes.set(r.item_id, []).get(r.item_id)!).push(t);
+      const cause: unknown = meta.cause;
+      if (cause === 'activity' || cause === 'fallback') {
+        wakeCauses[cause]++;
+        const last = lastSnooze.get(r.item_id);
+        if (last) wakeMs[cause].push(Math.max(0, t - last.at));
+        if (cause === 'fallback') fallbackWakes.push({ item: r.item_id, at: t });
+      }
     } else if (r.kind === 'decision') {
       dec.push({ at: t, meta });
       (decisionsOf.get(r.item_id) ?? decisionsOf.set(r.item_id, []).get(r.item_id)!).push({
@@ -255,6 +308,12 @@ export function habitsReport(db: Db): HabitsReport {
     if (wake === undefined) continue;
     woken++;
     if ((userActs.get(s.item) ?? []).some((a) => a > wake)) actionedAfterWake++;
+  }
+
+  const afterFallback = { done: 0, dismissed: 0, resnoozed: 0, other: 0, none: 0 };
+  for (const w of fallbackWakes) {
+    const next = (nextActs.get(w.item) ?? []).find((a) => a.at > w.at);
+    afterFallback[next ? next.what : 'none']++;
   }
 
   let pairs = 0;
@@ -322,6 +381,17 @@ export function habitsReport(db: Db): HabitsReport {
     timeToFirstActionMs,
     snooze: { snoozed, woken, actionedAfterWake },
     snoozeContext: sc,
+    snoozeBuckets: {
+      byBucket,
+      untilActivity,
+      wakeCauses,
+      medianMsToWake: {
+        activity: median(wakeMs.activity),
+        fallback: median(wakeMs.fallback),
+        manual: median(wakeMs.manual),
+      },
+      afterFallback,
+    },
     decisions: { total: dec.length, withRank: rank0 + deeper, rank0, deeper, byInput },
     passedOver: { pairs, laterActioned, left: pairs - laterActioned },
     suggestionHits,
@@ -402,6 +472,23 @@ export function formatHabits(r: HabitsReport): string {
       `  kind: ${list(sc.byItemKind) || 'none'}`,
     );
   }
+  const sb = r.snoozeBuckets;
+  const wc = sb.wakeCauses;
+  const wcTotal = wc.activity + wc.fallback + wc.manual;
+  out.push(
+    '',
+    `Snoozes by bucket: ${
+      Object.entries(sb.byBucket)
+        .sort((a, b) => b[1] - a[1])
+        .map(([k, n]) => `${k} ${n}`)
+        .join(', ') || 'none'
+    }; until activity: ${sb.untilActivity}`,
+    `  how until-activity snoozes ended (${wcTotal}): activity ${pct(wc.activity, wcTotal)}, fallback with no activity ${pct(wc.fallback, wcTotal)}, unsnoozed by hand ${pct(wc.manual, wcTotal)}`,
+    `  median time to wake: activity ${fmtDuration(sb.medianMsToWake.activity)}, fallback ${fmtDuration(sb.medianMsToWake.fallback)}, manual ${fmtDuration(sb.medianMsToWake.manual)}`,
+    `  after a fallback wake he: ${Object.entries(sb.afterFallback)
+      .map(([k, n]) => `${k} ${n}`)
+      .join(', ')}`,
+  );
   const d = r.decisions;
   out.push(
     '',

@@ -515,3 +515,24 @@ describe('run merging', () => {
     expect(m.trigger).toBe('manual');
   });
 });
+
+describe('snoozed until activity', () => {
+  it('wakes a snoozed thread when a reply from someone else arrives, announcing it as a wake', async () => {
+    const env = makeEnv();
+    env.addVideo(V1, 1);
+    env.yt.threads.set(V1, [thread('t1', V1, ago(env, 2 * HOUR))]);
+    await syncVideo(env, V1);
+    env.repo.snooze(['t1'], new Date(env.clock.now().getTime() + 7 * DAY).toISOString(), 'waiting', {
+      bucket: 'waiting_on_them',
+      untilActivity: true,
+    });
+    env.clock.advance(30 * 60_000);
+    env.yt.threads.set(V1, [thread('t1', V1, ago(env, 2 * HOUR), [comment('r1', V1, ago(env, 5 * 60_000))])]);
+    await syncVideo(env, V1);
+    const woke = env.bus.of('inbox.changed').filter((e) => e.reason === 'woke');
+    expect(woke).toHaveLength(1);
+    expect(woke[0]!.addedIds).toEqual(['t1']);
+    expect(env.repo.listInbox({ view: 'snoozed' }).total).toBe(0);
+    expect(env.repo.listInbox({ view: 'inbox' }).items.find((i) => i.comment.id === 't1')?.wakeCause).toBe('activity');
+  });
+});

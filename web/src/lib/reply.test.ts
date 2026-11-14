@@ -64,6 +64,11 @@ function item(n: number): InboxItem {
     snoozedUntil: null,
     wokeAt: null,
     snoozeWhy: null,
+    snoozeBucket: null,
+    snoozeUntilActivity: false,
+    snoozedAt: null,
+    wakeCause: null,
+    snoozeNag: null,
     suggestion: null,
   };
 }

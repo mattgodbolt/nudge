@@ -8,6 +8,8 @@ import { USAGE_FEATURES, featureOf, isUsageKey, type UsageDTO } from '../../shar
 export interface UsageStore {
   /** Add to today's counters. Keys outside the allow-list are skipped and returned, never stored. */
   add(counts: Record<string, number>): { stored: number; skipped: string[] };
+  /** Today's value of one counter (0 when there is none). */
+  today(key: string): number;
   /** Counters and event-log counts for the last `days` days including today, plus features never used. */
   report(days: number): UsageDTO;
   /** Delete every usage counter. The event log is not touched. */
@@ -59,11 +61,17 @@ export function createUsage(db: Db, clock: () => Date = () => new Date()): Usage
     return { days, from, to, rows, events, unused: USAGE_FEATURES.filter((f) => !used.has(f)) };
   }
 
+  function today(key: string): number {
+    const r = db.prepare('SELECT count FROM usage_daily WHERE day = ? AND key = ?').get(dayOf(clock()), key) as
+      { count: number } | undefined;
+    return r?.count ?? 0;
+  }
+
   function reset(): number {
     return db.prepare('DELETE FROM usage_daily').run().changes;
   }
 
-  return { add, report, reset };
+  return { add, today, report, reset };
 }
 
 function nextDay(day: string): string {

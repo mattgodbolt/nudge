@@ -98,8 +98,22 @@ export const api = {
   triage: (commentIds: string[], to: T.TriageTarget) =>
     request<T.TriageResult>('POST', '/api/triage', { commentIds, to }),
   undo: (actionId: number) => request<T.TriageResult>('POST', `/api/triage/${actionId}/undo`),
-  snooze: (commentIds: string[], until: string | null, why?: string) =>
-    request<T.SnoozeResult>('POST', '/api/snooze', { commentIds, until, ...(why ? { why } : {}) }),
+  snooze: (
+    commentIds: string[],
+    until: string | null,
+    why?: string,
+    opts: { bucket?: T.SnoozeBucket | null; untilActivity?: boolean } = {},
+  ) =>
+    request<T.SnoozeResult>('POST', '/api/snooze', {
+      commentIds,
+      until,
+      ...(why ? { why } : {}),
+      ...(until && opts.bucket ? { bucket: opts.bucket } : {}),
+      ...(until && opts.untilActivity ? { untilActivity: true } : {}),
+    }),
+  /** A short follow-up comment for a GitHub item that came back after waiting on someone. Nothing is posted. */
+  nudgeDraft: (itemId: string) =>
+    request<{ text: string; bucket: string }>('POST', `/api/items/${encodeURIComponent(itemId)}/nudge-draft`),
   undoSnooze: (actionId: number) => request<T.SnoozeResult>('POST', `/api/snooze/${actionId}/undo`),
   getDraft: (commentId: string) =>
     request<DraftDTO | null>('GET', `/api/drafts/${encodeURIComponent(commentId)}`, undefined, { allow404: true }),

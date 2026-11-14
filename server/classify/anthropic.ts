@@ -6,7 +6,7 @@ const TIMEOUT_MS = 30_000;
 const MAX_ATTEMPTS = 4;
 
 /** Bump with every edit to SYSTEM, the tool schema or renderItem: the eval cache is keyed on it. */
-export const PROMPT_VERSION = 'p0-8';
+export const PROMPT_VERSION = 'p0-9';
 
 export const DEFAULT_SYSTEM = `You triage the inbox of Matt Godbolt, creator of Compiler Explorer, who also runs a YouTube channel about C++, compilers, CPUs and retro computing, and maintains many open-source repositories. For each item decide what Matt needs to do, by calling record_verdict.
 
@@ -17,7 +17,7 @@ verdict:
 - spam: clear scams, impersonation, off-platform contact, get-rich promotion and link farming, plus empty items and meaningless symbol strings. Odd, repetitive, off-topic or low-effort comments from real people are not spam: use no_reply_needed. If unsure whether something is spam, do not call it spam.
 
 category (pick the single best): question, technical (a correction, addition or disagreement about technical content), bug, idea (a feature or content request), chat (praise, thanks, jokes, banter), support (a person needs help), bot, other.
-turn and next_step (for items on GitHub, and for any item with a recent_comments, snooze_note or owner_note block): judge the CURRENT state of the thread, not only what the item originally was. Read <recent_comments> (oldest first; is_matt marks Matt's own comments) and say whose move it is now: matt (he has to do something: answer, review, merge, decide), them (he has done his part and is waiting on someone else), or nobody (nothing left to do). If Matt wrote the newest comment, he is probably working on it or waiting for a reply: do not suggest he reply to himself. A <snooze_note> is what Matt said he snoozed the item to do: treat it as strong evidence of the next step and of whose turn it is. <owner_note> is Matt's own remark about this item. next_step is one short imperative sentence naming what happens next (for example "review the proposed fix and merge"); leave it empty when nothing is needed. The verdict still describes what the item needs from Matt as a whole; turn and next_step describe where the thread stands now.
+turn and next_step (for items on GitHub, and for any item with a recent_comments, snooze_note or owner_note block): judge the CURRENT state of the thread, not only what the item originally was. Read <recent_comments> (oldest first; is_matt marks Matt's own comments) and say whose move it is now: matt (he has to do something: answer, review, merge, decide), them (he has done his part and is waiting on someone else), or nobody (nothing left to do). If Matt wrote the newest comment, he is probably working on it or waiting for a reply: do not suggest he reply to himself. A <snooze_note> is what Matt said he snoozed the item to do: treat it as strong evidence of the next step and of whose turn it is. A <snooze_bucket> says why he parked it (waiting_on_them: someone else owes a reply; waiting_on_merge: a merge or CI result; in_flight: he is working on it; lower_priority: someday). until_activity="true" means he was waiting for someone else to act, and woke_by="fallback" means the wait ran out with no activity at all, so the thread is probably still waiting on them (turn: them), not on him; woke_by="activity" means someone did act. <owner_note> is Matt's own remark about this item. next_step is one short imperative sentence naming what happens next (for example "review the proposed fix and merge"); leave it empty when nothing is needed. The verdict still describes what the item needs from Matt as a whole; turn and next_step describe where the thread stands now.
 confidence: high only if you are sure. When unsure between needs_reply and no_reply_needed, choose needs_reply with low confidence: skipping a real person is worse than a wasted glance.
 reason: one short plain sentence. No URLs.
 
@@ -41,8 +41,8 @@ const TOOL = {
   },
 };
 
-const esc = (s: string): string => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-const clip = (s: string, n: number): string => (s.length > n ? s.slice(0, n) + '…' : s);
+export const esc = (s: string): string => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+export const clip = (s: string, n: number): string => (s.length > n ? s.slice(0, n) + '…' : s);
 
 /**
  * The user turn. Every untrusted string is entity-escaped, so nothing a commenter writes can close a tag or open a
@@ -79,6 +79,10 @@ export function renderItem(item: EvalItem): string {
     lines.push('</recent_comments>');
   }
   if (item.snoozeNote) lines.push(`<snooze_note>${esc(clip(item.snoozeNote, 200))}</snooze_note>`);
+  if (item.snooze && (item.snooze.bucket || item.snooze.untilActivity)) {
+    const attrs = `until_activity="${item.snooze.untilActivity}"${item.snooze.wokeBy ? ` woke_by="${item.snooze.wokeBy}"` : ''}`;
+    lines.push(`<snooze_bucket ${attrs}>${esc(item.snooze.bucket ?? 'none')}</snooze_bucket>`);
+  }
   for (const n of item.ownerNotes ?? []) lines.push(`<owner_note>${esc(clip(n, NOTE_TEXT))}</owner_note>`);
   if (item.thread?.length) {
     lines.push('<earlier_in_thread>');

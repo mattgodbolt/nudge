@@ -145,6 +145,30 @@ describe('POST /api/assistant', () => {
     expect(inbox()).toHaveLength(1);
   });
 
+  it('snoozes until activity with the bucket the assistant chose, and the bucket default as the follow-up', async () => {
+    key();
+    const id = seedComment();
+    command = async () => ({
+      actions: [
+        { type: 'snooze', until: null, why: 'until they reply', bucket: 'waiting_on_them', untilActivity: true },
+      ],
+      reply: '',
+    });
+    const res = (await post({ text: 'snooze this until they reply', selectedId: id })).json();
+    expect(res.outcomes).toMatchObject([
+      { type: 'snooze', id, why: 'until they reply', bucket: 'waiting_on_them', untilActivity: true },
+    ]);
+    const days = (Date.parse(res.outcomes[0].until) - Date.now()) / 86_400_000;
+    expect(days).toBeGreaterThan(6.99);
+    expect(days).toBeLessThan(7.01);
+    expect(env.repo.listInbox({ view: 'snoozed' }).items[0]).toMatchObject({
+      snoozeBucket: 'waiting_on_them',
+      snoozeUntilActivity: true,
+    });
+    env.repo.undoSnooze(res.outcomes[0].undoActionId);
+    expect(inbox()).toHaveLength(1);
+  });
+
   it('dismisses the selected item as "no action needed", recorded apart from done, with an undo', async () => {
     key();
     const id = seedComment();
@@ -274,10 +298,34 @@ describe('parseCommand', () => {
       now,
     );
     expect(r.actions).toEqual([
-      { type: 'snooze', until: '2026-11-10T09:00:00.000Z', why: 'review the proposed fix' },
-      { type: 'snooze', until: '2026-11-11T09:00:00.000Z', why: null },
+      {
+        type: 'snooze',
+        until: '2026-11-10T09:00:00.000Z',
+        why: 'review the proposed fix',
+        bucket: null,
+        untilActivity: false,
+      },
+      { type: 'snooze', until: '2026-11-11T09:00:00.000Z', why: null, bucket: null, untilActivity: false },
       { type: 'note', text: "I wouldn't have snoozed that", scope: 'standing', about: 'last_action' },
       { type: 'note', text: 'about this one', scope: 'item', about: 'selected' },
+    ]);
+  });
+  it('reads until_activity and a bucket, and needs a date only when it is not waiting on activity', () => {
+    const r = parseCommand(
+      {
+        content: [
+          tool('snooze', { until_activity: true, bucket: 'waiting_on_them', why: 'they will reply' }),
+          tool('snooze', { until: '2026-11-12T09:00:00Z', until_activity: true, bucket: 'nonsense' }),
+          tool('snooze', { bucket: 'in_flight' }), // neither a date nor a wait: nothing to do
+          tool('snooze', { until: '2026-11-13T09:00:00Z', bucket: 'in_flight' }),
+        ],
+      },
+      now,
+    );
+    expect(r.actions).toEqual([
+      { type: 'snooze', until: null, why: 'they will reply', bucket: 'waiting_on_them', untilActivity: true },
+      { type: 'snooze', until: '2026-11-12T09:00:00.000Z', why: null, bucket: null, untilActivity: true },
+      { type: 'snooze', until: '2026-11-13T09:00:00.000Z', why: null, bucket: 'in_flight', untilActivity: false },
     ]);
   });
   it('caps the number of actions', () => {

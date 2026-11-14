@@ -21,6 +21,7 @@
   import TodoThread from '../components/TodoThread.svelte';
   import { feeds } from '../lib/stores/feeds.svelte';
   import VirtualList from '../components/VirtualList.svelte';
+  import { snoozedEntries, type SnoozedEntry } from '../lib/snoozeSections';
   import EmptyState from '../components/EmptyState.svelte';
   import AddSourceForm from '../components/AddSourceForm.svelte';
   import Kbd from '../components/Kbd.svelte';
@@ -38,6 +39,17 @@
         : router.route === 'snoozed'
           ? 'snoozed'
           : 'inbox',
+  );
+  /** What the list shows: the items, and in the Snoozed view a heading for each reason bucket. */
+  const entries = $derived<SnoozedEntry[]>(
+    view === 'snoozed'
+      ? snoozedEntries(inbox.items, sync.now, !!inbox.nextCursor)
+      : inbox.items.map((item) => ({ kind: 'row' as const, item })),
+  );
+  const entrySelected = $derived(
+    view === 'snoozed'
+      ? entries.findIndex((e) => e.kind === 'row' && e.item.comment.id === inbox.selectedId)
+      : inbox.selectedIndex,
   );
   const title = $derived({ inbox: 'Inbox', done: 'Done', all: 'All', snoozed: 'Snoozed' }[view]);
   const sourceId = $derived(router.query.source ? Number(router.query.source) : undefined);
@@ -404,31 +416,43 @@
       {/if}
     {:else}
       <VirtualList
-        items={inbox.items}
+        items={entries}
         rowHeight={phone.value ? 176 : 102}
-        selectedIndex={inbox.selectedIndex}
+        heightOf={view === 'snoozed'
+          ? (e) => (e.kind === 'head' ? (phone.value ? 44 : 34) : phone.value ? 176 : 102)
+          : undefined}
+        selectedIndex={entrySelected}
         onNearEnd={() => void inbox.loadMore()}
         onRefresh={() => {
           usage.action('sync', 'touch');
           return resync.run();
         }}
-        key={(i) => i.comment.id}
+        key={(e) => (e.kind === 'head' ? e.id : e.item.comment.id)}
       >
-        {#snippet row(item, _index)}
-          <InboxRow
-            {item}
-            now={sync.now}
-            selected={item.comment.id === inbox.selectedId}
-            checked={inbox.selectedIds.has(item.comment.id)}
-            selecting={inbox.selectedCount > 0}
-            ontoggle={() => inbox.toggleSelect(item.comment.id)}
-            showState={view === 'all'}
-            snoozedView={view === 'snoozed'}
-            onclick={() => {
-              inbox.select(item.comment.id);
-              ui.pane = 'thread';
-            }}
-          />
+        {#snippet row(entry, _index)}
+          {#if entry.kind === 'head'}
+            <div class="sect" data-testid="snoozed-section" data-bucket={entry.bucket ?? 'none'}>
+              <strong>{entry.title}</strong>
+              <span class="count" data-testid="snoozed-section-count">({entry.count}{entry.more ? '+' : ''})</span>
+              {#if entry.oldest}<span class="faint age">oldest {entry.oldest}</span>{/if}
+            </div>
+          {:else}
+            {@const item = entry.item}
+            <InboxRow
+              {item}
+              now={sync.now}
+              selected={item.comment.id === inbox.selectedId}
+              checked={inbox.selectedIds.has(item.comment.id)}
+              selecting={inbox.selectedCount > 0}
+              ontoggle={() => inbox.toggleSelect(item.comment.id)}
+              showState={view === 'all'}
+              snoozedView={view === 'snoozed'}
+              onclick={() => {
+                inbox.select(item.comment.id);
+                ui.pane = 'thread';
+              }}
+            />
+          {/if}
         {/snippet}
       </VirtualList>
     {/if}
@@ -549,6 +573,25 @@
     cursor: pointer;
     color: var(--text-faint);
     padding: 0;
+  }
+  /* A section heading in the Snoozed list: quiet, so the rows stay the point. */
+  .sect {
+    height: 100%;
+    display: flex;
+    align-items: center;
+    gap: var(--s2);
+    padding: 0 var(--s3) 0 var(--s4);
+    border-bottom: 1px solid var(--border);
+    background: var(--bg);
+    font-size: var(--fs-label);
+    color: var(--text-muted);
+  }
+  .sect strong {
+    color: var(--text);
+    font-weight: 600;
+  }
+  .sect .age {
+    margin-left: auto;
   }
   .bulk {
     display: flex;

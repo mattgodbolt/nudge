@@ -21,7 +21,8 @@ export default defineConfig({
   projects: [
     {
       name: 'handoff',
-      testIgnore: /(inbox|reply-api|snooze|github|assistant|suggestions|notes|backlog|update)\.spec\.ts/,
+      testIgnore:
+        /(inbox|reply-api|snooze|snooze-activity|github|assistant|suggestions|notes|backlog|update)\.spec\.ts/,
       use: { ...use, baseURL: 'http://127.0.0.1:4518' },
     },
     {
@@ -35,6 +36,12 @@ export default defineConfig({
       name: 'organise',
       testMatch: /snooze\.spec\.ts/,
       use: { ...use, baseURL: 'http://127.0.0.1:4520' },
+    },
+    {
+      // Snoozing until activity: comments are delivered on demand and the snooze waker is run as if days had passed.
+      name: 'activity',
+      testMatch: /snooze-activity\.spec\.ts/,
+      use: { ...use, baseURL: 'http://127.0.0.1:4528' },
     },
     {
       name: 'api',
@@ -89,6 +96,12 @@ export default defineConfig({
     {
       command: 'npm run demo:e2e:organise',
       url: 'http://127.0.0.1:4520/api/bootstrap',
+      reuseExistingServer: false,
+      timeout: 120000,
+    },
+    {
+      command: 'npm run demo:e2e:activity',
+      url: 'http://127.0.0.1:4528/api/bootstrap',
       reuseExistingServer: false,
       timeout: 120000,
     },

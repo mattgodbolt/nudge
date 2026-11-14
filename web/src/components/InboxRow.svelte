@@ -1,9 +1,10 @@
 <script lang="ts">
+  import { BUCKETS, ageText, nagText } from '../../../shared/snooze';
   import type { InboxItem } from '../../../shared/types';
   import { authorChip, reasonChip, refLabel, statusChip } from '../lib/github';
   import { relativeTime } from '../lib/format';
   import { stateLabel, suggestedButton } from '../lib/itemState';
-  import { formatSnoozeTime, recentlyWoken } from '../lib/snooze';
+  import { formatSnoozeDay, formatSnoozeTime, recentlyWoken, snoozeLine } from '../lib/snooze';
   import { inbox } from '../lib/stores/inbox.svelte';
   import { ui } from '../lib/stores/ui.svelte';
   import { phone } from '../lib/phone.svelte';
@@ -99,6 +100,15 @@
   const chips = $derived(gh ? [reasonChip(gh), authorChip(gh), statusChip(gh)].filter((x) => x !== null) : []);
   /** Why it was snoozed, in his words: shown while snoozed and once it is back, until he deals with it. */
   const why = $derived(c.state === 'inbox' ? item.snoozeWhy : null);
+  /** Came back because the wait ran out with nothing happening: "Still waiting on them (7d, no activity)". */
+  const nag = $derived(c.state === 'inbox' && !item.snoozedUntil ? item.snoozeNag : null);
+  /** The Snoozed view's headings already name the bucket, so only the other views repeat it on the row. */
+  const bucket = $derived(
+    c.state === 'inbox' && item.snoozeBucket && !snoozedView ? BUCKETS[item.snoozeBucket].label : null,
+  );
+  const line = $derived(snoozeLine({ why: c.state === 'inbox' ? item.snoozeWhy : null, bucket }));
+  /** In the Snoozed view a row waiting on activity says how long it has been parked: "activity · Nov 21 · 4d". */
+  const parked = $derived(snoozedView && item.snoozedAt ? ageText(item.snoozedAt, now).replace('today', '0d') : '');
   const unread = $derived(c.state === 'inbox' && !item.snoozedUntil);
   const woke = $derived(!item.snoozedUntil && c.state === 'inbox' && recentlyWoken(item.wokeAt, now));
   const stateText = $derived(stateLabel(c));
@@ -165,8 +175,12 @@
       {#if item.parent}<span class="reply faint truncate">↳ reply to {item.parent.authorName}</span>{/if}
       <span class="spacer"></span>
       {#if item.snoozedUntil}<span class="snz" data-testid="row-snoozed" title="Snoozed"
-          >⏰ until {formatSnoozeTime(item.snoozedUntil, new Date(now))}</span
-        >{:else if woke}<span class="snz" data-testid="row-woke">⏰ back from snooze</span>{/if}
+          >⏰ {item.snoozeUntilActivity
+            ? `activity · ${formatSnoozeDay(item.snoozedUntil, new Date(now))}${parked ? ` · ${parked}` : ''}`
+            : `until ${formatSnoozeTime(item.snoozedUntil, new Date(now))}`}</span
+        >{:else if woke}<span class="snz" data-testid="row-woke"
+          >⏰ {item.wakeCause === 'activity' ? 'back: new activity' : 'back from snooze'}</span
+        >{/if}
       {#if item.hasDraft}<span class="draft" title="Draft saved">Draft</span>{/if}
       {#if c.state === 'auto_replied'}<span class="badge" title="Answered on YouTube">Answered</span
         >{:else if c.state === 'replied'}<span class="badge">Replied</span>{:else if showState && stateText}<span
@@ -180,12 +194,22 @@
       <div class="text">{c.textPlain}</div>
     {/if}
     <div class="video">
-      {#if why}
-        <span class="vtitle why truncate" data-testid="row-why" title="You snoozed this to: {why}"
-          >You snoozed this to: {why}</span
+      {#if nag}
+        <span
+          class="vtitle nag truncate"
+          data-testid="row-nag"
+          title="{nagText(nag.bucket, nag.days)}{why ? ` · You snoozed this to: ${why}` : ''}"
+          ><b>{nagText(nag.bucket, nag.days)}</b>{#if why}
+            <span class="why"> · {why}</span>{/if}</span
+        >
+      {:else if line.text || line.bucket}
+        <span class="vtitle why truncate" data-testid="row-why" title={line.text || `Snoozed · ${line.bucket}`}
+          >{line.text}{#if line.bucket}<span class="bkt" data-testid="row-bucket"
+              >{line.text ? ' · ' : 'Snoozed · '}{line.bucket}</span
+            >{/if}</span
         >
       {/if}
-      <span class="vtitle faint truncate" class:hide={!!why}
+      <span class="vtitle faint truncate" class:hide={!!line.text || !!line.bucket || !!nag}
         >{#if todo}{c.textPlain || 'Todo'}{:else if gh}<span class="kind" data-testid="row-kind"
             >{gh.kind === 'pr' ? 'PR' : 'Issue'}</span
           >
@@ -425,8 +449,23 @@
     color: var(--text-muted);
     font-style: italic;
   }
-  .vtitle.why {
+  .vtitle.why,
+  .vtitle.nag {
     flex: 1 1 auto;
+    max-width: 100%;
+  }
+  /* The audit line: the one thing on the row that asks for a decision. */
+  .nag {
+    color: var(--warn, var(--secondary));
+  }
+  .nag .why {
+    font-style: italic;
+    color: var(--text-muted);
+  }
+  /* Which bucket it was parked in: there, but quiet. */
+  .bkt {
+    font-style: normal;
+    opacity: 0.8;
   }
   .vtitle.hide {
     display: none;

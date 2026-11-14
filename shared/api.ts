@@ -48,6 +48,8 @@ export interface SettingsUpdate {
   manualReserve?: number;
   backfillDays?: number;
   theme?: 'system' | 'light' | 'dark';
+  /** Per-bucket follow-up days for "until activity" snoozes (1-365 each); buckets left out keep their value. */
+  snoozeDays?: Partial<Record<T.SnoozeBucket, number>>;
   /** GitHub: the token (null removes it) and which logins are me. */
   github?: { token?: string | null; myAccounts?: string[] };
   /** The assistant (Anthropic): API key (null removes it) and model. */
@@ -73,10 +75,19 @@ export const CLIENT_HEADER = 'X-Nudge';
  * POST   /api/triage {commentIds, to:'done'|'dismissed'|'replied'|'inbox'} -> TriageResult
  *          ('dismissed' = "no action needed": state 'done' with doneReason 'no_action')
  * POST   /api/triage/:actionId/undo             -> TriageResult
- * POST   /api/snooze {commentIds, until: ISO|null, why?: string} -> SnoozeResult. `why` (max 200 chars, optional) is the
+ * POST   /api/snooze {commentIds, until: ISO|null, why?: string, bucket?: SnoozeBucket|null, untilActivity?: boolean}
+ *                                                  -> SnoozeResult. `untilActivity` parks the items until someone other than the owner
+ *                                                  acts (a comment, closed/merged, a new reply) with `until` as the fallback date; when
+ *                                                  `until` is omitted the bucket's default from Settings (snoozeDays) is used. `bucket`
+ *                                                  is why it is parked (waiting_on_them | waiting_on_merge | in_flight | lower_priority).
+ *                                                  Without a bucket but with a `why`, a model assigns one later (best effort).
+ *                                                  `why` (max 200 chars, optional) is the
  *                                                  owner's one-line reason, kept on the item and on the snooze event. Only comments in state inbox change. `until` must be a
  *                                                  future ISO time within a year (400 bad_until); null unsnoozes.
  * POST   /api/snooze/:actionId/undo             -> SnoozeResult (409 cannot_undo, as triage undo)
+ * POST   /api/items/:id/nudge-draft             -> {text}. A short, polite follow-up comment for a GitHub item that came back
+ *                                                  from a waiting_on_* snooze, drafted by the model. Never posted anywhere. 409
+ *                                                  not_applicable (wrong kind of item), 424 no_key, 429 cap (daily cost cap).
  * GET    /api/drafts/:commentId                 -> DraftDTO | 404
  * PUT    /api/drafts/:commentId {body}          -> DraftDTO
  * DELETE /api/drafts/:commentId                 -> 204

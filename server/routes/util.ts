@@ -69,6 +69,7 @@ export function buildSettingsDto(deps: AppDeps): SettingsDTO {
     manualReserve: s.manualReserve,
     backfillDays: s.backfillDays,
     theme: s.theme,
+    snoozeDays: s.snoozeDays,
     demo: deps.demo,
     version: deps.version ?? 'dev',
     github: {

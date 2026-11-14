@@ -95,6 +95,18 @@
         testid="act-inbox"
       />
     {:else}
+      {#if item.snoozeNag}
+        <ActionButton
+          id="snooze.again"
+          label="Snooze again"
+          short="Again"
+          icon="clock"
+          showLabel={labelled}
+          {tile}
+          suggested
+          testid="act-snooze-again"
+        />
+      {/if}
       <ActionButton
         id="snooze.open"
         label="Snooze"

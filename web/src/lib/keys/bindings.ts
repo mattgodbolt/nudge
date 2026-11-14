@@ -271,6 +271,14 @@ export function inboxBindings(): Binding[] {
       run: () => ui.openSnooze(),
     }),
     list({
+      id: 'snooze.again',
+      keys: ['B'],
+      group: 'Triage',
+      description: 'Snooze again until activity (an item that came back with none)',
+      when: () => inbox.targetIds().some((id) => inbox.items.find((i) => i.comment.id === id)?.snoozeNag),
+      run: () => void inbox.snoozeAgain(),
+    }),
+    list({
       id: 'triage.undo',
       keys: ['z', '$mod+z'],
       group: 'Triage',

@@ -1,5 +1,8 @@
 // Shared domain + DTO types. This file is the contract between server and web.
 // Changes go through the lead only.
+import type { SnoozeBucket, WakeCause } from './snooze.js';
+export type { SnoozeBucket, WakeCause } from './snooze.js';
+
 export type CommentState = 'inbox' | 'done' | 'replied' | 'auto_replied' | 'resolved' | 'own' | 'archived';
 /**
  * Why an item is done. 'no_action' = "no action needed": it behaves exactly like done (same state, leaves the inbox,
@@ -169,6 +172,16 @@ export interface InboxItem {
   wokeAt: string | null;
   /** Why the owner snoozed it, in his words: set while it is snoozed and after it wakes (null when he gave none). */
   snoozeWhy: string | null;
+  /** The reason bucket chosen (or inferred) when it was snoozed; shown while snoozed and after it wakes. */
+  snoozeBucket: SnoozeBucket | null;
+  /** Snoozed until someone else acts, with `snoozedUntil` as the fallback date. False once it is not snoozed. */
+  snoozeUntilActivity: boolean;
+  /** When the current/last snooze started (the Snoozed view shows ages from it). */
+  snoozedAt: string | null;
+  /** What ended the last snooze, when it was an until-activity one; null when it was a plain timed snooze. */
+  wakeCause: WakeCause | null;
+  /** Set on an item that came back because the fallback date arrived with no activity: the audit line's facts. */
+  snoozeNag: { bucket: SnoozeBucket | null; days: number } | null;
   /** The current LLM suggestion, or null while there is none (no key, not classified yet, or a todo). */
   suggestion: SuggestionDTO | null;
 }
@@ -251,7 +264,15 @@ export interface GithubSettingsDTO {
 /** What the assistant did for one command: enough to describe it and to undo it. */
 export type AssistantOutcome =
   | { type: 'add_todo'; id: string; title: string; due: string | null }
-  | { type: 'snooze'; id: string; until: string; why: string | null; undoActionId: number | null }
+  | {
+      type: 'snooze';
+      id: string;
+      until: string;
+      why: string | null;
+      bucket: SnoozeBucket | null;
+      untilActivity: boolean;
+      undoActionId: number | null;
+    }
   | { type: 'note'; id: number; scope: NoteScope; text: string; itemId: string | null }
   | { type: 'done'; id: string; undoActionId: number | null }
   | { type: 'dismissed'; id: string; undoActionId: number | null };
@@ -387,6 +408,8 @@ export interface SettingsDTO {
   manualReserve: number;
   backfillDays: number;
   theme: 'system' | 'light' | 'dark';
+  /** Days an "until activity" snooze waits before it comes back anyway, per reason bucket. */
+  snoozeDays: Record<SnoozeBucket, number>;
   demo: boolean;
   /** Commit of the running server (short SHA), or 'dev'. */
   version: string;

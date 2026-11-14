@@ -6,15 +6,19 @@ import type {
   InboxOrder,
   InboxView,
   ServerEvent,
+  SnoozeBucket,
   SuggestionDTO,
   TriageTarget,
 } from '../../../../shared/types';
 import type { InboxPage, SuggestionFilter } from '../../../../shared/api';
+import { DEFAULT_SNOOZE_DAYS, SNOOZE_BUCKETS, fallbackDate } from '../../../../shared/snooze';
 import { api } from '../api';
+import { settings } from './settings.svelte';
 import { thread } from './thread.svelte';
 import { toasts } from './toasts.svelte';
 import { usage } from '../usage';
 import { decisions } from '../decisions';
+import { formatSnoozeTime } from '../snooze';
 
 export interface InboxFilters {
   sourceId?: number;
@@ -89,8 +93,18 @@ function shiftCounts(counts: Counts, from: InboxItem, to: InboxItem, sign: 1 | -
 const sortKey = (i: InboxItem, order: InboxOrder): string =>
   order === 'arrived' ? (i.wokeAt ?? i.arrivedAt) : (i.wokeAt ?? i.comment.publishedAt);
 const rank = (i: InboxItem): number => (i.item.provider === 'todo' ? 0 : i.item.provider === 'github' ? 1 : 2);
-export function compareItems(a: InboxItem, b: InboxItem, order: InboxOrder = 'newest'): number {
-  if (order === 'source' && rank(a) !== rank(b)) return rank(a) - rank(b);
+/** In the Snoozed view the rank is the reason bucket (see listInbox): sections, with no bucket last. */
+const bucketRank = (i: InboxItem): number =>
+  i.snoozeBucket ? SNOOZE_BUCKETS.indexOf(i.snoozeBucket) : SNOOZE_BUCKETS.length;
+export function compareItems(
+  a: InboxItem,
+  b: InboxItem,
+  order: InboxOrder = 'newest',
+  view: InboxView = 'inbox',
+): number {
+  if (view === 'snoozed') {
+    if (bucketRank(a) !== bucketRank(b)) return bucketRank(a) - bucketRank(b);
+  } else if (order === 'source' && rank(a) !== rank(b)) return rank(a) - rank(b);
   const ka = sortKey(a, order);
   const kb = sortKey(b, order);
   if (ka !== kb) return (ka < kb ? 1 : -1) * (order === 'oldest' ? -1 : 1);
@@ -268,7 +282,7 @@ export class InboxStore {
     const last = page.nextCursor ? page.items[page.items.length - 1] : undefined;
     // Items beyond the fetched window are kept; everything inside it is replaced by the server's view.
     const tail = last
-      ? this.items.filter((i) => !freshIds.has(i.comment.id) && compareItems(i, last, this.order) > 0)
+      ? this.items.filter((i) => !freshIds.has(i.comment.id) && compareItems(i, last, this.order, this.view) > 0)
       : [];
     const prevIndex = this.selectedIndex;
     this.items = [...fresh, ...tail];
@@ -444,14 +458,33 @@ export class InboxStore {
    * Snooze (a Date) or unsnooze (null) `ids`. Only inbox-state comments can be snoozed, so other rows are
    * left alone. The row leaves the list like a triage would, and the action is undoable.
    */
-  snooze(until: Date | null, only?: string[], label?: string, why?: string): Promise<boolean> {
+  snooze(
+    until: Date | null,
+    only?: string[],
+    label?: string,
+    why?: string,
+    opts: { bucket?: SnoozeBucket | null; untilActivity?: boolean } = {},
+  ): Promise<boolean> {
     const wanted = new Set(this.targetIds(only));
     const iso = until ? until.toISOString() : null;
     const changes: Change[] = this.items
       .filter((i) => wanted.has(i.comment.id) && (iso ? i.comment.state === 'inbox' : i.snoozedUntil !== null))
       .map((before) => ({
         before,
-        after: { ...before, snoozedUntil: iso, ...(iso ? { snoozeWhy: why?.trim() || null } : {}) },
+        after: {
+          ...before,
+          snoozedUntil: iso,
+          snoozeUntilActivity: !!iso && opts.untilActivity === true,
+          ...(iso
+            ? {
+                snoozeWhy: why?.trim() || null,
+                snoozeBucket: opts.bucket ?? null,
+                snoozedAt: new Date().toISOString(),
+                wakeCause: null,
+                snoozeNag: null,
+              }
+            : {}),
+        },
       }));
     const ids = changes.map((c) => c.before.comment.id);
     this.#decide(iso ? 'snooze' : 'unsnooze', ids);
@@ -463,11 +496,41 @@ export class InboxStore {
       : n > 1
         ? `${n} items: unsnoozed`
         : 'Unsnoozed';
-    return this.#commit(changes, 'snooze', () => api.snooze(ids, iso, why?.trim() || undefined), { message });
+    return this.#commit(changes, 'snooze', () => api.snooze(ids, iso, why?.trim() || undefined, opts), { message });
   }
 
   unsnooze(only?: string[]): Promise<boolean> {
     return this.snooze(null, only);
+  }
+
+  /**
+   * "Still waiting": snooze the items that came back with no activity once more, until activity again, keeping each
+   * one's reason bucket and words. Items of different buckets get their own bucket's follow-up (one request per bucket).
+   */
+  async snoozeAgain(only?: string[]): Promise<boolean> {
+    const wanted = new Set(this.targetIds(only));
+    const nagging = this.items.filter((i) => wanted.has(i.comment.id) && i.snoozeNag);
+    const groups = new Map<string, InboxItem[]>();
+    for (const i of nagging) {
+      const k = `${i.snoozeNag!.bucket ?? ''}\n${i.snoozeWhy ?? ''}`;
+      groups.set(k, [...(groups.get(k) ?? []), i]);
+    }
+    let any = false;
+    for (const group of groups.values()) {
+      const first = group[0]!;
+      const bucket = first.snoozeNag!.bucket;
+      const at = fallbackDate(new Date(), bucket, settings.value?.snoozeDays ?? DEFAULT_SNOOZE_DAYS);
+      const when = formatSnoozeTime(at, new Date());
+      const ok = await this.snooze(
+        at,
+        group.map((i) => i.comment.id),
+        `activity (or ${when})`,
+        first.snoozeWhy ?? undefined,
+        { bucket, untilActivity: true },
+      );
+      any = any || ok;
+    }
+    return any;
   }
 
   async #commit(
@@ -576,7 +639,7 @@ export class InboxStore {
     for (const c of changes) {
       if (!present.has(c.before.comment.id) && viewIncludes(this.view, c[target])) next.push(c[target]);
     }
-    next.sort((x, y) => compareItems(x, y, this.order));
+    next.sort((x, y) => compareItems(x, y, this.order, this.view));
     this.items = next;
     this.total = Math.max(0, this.total + (next.length - oldItems.length));
 

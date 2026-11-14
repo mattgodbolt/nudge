@@ -3,7 +3,9 @@ import type { AssistantOutcome } from '../../shared/types.js';
 import type { AssistantAction, AppDeps } from '../contracts.js';
 import { LlmError } from '../contracts.js';
 import { costMicros } from '../classify/anthropic.js';
+import { fallbackDate } from '../../shared/snooze.js';
 import { recordNote } from './notes.js';
+import { bucketInBackground } from './snoozeAi.js';
 import { HttpError, asObject, bad, notFound, str } from './util.js';
 
 const TEXT_MAX = 4000;
@@ -114,15 +116,23 @@ export function registerTodoRoutes(app: FastifyInstance, deps: AppDeps): void {
       } else if (!selected || selected.state !== 'inbox') {
         skipped = true;
       } else if (a.type === 'snooze') {
-        const r = repo.snooze([selected.item.id], a.until, a.why);
+        // Waiting on activity with no date of its own: the bucket's follow-up from Settings.
+        const until = a.until ?? fallbackDate(new Date(), a.bucket, repo.getSettings().snoozeDays).toISOString();
+        const r = repo.snooze([selected.item.id], until, a.why, { bucket: a.bucket, untilActivity: a.untilActivity });
         changed.push(selected.item.id);
         outcomes.push({
           type: 'snooze',
           id: selected.item.id,
-          until: a.until,
+          until,
           why: a.why,
+          bucket: a.bucket,
+          untilActivity: a.untilActivity,
           undoActionId: r.actionId,
         });
+        // A reason in words with no bucket from the assistant: file it afterwards, never holding up the answer.
+        if (!a.bucket && a.why && r.actionId !== null) {
+          void bucketInBackground(deps, r.actionId, [selected.item.id], (m, e) => console.warn(m, e));
+        }
       } else if (a.type === 'dismiss') {
         const r = repo.triage([selected.item.id], 'done', 'no_action');
         changed.push(selected.item.id);

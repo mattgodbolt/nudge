@@ -94,3 +94,18 @@ describe('usage store', () => {
     expect(db.prepare('SELECT COUNT(*) AS n FROM item_events').get()).toEqual({ n: 1 });
   });
 });
+
+describe('today', () => {
+  it("reads one counter's value for today only, 0 when there is none", () => {
+    const db = openDb(':memory:');
+    let day = '2026-11-14T10:00:00.000Z';
+    const u = createUsage(db, () => new Date(day));
+    expect(u.today('snooze_ai.cost_micros')).toBe(0);
+    u.add({ 'snooze_ai.cost_micros': 1200, 'snooze_ai.call': 1 });
+    u.add({ 'snooze_ai.cost_micros': 300 });
+    expect(u.today('snooze_ai.cost_micros')).toBe(1500);
+    expect(u.today('snooze_ai.call')).toBe(1);
+    day = '2026-11-15T10:00:00.000Z';
+    expect(u.today('snooze_ai.cost_micros')).toBe(0);
+  });
+});

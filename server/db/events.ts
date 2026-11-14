@@ -11,6 +11,15 @@ import { ACTION_OF } from './suggestions.js';
  * Vocabulary:
  *  - state:        from_value/to_value are item states.
  *  - snooze:       from_value/to_value are the "until" ISO time, null meaning not snoozed (to_value null = unsnooze).
+ *                  A snooze by the owner (to_value set) carries meta.bucket ('waiting_on_them' | 'waiting_on_merge' |
+ *                  'in_flight' | 'lower_priority') and meta.untilActivity: true when they were chosen; absent means none /
+ *                  a plain timed snooze. `until` is then the fallback date. meta.bucketAuto: true is added later when the
+ *                  bucket was worked out by the model from a free-text why (see assignSnoozeBucket).
+ *                  The wake of an until-activity snooze (source auto, to_value null, meta.reason 'wake') carries
+ *                  meta.cause: 'activity' (someone else commented / closed / merged / replied; meta.trigger says which)
+ *                  or 'fallback' (the date arrived with no activity: the item is an audit nag), with meta.untilActivity and
+ *                  meta.bucket. An unsnooze by hand (source user, to_value null) carries meta.cause 'manual'. A plain timed
+ *                  snooze's wake has no cause.
  *  - label_add / label_remove: from when Nudge had user-defined labels (since removed, migration 015). Nothing writes
  *                  them any more; old rows stay as history. The label NAME is in to_value / from_value, id in meta.
  *  - reply:        a reply was sent (YouTube, via the app) or first seen (GitHub, by sync).

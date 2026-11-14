@@ -160,7 +160,7 @@ export function createSuggestions(db: Db, clock: () => Date = () => new Date()):
                 EXISTS (SELECT 1 FROM sources s WHERE s.kind = 'channel' AND s.is_own = 1 AND s.yt_id = v.channel_id)
                   AS own_channel,
                 s.state_key AS stored_key, s.thread AS stored_thread, s.thread_count AS stored_thread_count,
-                i.snooze_why, i.woke_at
+                i.snooze_why, i.woke_at, i.snooze_bucket, i.snooze_until_activity, i.snooze_wake_cause
            FROM items i
            LEFT JOIN comments c ON c.id = i.id
            LEFT JOIN videos v ON i.provider = 'youtube' AND v.id = i.container_key
@@ -186,7 +186,21 @@ export function createSuggestions(db: Db, clock: () => Date = () => new Date()):
       // Only an item that came back from a snooze: an old note on one that was never snoozed again is not news.
       const note =
         typeof r.snooze_why === 'string' && r.snooze_why && r.woke_at ? { snoozeNote: cap(r.snooze_why, 200) } : {};
-      const extra = { ...note, ...(ownerNotes.length ? { ownerNotes } : {}) };
+      // The bucket rides along with the note, or alone when he gave no words.
+      const bucket = r.woke_at && typeof r.snooze_bucket === 'string' ? r.snooze_bucket : null;
+      const waited = !!r.woke_at && r.snooze_until_activity === 1;
+      const snooze =
+        bucket || waited
+          ? {
+              snooze: {
+                bucket,
+                untilActivity: waited,
+                wokeBy:
+                  r.snooze_wake_cause === 'activity' || r.snooze_wake_cause === 'fallback' ? r.snooze_wake_cause : null,
+              },
+            }
+          : {};
+      const extra = { ...note, ...snooze, ...(ownerNotes.length ? { ownerNotes } : {}) };
       const base = {
         ...extra,
         id: r.id as string,

@@ -5,6 +5,7 @@ import type { SuggestionStore } from './db/suggestions.js';
 import type { NoteStore } from './db/notes.js';
 import type { ClientEventStore } from './db/events.js';
 import type {
+  SnoozeBucket,
   SnoozeResult,
   StatsDTO,
   GoogleAuthDTO,
@@ -131,6 +132,8 @@ export interface StoredSettings {
   manualReserve: number;
   backfillDays: number;
   theme: 'system' | 'light' | 'dark';
+  /** Days an "until activity" snooze waits for activity before coming back anyway, per bucket. */
+  snoozeDays: Record<SnoozeBucket, number>;
   /** GitHub: a read-only token (never sent to the browser) and the logins that are me. */
   github: { token: string | null; myAccounts: string[] };
   llm: { apiKey: string | null; model: string };
@@ -206,11 +209,18 @@ export interface GithubItemUpsert {
   /** Set alongside lastCommenterIsMe: who wrote it, for the "New comment from @login" chip. */
   lastCommenter?: string;
 }
+/** What else a snooze records: why it is parked and whether it waits on activity (until is then the fallback date). */
+export interface SnoozeOptions {
+  bucket?: SnoozeBucket | null;
+  untilActivity?: boolean;
+}
 export interface UpsertGithubResult {
   /** New arrivals that need attention. */
   added: string[];
   /** Done or resolved items that came back (new activity or reopened). */
   reopened: string[];
+  /** Items snoozed until activity that woke because of it (a comment from someone else, closed, merged). */
+  woken: string[];
   changed: string[];
 }
 export interface NewSource {
@@ -349,7 +359,9 @@ export interface Repo {
   addTodo(input: { title: string; notes: string; raw: string; dueAt: string | null }): string;
   /** Remove a todo outright (undoing its creation). Returns whether one was removed. */
   deleteTodo(id: string): boolean;
-  githubItemMeta(ids: string[]): Map<string, { state: CommentState; sourceState: string | null; comments: number }>;
+  githubItemMeta(
+    ids: string[],
+  ): Map<string, { state: CommentState; sourceState: string | null; comments: number; snoozedUntilActivity: boolean }>;
   upsertGithubItems(feedId: number, ups: GithubItemUpsert[]): UpsertGithubResult;
 
   listSources(): SourceDTO[];
@@ -390,8 +402,11 @@ export interface Repo {
   /** Record that every reply page of the thread was fetched successfully (now). */
   markRepliesFetched(threadId: string): void;
   /** Upserts thread + top comment + inline replies, applies state rules and auto-clear, in one transaction. */
-  upsertThread(t: YtThread): { newCommentIds: string[]; changedIds: string[] };
-  addReplies(threadId: string, replies: YtComment[]): { newCommentIds: string[]; changedIds: string[] };
+  upsertThread(t: YtThread): { newCommentIds: string[]; changedIds: string[]; wokenIds: string[] };
+  addReplies(
+    threadId: string,
+    replies: YtComment[],
+  ): { newCommentIds: string[]; changedIds: string[]; wokenIds: string[] };
   recomputeOwnership(ownIds: string[]): void;
 
   listInbox(q: InboxQuery): InboxPage;
@@ -404,13 +419,26 @@ export interface Repo {
    * Snooze (until = future ISO) or unsnooze (null) the given comments; only state 'inbox' comments are affected.
    * Snoozing clears wokeAt. triage(ids, 'inbox') also clears a snooze.
    */
-  snooze(ids: string[], until: string | null, why?: string | null): SnoozeResult;
+  snooze(ids: string[], until: string | null, why?: string | null, opts?: SnoozeOptions): SnoozeResult;
   undoSnooze(actionId: number): SnoozeResult;
   /** What the snooze-context lookup needs about GitHub items (other ids are skipped). */
   githubSnoozeContext(ids: string[]): GithubSnoozeItem[];
+  /**
+   * Store a bucket worked out after the fact (by the model) for an item whose snooze is still the one `actionId`
+   * made and still has no bucket. Records that it was assigned automatically on the snooze event. False when the
+   * snooze has changed since (undone, re-snoozed, woken) or already has a bucket.
+   */
+  /** The reason given for the item's current (or last) snooze, in the owner's words; null when none. */
+  snoozeReason(itemId: string): string | null;
+  /** The audit facts of an item that came back with no activity (bucket, days waited, reason); null when it did not. */
+  snoozeNag(itemId: string): { bucket: SnoozeBucket | null; days: number; why: string | null } | null;
+  assignSnoozeBucket(itemId: string, actionId: number, bucket: SnoozeBucket): boolean;
   /** Merge context into the snooze event an action wrote for an item; false if there is none. */
   mergeSnoozeMeta(itemId: string, actionId: number, patch: Record<string, unknown>): boolean;
-  /** Wake every snooze whose time has passed: snoozedUntil -> null, wokeAt = the old snoozedUntil. Returns woken ids. */
+  /**
+   * Wake every snooze whose time has passed: snoozedUntil -> null, wokeAt = the old snoozedUntil. Returns woken ids.
+   * One that was waiting on activity comes back marked as an audit nag (cause 'fallback').
+   */
   wakeSnoozed(): { woken: string[]; counts: Counts };
   markHandedOff(commentId: string, body: string): TriageResult;
   getDraft(commentId: string): DraftDTO | null;
@@ -578,7 +606,7 @@ export interface GithubSearchPage {
 /** One thing the assistant decided to do. `due`/`until` are ISO 8601 instants (null: none given). */
 export type AssistantAction =
   | { type: 'add_todo'; title: string; notes: string; due: string | null }
-  | { type: 'snooze'; until: string; why: string | null }
+  | { type: 'snooze'; until: string | null; why: string | null; bucket: SnoozeBucket | null; untilActivity: boolean }
   | { type: 'done' }
   /** "No action needed": done, recorded as a dismissal. */
   | { type: 'dismiss' }
@@ -619,6 +647,35 @@ export interface LlmClient {
     model: string,
   ): Promise<AssistantResult>;
 }
+/** The two small model calls around snoozing. Both receive untrusted text, and neither can change anything itself. */
+export interface SnoozeAi {
+  /** Which bucket (if any) does the owner's own reason fit? */
+  bucket(
+    input: { why: string; title: string | null; kind: string },
+    apiKey: string,
+    model: string,
+  ): Promise<{ bucket: SnoozeBucket | null; tokens: LlmTokens }>;
+  /** A short, polite follow-up comment the owner can copy. Never posted by Nudge. */
+  nudge(
+    input: {
+      title: string;
+      kind: 'pr' | 'issue';
+      bucket: SnoozeBucket | null;
+      days: number;
+      why: string | null;
+      comments: { author: string; isMatt: boolean; text: string }[];
+      body: string;
+    },
+    apiKey: string,
+    model: string,
+  ): Promise<{ text: string; tokens: LlmTokens }>;
+}
+export type LlmTokens = {
+  inputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  outputTokens: number;
+};
 export interface GithubClient {
   /** Who owns this token (GET /user) and the scopes it carries, for the Settings "Test" button. */
   whoami(token: string): Promise<{ login: string; scopes: string[] | null }>;
@@ -685,6 +742,8 @@ export interface AppDeps {
   githubClient?: GithubClient;
   /** The assistant (absent in tests that do not exercise it). */
   llm?: LlmClient;
+  /** The small model calls around snoozing: bucketing a free-text why, drafting a nudge (absent in tests that skip them). */
+  snoozeAi?: SnoozeAi;
   /** The suggestion worker, so a note can ask for items to be looked at again (absent in tests that do not need it). */
   suggest?: { notify(ids: string[]): void; kick(): void; status?(): SuggestStatusDTO };
   resolveApiKey(): { key: string | null; source: 'env' | 'settings' | 'file' | null };
@@ -693,6 +752,13 @@ export interface AppDeps {
   version?: string;
   /** Demo mode only: force new comments to appear. */
   demoTick?: () => void;
+  /** Demo mode only, for e2e: make a comment arrive on an item now, and move the clock the repository sees forward. */
+  demoControls?: {
+    /** A comment from someone else (or from `me`, the owner) arrives on a GitHub item or a YouTube comment's thread. */
+    comment(itemId: string, me: boolean): Promise<boolean>;
+    /** Run the snooze waker as if `days` days had passed (for snooze fallback dates), then carry on in real time. */
+    advanceDays(days: number): void;
+  };
   staticDir?: string;
   /** The id of the web build being served (see shared/build.ts); null when there is none. Sent in every ping. */
   buildId?: () => string | null;

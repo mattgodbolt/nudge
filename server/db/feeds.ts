@@ -9,6 +9,7 @@ import type {
 } from '../../shared/types.js';
 import type { Db } from './db.js';
 import type { Events } from './events.js';
+import { wakeOnActivity } from './wake.js';
 import type { FeedPollResult, FeedRow, GithubItemUpsert, NewFeed, UpsertGithubResult } from '../contracts.js';
 
 type Row = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -293,18 +294,22 @@ export function createFeedsRepo(deps: FeedsDeps) {
     return r ? { item: itemFromRow(r), state: r.state, occurredAt: r.occurred_at, bodyPlain: r.body_plain } : null;
   }
 
-  function githubItemMeta(
-    ids: string[],
-  ): Map<string, { state: CommentState; sourceState: string | null; comments: number }> {
-    const out = new Map<string, { state: CommentState; sourceState: string | null; comments: number }>();
+  type ItemMeta = { state: CommentState; sourceState: string | null; comments: number; snoozedUntilActivity: boolean };
+  function githubItemMeta(ids: string[]): Map<string, ItemMeta> {
+    const out = new Map<string, ItemMeta>();
     if (ids.length === 0) return out;
     for (const r of db
       .prepare(
-        `SELECT id, state, source_state, data FROM items WHERE provider = 'github'
+        `SELECT id, state, source_state, data, snooze_until_activity, snoozed_until FROM items WHERE provider = 'github'
            AND id IN (SELECT value FROM json_each(?))`,
       )
       .all(JSON.stringify(ids)) as Row[]) {
-      out.set(r.id, { state: r.state, sourceState: r.source_state, comments: parseData(r.data).comments ?? 0 });
+      out.set(r.id, {
+        state: r.state,
+        sourceState: r.source_state,
+        comments: parseData(r.data).comments ?? 0,
+        snoozedUntilActivity: r.snooze_until_activity === 1 && !!r.snoozed_until && r.snoozed_until > now(),
+      });
     }
     return out;
   }
@@ -340,10 +345,10 @@ export function createFeedsRepo(deps: FeedsDeps) {
           (r.kind === 'bots' && u.authorType === 'Bot') ||
           (r.kind === 'item' && r.value === u.id),
       );
-    const res: UpsertGithubResult = { added: [], reopened: [], changed: [] };
+    const res: UpsertGithubResult = { added: [], reopened: [], woken: [], changed: [] };
     const at = now();
     const get = db.prepare(
-      'SELECT state, state_source, source_state, snoozed_until, data, feed_id FROM items WHERE id = ?',
+      'SELECT state, state_source, source_state, snoozed_until, snooze_until_activity, data, feed_id FROM items WHERE id = ?',
     );
     const insert = db.prepare(
       `INSERT INTO items (id, provider, kind, feed_id, container_key, container_title, title, author, author_avatar_url,
@@ -358,7 +363,7 @@ export function createFeedsRepo(deps: FeedsDeps) {
     );
     const move = db.prepare(
       `UPDATE items SET state = @state, state_source = 'sync', state_changed_at = @at, reason = @reason,
-         woke_at = @woke, snoozed_until = NULL WHERE id = @id`,
+         woke_at = @woke, snoozed_until = NULL, snooze_until_activity = 0 WHERE id = @id`,
     );
     // Everything here comes from the remote service, so the source is 'sync' (a mute rule only blocks the reopen).
     const moveTo = (existing: Row, id: string, to: CommentState, reason: string | null, woke: string | null): void => {
@@ -392,13 +397,21 @@ export function createFeedsRepo(deps: FeedsDeps) {
         const existing = get.get(u.id) as Row | undefined;
         const prev = existing ? parseData(existing.data) : {};
         const grew = !!existing && u.comments > (prev.comments ?? 0);
+        // Parked until someone else acts: the poll below decides whether that just happened.
+        const waiting =
+          !!existing &&
+          existing.state === 'inbox' &&
+          existing.snooze_until_activity === 1 &&
+          !!existing.snoozed_until &&
+          existing.snoozed_until > at;
         const data = JSON.stringify({
           // The newest commenter is only known when the poller looked it up for this very growth.
           lastCommenter: u.lastCommenter ?? (grew ? undefined : prev.lastCommenter),
           // Comments after the last poll that saw the old count are the ones that bring a Done item back. Kept while
           // the item sits in the inbox so a second reply does not hide the first.
           checkedAt: at,
-          activitySince: grew && existing.state !== 'inbox' ? (prev.checkedAt ?? null) : (prev.activitySince ?? null),
+          activitySince:
+            grew && (existing.state !== 'inbox' || waiting) ? (prev.checkedAt ?? null) : (prev.activitySince ?? null),
           number: u.number,
           draft: u.draft,
           association: u.association,
@@ -461,6 +474,17 @@ export function createFeedsRepo(deps: FeedsDeps) {
           res.changed.push(u.id);
           continue;
         }
+        // Someone other than me commented (or it was closed or merged) while it was parked until activity: it comes
+        // back. A comment from me does not count. Also drops the "no activity" mark from an item that already came back.
+        const theirs = grew && u.lastCommenterIsMe !== true;
+        if (waiting && (theirs || (wasOpen && u.sourceState !== 'open'))) {
+          const closed = wasOpen && u.sourceState !== 'open';
+          const woken = wakeOnActivity(db, ev, [u.id], at, { trigger: closed ? u.sourceState : 'comment' }, closed);
+          if (woken.length > 0) res.woken.push(u.id);
+          res.changed.push(u.id);
+          continue;
+        }
+        if (theirs) wakeOnActivity(db, ev, [u.id], at);
         if (u.sourceState !== 'open' && state === 'inbox' && existing.state_source !== 'user') {
           moveTo(existing, u.id, 'resolved', null, null);
         } else if (u.sourceState === 'open' && state === 'resolved' && !wasOpen) {

@@ -232,6 +232,10 @@ describe('snooze bindings', () => {
     }
     expect(all.find((b) => b.keys.includes('b'))?.id).toBe('snooze.open');
   });
+  it('B snoozes again (only for an item that came back with no activity), and does not disturb b', () => {
+    expect(all.filter((b) => b.keys.includes('B')).map((b) => b.id)).toEqual(['snooze.again']);
+    expect(all.filter((b) => b.keys.includes('b')).map((b) => b.id)).toEqual(['snooze.open']);
+  });
   it('l and g l are free now that labels are gone', () => {
     for (const k of ['l', 'g l']) expect(all.filter((b) => b.keys.includes(k))).toEqual([]);
   });

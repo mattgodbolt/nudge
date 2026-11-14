@@ -1,3 +1,4 @@
+import { BUCKETS } from '../../../shared/snooze';
 import type { AssistantOutcome } from '../../../shared/types';
 
 /** The user's local time with its UTC offset (2026-11-08T13:05:00-06:00), so "Friday" resolves in their time zone. */
@@ -25,7 +26,12 @@ export function whenLabel(iso: string): string {
 /** One line for the toast. */
 export function describeOutcome(o: AssistantOutcome): string {
   if (o.type === 'add_todo') return o.due ? `Todo: ${o.title} (${whenLabel(o.due)})` : `Todo: ${o.title}`;
-  if (o.type === 'snooze') return `Snoozed until ${whenLabel(o.until)}${o.why ? `: ${o.why}` : ''}`;
+  if (o.type === 'snooze') {
+    const wait = o.untilActivity
+      ? `Snoozed until activity (or ${whenLabel(o.until)})`
+      : `Snoozed until ${whenLabel(o.until)}`;
+    return `${wait}${o.bucket ? ` · ${BUCKETS[o.bucket].label.toLowerCase()}` : ''}${o.why ? `: ${o.why}` : ''}`;
+  }
   if (o.type === 'note')
     return o.scope === 'standing' ? `Noted as a standing preference: ${o.text}` : `Noted: ${o.text}`;
   if (o.type === 'dismissed') return 'Marked no action needed';

@@ -8,6 +8,7 @@ import type {
   InboxItem,
   PollTier,
   PushPrefs,
+  SnoozeBucket,
   SnoozeResult,
   SourceDTO,
   StatsDTO,
@@ -19,11 +20,13 @@ import type {
 } from '../../shared/types.js';
 import type { DraftDTO, InboxPage, InboxQuery } from '../../shared/api.js';
 import { permalink } from '../../shared/youtube-urls.js';
+import { DEFAULT_SNOOZE_DAYS, SNOOZE_BUCKETS, WAKE_CAUSES, isSnoozeBucket, wholeDays } from '../../shared/snooze.js';
 import type {
   GithubSnoozeItem,
   GoogleAccountRow,
   NewSource,
   PushSubscriptionRow,
+  SnoozeOptions,
   Repo,
   SourceRow,
   StoredSettings,
@@ -35,6 +38,7 @@ import type {
 import { openDb, type Db } from './db.js';
 import { createClientEvents, createEvents } from './events.js';
 import { createFeedsRepo, parseData } from './feeds.js';
+import { wakeOnActivity } from './wake.js';
 import { createTodosRepo } from './todos.js';
 import { createUsage } from './usage.js';
 import { createNotes } from './notes.js';
@@ -59,6 +63,7 @@ const DEFAULT_SETTINGS: StoredSettings = {
   manualReserve: 1000,
   backfillDays: 14,
   theme: 'system',
+  snoozeDays: { ...DEFAULT_SNOOZE_DAYS },
   github: { token: null, myAccounts: [] },
   llm: { apiKey: null, model: 'claude-haiku-5-5' },
 };
@@ -83,6 +88,24 @@ function iso(s: string): string {
 /** A dismissal's marker, only while the item is actually done (the column is cleared on triage, but be safe). */
 function doneReasonOf(r: Row): { doneReason?: DoneReason } {
   return r.state === 'done' && r.done_reason === 'no_action' ? { doneReason: 'no_action' } : {};
+}
+
+/** The snooze facts of an item row (needs i.snooze_bucket, snooze_until_activity, snoozed_at, snooze_wake_cause). */
+function snoozeFields(
+  r: Row,
+  at: string,
+): Pick<InboxItem, 'snoozeBucket' | 'snoozeUntilActivity' | 'snoozedAt' | 'wakeCause' | 'snoozeNag'> {
+  const snoozed = !!r.snoozed_until && r.snoozed_until > at;
+  const shown = snoozed || !!r.woke_at;
+  const bucket: SnoozeBucket | null = isSnoozeBucket(r.snooze_bucket) ? r.snooze_bucket : null;
+  const nag = !snoozed && r.state === 'inbox' && r.snooze_wake_cause === 'fallback';
+  return {
+    snoozeBucket: shown ? bucket : null,
+    snoozeUntilActivity: snoozed && r.snooze_until_activity === 1,
+    snoozedAt: shown ? (r.snoozed_at ?? null) : null,
+    wakeCause: !snoozed && WAKE_CAUSES.includes(r.snooze_wake_cause) ? r.snooze_wake_cause : null,
+    snoozeNag: nag ? { bucket, days: wholeDays(r.snoozed_at ?? null, r.woke_at ?? null) } : null,
+  };
 }
 
 function commentDto(r: Row): CommentDTO {
@@ -131,6 +154,8 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
         }
       }
     }
+    // Stored days may predate a bucket; fill from the defaults so every bucket always has a number.
+    out.snoozeDays = { ...DEFAULT_SNOOZE_DAYS, ...(out.snoozeDays as object) };
     return out as StoredSettings;
   }
   const putSetting = db.prepare(
@@ -786,7 +811,33 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
     return { own: ownIds(), baseline: (v?.baseline_at as string | null) ?? null, at: now() };
   }
 
-  function upsertThread(t: YtThread): { newCommentIds: string[]; changedIds: string[] } {
+  /**
+   * Wake items on a thread that are snoozed until activity, because comments from someone else just arrived on it.
+   * The owner's own replies and comments older than the snooze (a backfill) do not count.
+   */
+  function wakeThreadOnReplies(threadId: string, newIds: string[]): string[] {
+    if (newIds.length === 0) return [];
+    const newest = db
+      .prepare(
+        `SELECT MAX(c.published_at) AS m FROM comments c JOIN items i ON i.id = c.id
+          WHERE c.id IN (SELECT value FROM json_each(?)) AND c.is_own = 0 AND i.state NOT IN ('own', 'archived')`,
+      )
+      .get(JSON.stringify(newIds)) as Row;
+    if (!newest.m) return [];
+    const at = now();
+    const waiting = (
+      db
+        .prepare(
+          `SELECT i.id FROM items i JOIN comments c ON c.id = i.id
+            WHERE c.thread_id = ? AND i.snooze_until_activity = 1 AND i.snoozed_until > ? AND i.snoozed_at < ?
+              AND i.id NOT IN (SELECT value FROM json_each(?))`,
+        )
+        .all(threadId, at, newest.m, JSON.stringify(newIds)) as Row[]
+    ).map((r) => r.id as string);
+    return wakeOnActivity(db, ev, waiting, at, { trigger: 'reply' });
+  }
+
+  function upsertThread(t: YtThread): { newCommentIds: string[]; changedIds: string[]; wokenIds: string[] } {
     return db.transaction(() => {
       ensureVideoStub(t.videoId);
       const ctx = ctxFor(t.videoId);
@@ -817,12 +868,16 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
       note(t.topComment.id, upsertComment(t.topComment, t.id, null, t.videoId, ctx));
       for (const r of t.replies) note(r.id, upsertComment(r, t.id, t.topComment.id, t.videoId, ctx));
       refreshThreadStats(t.id);
+      const wokenIds = wakeThreadOnReplies(t.id, newIds);
       for (const id of applyOwnReplies(t.id)) if (!newIds.includes(id) && !changed.includes(id)) changed.push(id);
-      return { newCommentIds: newIds, changedIds: changed };
+      return { newCommentIds: newIds, changedIds: changed, wokenIds };
     })();
   }
 
-  function addReplies(threadId: string, replies: YtComment[]): { newCommentIds: string[]; changedIds: string[] } {
+  function addReplies(
+    threadId: string,
+    replies: YtComment[],
+  ): { newCommentIds: string[]; changedIds: string[]; wokenIds: string[] } {
     return db.transaction(() => {
       const th = db.prepare('SELECT video_id, top_comment_id FROM threads WHERE id = ?').get(threadId) as
         Row | undefined;
@@ -836,8 +891,9 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
         else if (res === 'changed') changed.push(r.id);
       }
       refreshThreadStats(threadId);
+      const wokenIds = wakeThreadOnReplies(threadId, newIds);
       for (const id of applyOwnReplies(threadId)) if (!newIds.includes(id) && !changed.includes(id)) changed.push(id);
-      return { newCommentIds: newIds, changedIds: changed };
+      return { newCommentIds: newIds, changedIds: changed, wokenIds };
     })();
   }
 
@@ -921,7 +977,8 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
       t.total_reply_count AS t_total,
       EXISTS (SELECT 1 FROM drafts d WHERE d.item_id = i.id AND d.status = 'draft') AS has_draft,
       sg.verdict AS sg_verdict, sg.confidence AS sg_confidence, sg.reason AS sg_reason,
-      sg.injection_attempt AS sg_injection, sg.turn AS sg_turn, sg.next_step AS sg_next_step, i.snooze_why
+      sg.injection_attempt AS sg_injection, sg.turn AS sg_turn, sg.next_step AS sg_next_step, i.snooze_why,
+      i.snooze_bucket, i.snooze_until_activity, i.snoozed_at, i.snooze_wake_cause
     FROM items i
     LEFT JOIN suggestions sg ON sg.item_id = i.id
     LEFT JOIN comments c ON c.id = i.id
@@ -934,6 +991,12 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
   const SORT_VALUE = 'COALESCE(i.woke_at, i.occurred_at)';
   const ARRIVED_VALUE = 'COALESCE(i.woke_at, i.first_seen_at)';
   const RANK = "(CASE i.provider WHEN 'todo' THEN 0 WHEN 'github' THEN 1 ELSE 2 END)";
+  /** The Snoozed view lists by reason bucket, in the order of SNOOZE_BUCKETS, with no bucket last. */
+  const BUCKET_RANK = `(CASE i.snooze_bucket ${SNOOZE_BUCKETS.map((b, n) => `WHEN '${b}' THEN ${n}`).join(' ')} ELSE ${SNOOZE_BUCKETS.length} END)`;
+  const bucketRank = (b: unknown): number => {
+    const n = (SNOOZE_BUCKETS as readonly unknown[]).indexOf(b);
+    return n < 0 ? SNOOZE_BUCKETS.length : n;
+  };
 
   function inboxItem(r: Row, at: string): InboxItem {
     const item = feeds.itemFromRow(r);
@@ -975,6 +1038,7 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
       wokeAt: r.woke_at ?? null,
       // Shown while snoozed and after it wakes; once the item has never been snoozed there is nothing to show.
       snoozeWhy: r.snooze_why && (r.woke_at || (r.snoozed_until && r.snoozed_until > at)) ? r.snooze_why : null,
+      ...snoozeFields(r, at),
       suggestion: r.sg_verdict
         ? suggestionDto({
             verdict: r.sg_verdict,
@@ -1062,7 +1126,10 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
     const key = order === 'arrived' ? ARRIVED_VALUE : SORT_VALUE;
     const dir = order === 'oldest' ? 'ASC' : 'DESC';
     const cmp = order === 'oldest' ? '>' : '<';
-    const ranked = order === 'source';
+    // The Snoozed view is sectioned by reason bucket, whatever the sort: the rank is the bucket there.
+    const grouped = q.view === 'snoozed';
+    const ranked = order === 'source' || grouped;
+    const RANKSQL = grouped ? BUCKET_RANK : RANK;
     const pageWhere = [base];
     if (q.cursor) {
       const parts = q.cursor.split('|');
@@ -1075,7 +1142,7 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
         const after = `(${key} ${cmp} @cKey OR (${key} = @cKey AND i.id > @cId))`;
         if (ranked) {
           args.cRank = Number(parts[0]);
-          pageWhere.push(`(${RANK} > @cRank OR (${RANK} = @cRank AND ${after}))`);
+          pageWhere.push(`(${RANKSQL} > @cRank OR (${RANKSQL} = @cRank AND ${after}))`);
         } else {
           pageWhere.push(after);
         }
@@ -1085,7 +1152,7 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
     const rows = db
       .prepare(
         `${INBOX_SELECT} WHERE ${pageWhere.join(' AND ')}
-         ORDER BY ${ranked ? `${RANK} ASC, ` : ''}${key} ${dir}, i.id ASC LIMIT @lim`,
+         ORDER BY ${ranked ? `${RANKSQL} ASC, ` : ''}${key} ${dir}, i.id ASC LIMIT @lim`,
       )
       .all({ ...args, lim: limit + 1 }) as Row[];
     const more = rows.length > limit;
@@ -1095,7 +1162,7 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
       items: pageRows.map((r) => inboxItem(r, at)),
       nextCursor:
         more && last
-          ? `${ranked ? `${last.provider === 'todo' ? 0 : last.provider === 'github' ? 1 : 2}|` : ''}${
+          ? `${ranked ? `${grouped ? bucketRank(last.snooze_bucket) : last.provider === 'todo' ? 0 : last.provider === 'github' ? 1 : 2}|` : ''}${
               order === 'arrived' ? (last.woke_at ?? last.arrived_at) : (last.woke_at ?? last.occurred_at)
             }|${last.item_id}`
           : null,
@@ -1205,7 +1272,9 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
       const stored: { commentId: string; from: CommentState; fromSource: string; fromReason: string | null }[] = [];
       const woken: { id: string; from: string }[] = [];
       // Moving something back to the inbox must show it, so it also loses any snooze (even if already in 'inbox').
-      const unsnooze = db.prepare('UPDATE items SET snoozed_until = NULL WHERE id = ? AND snoozed_until IS NOT NULL');
+      const unsnooze = db.prepare(
+        'UPDATE items SET snoozed_until = NULL, snooze_until_activity = 0 WHERE id = ? AND snoozed_until IS NOT NULL',
+      );
       for (const id of new Set(ids)) {
         const r = get.get(id) as Row | undefined;
         if (!r || r.state === 'own') continue;
@@ -1247,7 +1316,7 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
           from: w.from,
           to: null,
           source: 'user',
-          meta: { actionId, via: 'triage' },
+          meta: { actionId, via: 'triage', cause: 'manual' },
         });
       }
       return { actionId, changes, counts: counts() };
@@ -1300,17 +1369,31 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
   }
 
   /* ---------------- snooze ---------------- */
-  function snooze(ids: string[], until: string | null, why: string | null = null): SnoozeResult {
+  function snooze(
+    ids: string[],
+    until: string | null,
+    why: string | null = null,
+    opts: SnoozeOptions = {},
+  ): SnoozeResult {
     return db.transaction(() => {
       const at = now();
       const target = until === null ? null : iso(until);
-      const get = db.prepare('SELECT state, snoozed_until, woke_at, snooze_why FROM items WHERE id = ?');
-      // Snoozing again replaces the old reason (or clears it when none is given); unsnoozing leaves it alone.
-      const set =
-        target === null
-          ? db.prepare('UPDATE items SET snoozed_until = ?, woke_at = ? WHERE id = ?')
-          : db.prepare('UPDATE items SET snoozed_until = ?, woke_at = ?, snooze_why = ? WHERE id = ?');
+      const get = db.prepare(
+        `SELECT state, snoozed_until, woke_at, snooze_why, snooze_bucket, snooze_until_activity, snoozed_at,
+                snooze_wake_cause FROM items WHERE id = ?`,
+      );
+      // Snoozing again replaces the old reason, bucket and mode (or clears them when none is given); unsnoozing leaves
+      // the reason and bucket alone (the item still shows why it was parked) but ends any wait for activity.
+      const park = db.prepare(
+        `UPDATE items SET snoozed_until = ?, woke_at = NULL, snooze_why = ?, snooze_bucket = ?,
+           snooze_until_activity = ?, snoozed_at = ?, snooze_wake_cause = NULL WHERE id = ?`,
+      );
+      const unpark = db.prepare(
+        'UPDATE items SET snoozed_until = NULL, woke_at = ?, snooze_until_activity = 0 WHERE id = ?',
+      );
       const newWhy = why?.trim() ? why.trim() : null;
+      const newBucket = opts.bucket ?? null;
+      const untilActivity = target !== null && opts.untilActivity === true;
       const changes: SnoozeResult['changes'] = [];
       const stored: {
         commentId: string;
@@ -1318,6 +1401,10 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
         fromWoke: string | null;
         to: string | null;
         fromWhy: string | null;
+        fromBucket: SnoozeBucket | null;
+        fromUntilActivity: boolean;
+        fromSnoozedAt: string | null;
+        fromWakeCause: string | null;
       }[] = [];
       for (const id of new Set(ids)) {
         const r = get.get(id) as Row | undefined;
@@ -1325,11 +1412,28 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
         // A past value is an already-ended snooze the waker has not swept yet: effectively not snoozed.
         const from: string | null = r.snoozed_until && r.snoozed_until > at ? r.snoozed_until : null;
         const fromWoke: string | null = r.woke_at ?? null;
-        if (target === null ? from === null : from === target && fromWoke === null) continue;
-        if (target === null) set.run(target, fromWoke, id);
-        else set.run(target, null, newWhy, id);
+        const same =
+          target === null
+            ? from === null
+            : from === target &&
+              fromWoke === null &&
+              (r.snooze_bucket ?? null) === newBucket &&
+              (r.snooze_until_activity === 1) === untilActivity;
+        if (same) continue;
+        if (target === null) unpark.run(fromWoke, id);
+        else park.run(target, newWhy, newBucket, untilActivity ? 1 : 0, at, id);
         changes.push({ commentId: id, from, to: target });
-        stored.push({ commentId: id, from, fromWoke, to: target, fromWhy: r.snooze_why ?? null });
+        stored.push({
+          commentId: id,
+          from,
+          fromWoke,
+          to: target,
+          fromWhy: r.snooze_why ?? null,
+          fromBucket: r.snooze_bucket ?? null,
+          fromUntilActivity: r.snooze_until_activity === 1,
+          fromSnoozedAt: r.snoozed_at ?? null,
+          fromWakeCause: r.snooze_wake_cause ?? null,
+        });
       }
       if (changes.length === 0) return { actionId: null, changes, counts: counts() };
       const res = db
@@ -1344,10 +1448,57 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
           from: c.from,
           to: c.to,
           source: 'user',
-          meta: { actionId, ...(newWhy && c.to !== null ? { why: newWhy } : {}) },
+          meta: {
+            actionId,
+            ...(newWhy && c.to !== null ? { why: newWhy } : {}),
+            // Absent means none / not waiting, so ordinary snoozes keep their old shape.
+            ...(c.to !== null
+              ? { ...(newBucket ? { bucket: newBucket } : {}), ...(untilActivity ? { untilActivity } : {}) }
+              : { cause: 'manual' }),
+          },
         });
       }
       return { actionId, changes, counts: counts() };
+    })();
+  }
+
+  function snoozeReason(itemId: string): string | null {
+    const r = db.prepare('SELECT snooze_why FROM items WHERE id = ?').get(itemId) as Row | undefined;
+    return r?.snooze_why ?? null;
+  }
+
+  function snoozeNag(itemId: string): { bucket: SnoozeBucket | null; days: number; why: string | null } | null {
+    const r = db
+      .prepare(
+        `SELECT state, snoozed_until, woke_at, snoozed_at, snooze_bucket, snooze_why, snooze_wake_cause
+           FROM items WHERE id = ?`,
+      )
+      .get(itemId) as Row | undefined;
+    if (!r || r.state !== 'inbox' || r.snoozed_until || r.snooze_wake_cause !== 'fallback') return null;
+    return {
+      bucket: isSnoozeBucket(r.snooze_bucket) ? r.snooze_bucket : null,
+      days: wholeDays(r.snoozed_at ?? null, r.woke_at ?? null),
+      why: r.snooze_why ?? null,
+    };
+  }
+
+  function assignSnoozeBucket(itemId: string, actionId: number, bucket: SnoozeBucket): boolean {
+    return db.transaction(() => {
+      const ev0 = db
+        .prepare(
+          "SELECT id, to_value FROM item_events WHERE item_id = ? AND kind = 'snooze' AND source = 'user' AND json_extract(meta, '$.actionId') = ? ORDER BY id LIMIT 1",
+        )
+        .get(itemId, actionId) as Row | undefined;
+      if (!ev0?.to_value) return false;
+      // Only the snooze that asked for it, still in force and still without a reason bucket.
+      const r = db
+        .prepare(
+          "UPDATE items SET snooze_bucket = ? WHERE id = ? AND snooze_bucket IS NULL AND snoozed_until = ? AND state = 'inbox'",
+        )
+        .run(bucket, itemId, ev0.to_value);
+      if (r.changes === 0) return false;
+      ev.mergeSnoozeMeta(itemId, actionId, { bucket, bucketAuto: true });
+      return true;
     })();
   }
 
@@ -1382,17 +1533,36 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
         fromWoke: string | null;
         to: string | null;
         fromWhy?: string | null;
+        fromBucket?: SnoozeBucket | null;
+        fromUntilActivity?: boolean;
+        fromSnoozedAt?: string | null;
+        fromWakeCause?: string | null;
       }[];
-      // Only restore comments still in the state this action left them in. Undoing a snooze brings back the reason
-      // the item had before it; undoing an unsnooze leaves the reason as it is.
+      // Only restore comments still in the state this action left them in. Undoing a snooze brings back the reason,
+      // bucket and mode the item had before it (and the audit mark, if it had one); undoing an unsnooze leaves the
+      // reason and bucket as they are, and puts the wait for activity back.
       const restore = db.prepare(
-        `UPDATE items SET snoozed_until = ?, woke_at = ?, snooze_why = CASE WHEN ? = 1 THEN ? ELSE snooze_why END
-         WHERE id = ? AND state = 'inbox' AND snoozed_until IS ?`,
+        `UPDATE items SET snoozed_until = ?, woke_at = ?,
+           snooze_why = CASE WHEN @park = 1 THEN @why ELSE snooze_why END,
+           snooze_bucket = CASE WHEN @park = 1 THEN @bucket ELSE snooze_bucket END,
+           snooze_until_activity = @ua, snoozed_at = CASE WHEN @park = 1 THEN @sat ELSE snoozed_at END,
+           snooze_wake_cause = @cause
+         WHERE id = @id AND state = 'inbox' AND snoozed_until IS @to`,
       );
       const changes: SnoozeResult['changes'] = [];
       const at = now();
       for (const c of stored) {
-        if (restore.run(c.from, c.fromWoke, c.to !== null ? 1 : 0, c.fromWhy ?? null, c.commentId, c.to).changes) {
+        const res = restore.run(c.from, c.fromWoke, {
+          park: c.to !== null ? 1 : 0,
+          why: c.fromWhy ?? null,
+          bucket: c.fromBucket ?? null,
+          ua: c.fromUntilActivity ? 1 : 0,
+          sat: c.fromSnoozedAt ?? null,
+          cause: c.fromWakeCause ?? null,
+          id: c.commentId,
+          to: c.to,
+        });
+        if (res.changes) {
           changes.push({ commentId: c.commentId, from: c.to, to: c.from });
           ev.record({
             itemId: c.commentId,
@@ -1414,12 +1584,17 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
     return db.transaction(() => {
       const at = now();
       const due = db
-        .prepare('SELECT id, state, snoozed_until FROM items WHERE snoozed_until IS NOT NULL AND snoozed_until <= ?')
+        .prepare(
+          `SELECT id, state, snoozed_until, snooze_until_activity, snooze_bucket FROM items
+            WHERE snoozed_until IS NOT NULL AND snoozed_until <= ?`,
+        )
         .all(at) as Row[];
       if (due.length === 0) return { woken: [], counts: counts() };
       // Only inbox items are recorded: waking anything else changes nothing the user sees.
       for (const r of due) {
         if (r.state === 'inbox') {
+          // An item that was waiting on activity and reached its fallback date came back with none: the audit nag.
+          const waiting = r.snooze_until_activity === 1;
           ev.record({
             itemId: r.id,
             at,
@@ -1427,12 +1602,18 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
             from: r.snoozed_until,
             to: null,
             source: 'auto',
-            meta: { reason: 'wake' },
+            meta: {
+              reason: 'wake',
+              ...(waiting ? { untilActivity: true, cause: 'fallback', bucket: r.snooze_bucket ?? null } : {}),
+            },
           });
         }
       }
       db.prepare(
-        'UPDATE items SET woke_at = snoozed_until, snoozed_until = NULL WHERE snoozed_until IS NOT NULL AND snoozed_until <= ?',
+        `UPDATE items SET woke_at = snoozed_until,
+           snooze_wake_cause = CASE WHEN snooze_until_activity = 1 THEN 'fallback' ELSE snooze_wake_cause END,
+           snoozed_until = NULL
+         WHERE snoozed_until IS NOT NULL AND snoozed_until <= ?`,
       ).run(at);
       // Only inbox comments change what the user sees; others are tidied silently.
       return { woken: due.filter((r) => r.state === 'inbox').map((r) => r.id as string), counts: counts() };
@@ -1750,6 +1931,9 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
     undo,
     snooze,
     undoSnooze,
+    snoozeReason,
+    snoozeNag,
+    assignSnoozeBucket,
     wakeSnoozed,
     markHandedOff,
     getDraft,

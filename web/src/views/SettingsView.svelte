@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { BUCKETS, SNOOZE_BUCKETS, SNOOZE_DAYS_MAX, SNOOZE_DAYS_MIN, type SnoozeBucket } from '../../../shared/snooze';
   import { BUILD_VERSION } from '../lib/version';
   import { api } from '../lib/api';
   import { settings } from '../lib/stores/settings.svelte';
@@ -173,6 +174,17 @@
   ) {
     const n = Math.max(0, Math.floor(Number(e.currentTarget.value)));
     if (Number.isFinite(n) && s && n !== s[field]) void settings.save({ [field]: n });
+  }
+
+  /** One bucket's follow-up days: whole days, kept within what the server accepts. */
+  function bucketDays(e: Event & { currentTarget: HTMLInputElement }, bucket: SnoozeBucket) {
+    const n = Math.min(SNOOZE_DAYS_MAX, Math.max(SNOOZE_DAYS_MIN, Math.round(Number(e.currentTarget.value))));
+    if (!Number.isFinite(n)) {
+      e.currentTarget.value = String(s?.snoozeDays[bucket] ?? '');
+      return;
+    }
+    e.currentTarget.value = String(n);
+    if (s && n !== s.snoozeDays[bucket]) void settings.save({ snoozeDays: { [bucket]: n } });
   }
 
   // Result of the OAuth round trip: toast it once, then drop the query so a reload doesn't repeat it.
@@ -446,6 +458,30 @@
               : ''}.{/if}
         </p>
       {/if}
+    </section>
+
+    <section class="panel sec" data-testid="settings-snooze">
+      <h2>Snoozing until activity</h2>
+      <p class="meta muted">
+        An item snoozed "until activity" comes back as soon as someone else comments, merges or replies. If nothing
+        happens it comes back anyway after this many days, marked as still waiting.
+      </p>
+      {#each SNOOZE_BUCKETS as b (b)}
+        <label class="field"
+          ><span>{BUCKETS[b].label} <small class="faint">days</small></span>
+          <input
+            class="input num"
+            type="number"
+            inputmode="numeric"
+            min={SNOOZE_DAYS_MIN}
+            max={SNOOZE_DAYS_MAX}
+            step="1"
+            value={s.snoozeDays[b]}
+            data-testid="snooze-days-{b}"
+            onchange={(e) => bucketDays(e, b)}
+          />
+        </label>
+      {/each}
     </section>
 
     <section class="panel sec" data-testid="settings-llm">

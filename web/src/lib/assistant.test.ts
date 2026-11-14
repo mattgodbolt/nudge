@@ -19,7 +19,15 @@ describe('describeOutcome', () => {
       /^Todo: X \(.+\)$/,
     );
     expect(
-      describeOutcome({ type: 'snooze', id: 'a', until: '2030-01-02T09:00:00Z', why: null, undoActionId: 1 }),
+      describeOutcome({
+        type: 'snooze',
+        id: 'a',
+        until: '2030-01-02T09:00:00Z',
+        why: null,
+        bucket: null,
+        untilActivity: false,
+        undoActionId: 1,
+      }),
     ).toMatch(/^Snoozed until /);
     expect(
       describeOutcome({
@@ -27,9 +35,22 @@ describe('describeOutcome', () => {
         id: 'a',
         until: '2030-01-02T09:00:00Z',
         why: 'review the fix',
+        bucket: null,
+        untilActivity: false,
         undoActionId: 1,
       }),
     ).toMatch(/: review the fix$/);
+    expect(
+      describeOutcome({
+        type: 'snooze',
+        id: 'a',
+        until: '2030-01-02T09:00:00Z',
+        why: null,
+        bucket: 'waiting_on_them',
+        untilActivity: true,
+        undoActionId: 1,
+      }),
+    ).toMatch(/^Snoozed until activity \(or .+\) · waiting on them$/);
     expect(describeOutcome({ type: 'note', id: 3, scope: 'standing', text: 'Bob matters', itemId: null })).toBe(
       'Noted as a standing preference: Bob matters',
     );

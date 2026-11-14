@@ -10,7 +10,8 @@ import { loadConfig, migrateLegacyDb, resolveApiKey, resolveGoogleClient } from 
 import { openRepo } from './db/repo.js';
 import { createFakeClient } from './demo/fake-client.js';
 import { createFakeGithubClient, DEMO_GITHUB_OWNER } from './demo/github.js';
-import { createFakeLlmClient } from './demo/llm.js';
+import { createFakeLlmClient, createFakeSnoozeAi } from './demo/llm.js';
+import { createSnoozeAi } from './classify/snooze.js';
 import { createDemoClassifier, demoCapUsd } from './demo/suggest.js';
 import { createSuggestWorker } from './suggest/worker.js';
 import { createLlmClient } from './providers/anthropic/client.js';
@@ -54,7 +55,9 @@ async function main(): Promise<void> {
   }
   for (const w of exposure.warnings) console.warn(w);
   if (migrateLegacyDb(config.dbPath)) console.log('Moved data/youtubey.db to data/nudge.db');
-  const repo = openRepo(config.dbPath);
+  // Demo servers can be told that days have passed, for one sweep (e2e checks what a snooze does at its fallback date).
+  let demoSkewMs = 0;
+  const repo = openRepo(config.dbPath, config.demo ? () => new Date(Date.now() + demoSkewMs) : undefined);
   if (config.demo) {
     const foreign = nonDemoSources(repo);
     if (foreign.length) {
@@ -122,6 +125,7 @@ async function main(): Promise<void> {
   }
 
   const llm = config.demo ? createFakeLlmClient() : createLlmClient();
+  const snoozeAi = config.demo ? createFakeSnoozeAi() : createSnoozeAi();
 
   // Advisory suggestions on inbox items. Demo mode only runs them (with a fake, offline classifier) when asked to, so
   // the other demo servers and tests are untouched. Off entirely without an API key.
@@ -208,11 +212,37 @@ async function main(): Promise<void> {
     github,
     githubClient,
     llm,
+    snoozeAi,
     suggest: suggestWorker,
     resolveApiKey: resolveKey,
     demo: config.demo,
     version: resolveVersion(),
     demoTick,
+    demoControls:
+      config.demo && world
+        ? {
+            async comment(itemId, me) {
+              if (itemId.startsWith('gh:')) {
+                if (!fakeGithub?.comment(itemId, me ? 'demo-owner' : 'alice-maintainer')) return false;
+                await github.pollNow();
+                return true;
+              }
+              const video = world.reply(itemId, new Date());
+              if (!video) return false;
+              await engine.run({ trigger: 'manual', scope: 'video', id: video });
+              return true;
+            },
+            advanceDays(days) {
+              // One sweep sees the later date, then the clock is real again (new snoozes are made against real time).
+              demoSkewMs = days * 86_400_000;
+              try {
+                snoozeWaker.sweep();
+              } finally {
+                demoSkewMs = 0;
+              }
+            },
+          }
+        : undefined,
     staticDir,
     // A demo server may claim a different build (NUDGE_DEMO_BUILD_ID) so the "new version" prompt can be shown in e2e.
     buildId: createBuildId(staticDir, config.demo ? process.env.NUDGE_DEMO_BUILD_ID : undefined),

@@ -50,6 +50,11 @@ function item(n: number, state: CommentDTO['state'] = 'inbox'): InboxItem {
     snoozedUntil: null,
     wokeAt: null,
     snoozeWhy: null,
+    snoozeBucket: null,
+    snoozeUntilActivity: false,
+    snoozedAt: null,
+    wakeCause: null,
+    snoozeNag: null,
     suggestion: null,
   };
 }
@@ -332,6 +337,57 @@ describe('InboxStore snooze', () => {
     ]);
     await store.snooze(until, ['c2'], 'Thu 8:00 AM', '   ');
     expect(bodies('/api/snooze')[1]).toEqual({ commentIds: ['c2'], until: until.toISOString() });
+  });
+
+  it('sends the bucket and until-activity with the snooze (one choice for the whole selection), and shows them at once', async () => {
+    await load();
+    store.toggleSelect('c1');
+    store.toggleSelect('c3');
+    const until = new Date('2099-01-08T08:00:00.000Z');
+    await store.snooze(until, undefined, 'activity', 'wait for them', {
+      bucket: 'waiting_on_them',
+      untilActivity: true,
+    });
+    expect(bodies('/api/snooze')).toEqual([
+      {
+        commentIds: expect.any(Array),
+        until: until.toISOString(),
+        why: 'wait for them',
+        bucket: 'waiting_on_them',
+        untilActivity: true,
+      },
+    ]);
+    expect(bodies('/api/snooze')[0].commentIds.sort()).toEqual(['c1', 'c3']);
+    await store.snooze(until, ['c2'], 'Thu', undefined, { bucket: 'in_flight' });
+    expect(bodies('/api/snooze')[1]).toEqual({ commentIds: ['c2'], until: until.toISOString(), bucket: 'in_flight' });
+  });
+
+  it("snooze again keeps each item's bucket and words, with that bucket's own follow-up, and nothing for items that did not nag", async () => {
+    const nag = (n: number, bucket: 'waiting_on_them' | 'in_flight', why: string | null): InboxItem => ({
+      ...item(n),
+      snoozeBucket: bucket,
+      snoozeWhy: why,
+      snoozeNag: { bucket, days: 7 },
+    });
+    fetchMock.mockImplementation((url: string) =>
+      url.startsWith('/api/inbox')
+        ? json({
+            items: [nag(1, 'waiting_on_them', 'x'), nag(2, 'in_flight', null), item(3)],
+            nextCursor: null,
+            total: 3,
+          })
+        : json({ actionId: 11, changes: [], counts: full(1, 2) }),
+    );
+    await load();
+    ['c1', 'c2', 'c3'].forEach((id) => store.toggleSelect(id));
+    expect(await store.snoozeAgain()).toBe(true);
+    const sent = bodies('/api/snooze');
+    expect(sent.map((b) => [b.commentIds, b.bucket, b.untilActivity, b.why])).toEqual([
+      [['c1'], 'waiting_on_them', true, 'x'],
+      [['c2'], 'in_flight', true, undefined],
+    ]);
+    const days = (b: { until: string }) => Math.round((Date.parse(b.until) - Date.now()) / 86_400_000);
+    expect(sent.map(days)).toEqual([7, 7]);
   });
 
   it('snoozes the multi-selection as one action', async () => {

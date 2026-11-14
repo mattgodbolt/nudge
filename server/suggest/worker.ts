@@ -168,7 +168,9 @@ export function createSuggestWorker(deps: SuggestWorkerDeps): SuggestWorker {
   function spentToday(): number {
     const d = now();
     const table = repo.suggestions.spentSince(dayStart(d));
-    return Math.max(table, memSpend.day === dayOf(d) ? memSpend.usd : 0);
+    // The small snooze calls (bucketing, nudge drafts) draw on the same daily cap.
+    const snooze = repo.usage.today('snooze_ai.cost_micros') / 1e6;
+    return Math.max(table, memSpend.day === dayOf(d) ? memSpend.usd : 0) + snooze;
   }
   function addSpend(usd: number): void {
     const day = dayOf(now());

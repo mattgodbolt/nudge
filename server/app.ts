@@ -10,6 +10,7 @@ import { registerEventRoutes } from './routes/events.js';
 import { registerPushRoutes } from './routes/push.js';
 import { registerGithubRoutes } from './routes/github.js';
 import { registerNoteRoutes } from './routes/notes.js';
+import { registerSnoozeAiRoutes } from './routes/snoozeAi.js';
 import { registerTodoRoutes } from './routes/todos.js';
 import { registerUsageRoutes } from './routes/usage.js';
 import { registerItemEventRoutes } from './routes/itemEvents.js';
@@ -56,6 +57,7 @@ export function buildApp(deps: AppDeps, opts: BuildAppOptions = {}): FastifyInst
   registerPushRoutes(app, deps);
   registerGithubRoutes(app, deps);
   registerTodoRoutes(app, deps);
+  registerSnoozeAiRoutes(app, deps);
   registerNoteRoutes(app, deps);
   registerUsageRoutes(app, deps);
   registerItemEventRoutes(app, deps);

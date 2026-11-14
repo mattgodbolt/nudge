@@ -10,6 +10,7 @@
   import { inbox } from '../lib/stores/inbox.svelte';
   import { ui } from '../lib/stores/ui.svelte';
   import ItemActions from './ItemActions.svelte';
+  import SnoozeNote from './SnoozeNote.svelte';
   import Icon from './Icon.svelte';
 
   let { item, now }: { item: InboxItem; now: number } = $props();
@@ -44,9 +45,7 @@
     <div class="vt">
       <span class="title" data-testid="todo-title">{it.title}</span>
       <div class="meta faint">Todo · added {relativeTime(item.comment.publishedAt, now)} ago</div>
-      {#if item.snoozeWhy && item.comment.state === 'inbox'}
-        <div class="why faint" data-testid="thread-why">You snoozed this to: {item.snoozeWhy}</div>
-      {/if}
+      <SnoozeNote {item} />
       {#if item.snoozedUntil || woke || stateText}
         <div class="tags">
           {#if stateText}<span class="badge" data-testid="thread-state">{stateText}</span>{/if}
@@ -116,12 +115,6 @@
   }
   .title:hover {
     text-decoration: underline;
-  }
-  /* What he said he would do on return: quiet, but never cut off. */
-  .why {
-    font-size: var(--fs-meta);
-    font-style: italic;
-    overflow-wrap: anywhere;
   }
   .tags {
     display: flex;

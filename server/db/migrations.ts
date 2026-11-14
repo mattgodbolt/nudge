@@ -410,4 +410,16 @@ ALTER TABLE items ADD COLUMN done_reason TEXT CHECK (done_reason IS NULL OR done
 DROP TABLE item_labels;
 DROP TABLE labels;
 `,
+  /* 016 snooze until activity: reason bucket, fallback flag, start time and wake cause */ `
+-- An item can be parked "until activity" (someone else comments, merges, replies) with snoozed_until as the fallback
+-- date, and for a reason (the bucket). snoozed_at is when the current/last snooze started (the Snoozed view shows ages
+-- and the audit line says how long it waited). snooze_wake_cause says how the last until-activity snooze ended:
+-- 'fallback' marks an item that came back with no activity (the audit nag); it is cleared when the item is snoozed
+-- again or something happens on the thread. The full history lives on the item_events rows; these columns are what the
+-- UI needs now. All nullable / defaulted: rows from before keep working and mean "an ordinary timed snooze".
+ALTER TABLE items ADD COLUMN snooze_bucket TEXT CHECK (snooze_bucket IS NULL OR snooze_bucket IN ('waiting_on_them','waiting_on_merge','in_flight','lower_priority'));
+ALTER TABLE items ADD COLUMN snooze_until_activity INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE items ADD COLUMN snoozed_at TEXT;
+ALTER TABLE items ADD COLUMN snooze_wake_cause TEXT CHECK (snooze_wake_cause IS NULL OR snooze_wake_cause IN ('activity','fallback','manual'));
+`,
 ];
