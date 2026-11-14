@@ -25,6 +25,10 @@
 
   const it = $derived(item.item);
   const tile = $derived(phone.value);
+  // Four buttons are small enough to share the title row in a roomy pane; otherwise they take a row of their own
+  // rather than squeezing the title into a narrow column.
+  let headerWidth = $state(1000);
+  const inline = $derived(headerWidth >= 900);
   const woke = $derived(!item.snoozedUntil && item.comment.state === 'inbox' && recentlyWoken(item.wokeAt, now));
   const raw = $derived(it.todo?.raw ?? '');
   // Show what was said only when the assistant changed it.
@@ -32,7 +36,7 @@
 </script>
 
 <section class="thread" data-testid="thread-view" class:focus={ui.pane === 'thread'} aria-label="Todo">
-  <header>
+  <header bind:clientWidth={headerWidth}>
     <button class="btn ghost sm back" onclick={() => (ui.pane = 'list')} aria-label="Back to list"
       ><Icon name="chevron-left" size={phone.value ? 22 : 15} /> Back</button
     >
@@ -55,29 +59,57 @@
         </div>
       {/if}
     </div>
-    <div class="actions" role="toolbar" aria-label="Item actions" data-testid="thread-actions">
-      <ActionButton id="triage.done" label="Done" icon="check" showLabel={!tile} {tile} testid="act-done" />
+    <div class="actions" class:own-row={!inline} role="toolbar" aria-label="Item actions" data-testid="thread-actions">
+      <ActionButton
+        id="triage.done"
+        label="Done"
+        icon="check"
+        showLabel={!tile && headerWidth >= 420}
+        {tile}
+        testid="act-done"
+      />
       {#if item.snoozedUntil}
-        <ActionButton id="triage.inbox" label="Unsnooze" icon="inbox" showLabel={!tile} {tile} testid="act-unsnooze" />
+        <ActionButton
+          id="triage.inbox"
+          label="Unsnooze"
+          icon="inbox"
+          showLabel={!tile && headerWidth >= 420}
+          {tile}
+          testid="act-unsnooze"
+        />
       {:else if item.comment.state !== 'inbox'}
         <ActionButton
           id="triage.inbox"
           label="Move back to inbox"
           short="Inbox"
           icon="inbox"
-          showLabel={!tile}
+          showLabel={!tile && headerWidth >= 420}
           {tile}
           testid="act-inbox"
         />
       {:else}
-        <ActionButton id="snooze.open" label="Snooze" icon="clock" showLabel={!tile} {tile} testid="act-snooze" />
+        <ActionButton
+          id="snooze.open"
+          label="Snooze"
+          icon="clock"
+          showLabel={!tile && headerWidth >= 420}
+          {tile}
+          testid="act-snooze"
+        />
       {/if}
-      <ActionButton id="label.open" label="Label" icon="tag" showLabel={!tile} {tile} testid="act-label" />
+      <ActionButton
+        id="label.open"
+        label="Label"
+        icon="tag"
+        showLabel={!tile && headerWidth >= 420}
+        {tile}
+        testid="act-label"
+      />
       <ActionButton
         id="triage.undo"
         label="Undo"
         icon="undo"
-        showLabel={!tile}
+        showLabel={!tile && headerWidth >= 420}
         {tile}
         disabled={inbox.undoDepth === 0}
         testid="act-undo"
@@ -158,6 +190,9 @@
     gap: var(--s1);
     flex: none;
     max-width: 100%;
+  }
+  .actions.own-row {
+    flex-basis: 100%;
   }
   .scroll {
     flex: 1;

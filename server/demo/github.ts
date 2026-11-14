@@ -19,6 +19,9 @@ const PEOPLE: Person[] = [
   { login: 'dependabot[bot]', type: 'Bot', association: 'NONE' },
   { login: 'demo-owner', type: 'User', association: 'OWNER' },
 ];
+/** The pull request that has a long title; see `add`. */
+export const LONG_TITLE_INDEX = 3;
+export const LONG_TITLE = 'add GCC cross compiler versions 14.4.0, 15.3.0, and 16.2.0';
 const REPOS = ['demo-org/compiler', 'demo-org/infra', 'demo-org/docs'];
 const TITLES = [
   'Fix crash when the input is empty',
@@ -55,7 +58,8 @@ export function createFakeGithubClient(
       kind: isPr ? 'pr' : 'issue',
       repo,
       number,
-      title: `${TITLES[i % TITLES.length]} (#${number})`,
+      // One long title (a real one from the Compiler Explorer repos), so layouts get tested against a title that wraps.
+      title: i === LONG_TITLE_INDEX ? LONG_TITLE : `${TITLES[i % TITLES.length]} (#${number})`,
       author: person.login,
       authorAvatarUrl: null,
       authorType: person.type,

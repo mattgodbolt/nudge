@@ -112,3 +112,53 @@ test.describe('on a phone', () => {
     }
   });
 });
+
+// The open item's header: a long title (the demo's draft "add GCC cross compiler versions ...") must keep most of the
+// header's width and wrap to a few lines, with the toolbar on a row of its own rather than squeezing it into a column.
+for (const [name, viewport, touch] of [
+  ['1920', { width: 1920, height: 1000 }, false],
+  ['1280', { width: 1280, height: 900 }, false],
+  ['1000', { width: 1000, height: 900 }, false],
+  ['phone', { width: 390, height: 844 }, true],
+] as const) {
+  test.describe(`the open GitHub item's header at ${name}`, () => {
+    test.use({ viewport, hasTouch: touch });
+
+    test('gives a long title the pane, with every action visible and nothing overflowing', async ({ page }) => {
+      await page.goto('/inbox?feed=1');
+      await expect(rows(page).first()).toBeVisible();
+      if (touch) await page.getByTestId('search-toggle').click();
+      await page.getByTestId('search').fill('add GCC cross');
+      const row = rows(page).filter({ hasText: 'add GCC cross compiler versions' });
+      await expect(row).toHaveCount(1);
+      await row.click();
+      await expect(page.getByTestId('thread-view')).toBeVisible();
+
+      const header = page.getByTestId('thread-view').locator('header');
+      const h = (await header.boundingBox())!;
+      const block = (await header.locator('.vt').boundingBox())!;
+      expect(block.width).toBeGreaterThanOrEqual(h.width * 0.6);
+
+      const title = header.locator('.title');
+      await expect(title).toHaveText(/add GCC cross compiler versions/);
+      const lines = await title.evaluate((el) => {
+        const cs = getComputedStyle(el);
+        return Math.round(el.getBoundingClientRect().height / parseFloat(cs.lineHeight));
+      });
+      expect(lines).toBeLessThanOrEqual(3);
+
+      for (const id of ['act-done', 'act-replied', 'act-snooze', 'act-label', 'act-mute', 'act-undo', 'act-open']) {
+        const button = page.getByTestId(id);
+        await expect(button).toBeVisible();
+        const b = (await button.boundingBox())!;
+        expect(b.x).toBeGreaterThanOrEqual(h.x);
+        expect(b.x + b.width).toBeLessThanOrEqual(h.x + h.width);
+        expect(b.y + b.height).toBeLessThanOrEqual(h.y + h.height);
+      }
+      // The toolbar sits below the title block, not beside it.
+      const bar = (await page.getByTestId('thread-actions').boundingBox())!;
+      expect(bar.y).toBeGreaterThanOrEqual(block.y + block.height - 1);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(viewport.width);
+    });
+  });
+}

@@ -32,11 +32,20 @@
   const g = $derived(it.github);
   const chips = $derived([reasonChip(it), authorChip(it), statusChip(it)].filter((c) => c !== null));
   const tile = $derived(phone.value);
+  // The title block always gets the width it needs: the toolbar shares its row only in a very roomy pane, and otherwise
+  // takes a row of its own (it used to squeeze the title into a narrow column that wrapped to a dozen lines).
+  let headerWidth = $state(1000);
+  const inline = $derived(headerWidth >= 1700);
+  // Eight labelled buttons need ~830px. Below that the less-used ones (Mute, Undo, Open) shrink to tooltipped icons,
+  // keeping Done, Mark replied, Snooze and Label readable; phone tiles keep their own short labels.
+  const roomy = $derived(headerWidth >= 860);
+  // And in a very narrow pane even those four go to icons rather than wrapping onto three rows.
+  const labelled = $derived(headerWidth >= 480);
   const woke = $derived(!item.snoozedUntil && item.comment.state === 'inbox' && recentlyWoken(item.wokeAt, now));
 </script>
 
 <section class="thread" data-testid="thread-view" class:focus={ui.pane === 'thread'} aria-label="Pull request or issue">
-  <header>
+  <header bind:clientWidth={headerWidth}>
     <button class="btn ghost sm back" onclick={() => (ui.pane = 'list')} aria-label="Back to list"
       ><Icon name="chevron-left" size={phone.value ? 22 : 15} /> Back</button
     >
@@ -67,39 +76,60 @@
         </div>
       {/if}
     </div>
-    <div class="actions" role="toolbar" aria-label="Item actions" data-testid="thread-actions">
-      <ActionButton id="triage.done" label="Done" icon="check" showLabel={!tile} {tile} testid="act-done" />
+    <div class="actions" class:own-row={!inline} role="toolbar" aria-label="Item actions" data-testid="thread-actions">
+      <ActionButton id="triage.done" label="Done" icon="check" showLabel={!tile && labelled} {tile} testid="act-done" />
       <ActionButton
         id="triage.replied"
         label="Mark replied"
         short="Replied"
         icon="check-all"
-        showLabel={!tile}
+        showLabel={!tile && labelled}
         {tile}
         testid="act-replied"
       />
       {#if item.snoozedUntil}
-        <ActionButton id="triage.inbox" label="Unsnooze" icon="inbox" showLabel={!tile} {tile} testid="act-unsnooze" />
+        <ActionButton
+          id="triage.inbox"
+          label="Unsnooze"
+          icon="inbox"
+          showLabel={!tile && labelled}
+          {tile}
+          testid="act-unsnooze"
+        />
       {:else if item.comment.state !== 'inbox'}
         <ActionButton
           id="triage.inbox"
           label="Move back to inbox"
           short="Inbox"
           icon="inbox"
-          showLabel={!tile}
+          showLabel={!tile && labelled}
           {tile}
           testid="act-inbox"
         />
       {:else}
-        <ActionButton id="snooze.open" label="Snooze" icon="clock" showLabel={!tile} {tile} testid="act-snooze" />
+        <ActionButton
+          id="snooze.open"
+          label="Snooze"
+          icon="clock"
+          showLabel={!tile && labelled}
+          {tile}
+          testid="act-snooze"
+        />
       {/if}
-      <ActionButton id="label.open" label="Label" icon="tag" showLabel={!tile} {tile} testid="act-label" />
-      <ActionButton id="mute.open" label="Mute" icon="x" showLabel={!tile} {tile} testid="act-mute" />
+      <ActionButton id="label.open" label="Label" icon="tag" showLabel={!tile && labelled} {tile} testid="act-label" />
+      <ActionButton
+        id="mute.open"
+        label="Mute"
+        icon="x"
+        showLabel={!tile && labelled && roomy}
+        {tile}
+        testid="act-mute"
+      />
       <ActionButton
         id="triage.undo"
         label="Undo"
         icon="undo"
-        showLabel={!tile}
+        showLabel={!tile && labelled && roomy}
         {tile}
         disabled={inbox.undoDepth === 0}
         testid="act-undo"
@@ -109,7 +139,7 @@
         label="Open on GitHub"
         short="Open"
         icon="external"
-        showLabel={!tile}
+        showLabel={!tile && labelled && roomy}
         {tile}
         testid="act-open"
       />
@@ -211,6 +241,9 @@
     gap: var(--s1);
     flex: none;
     max-width: 100%;
+  }
+  .actions.own-row {
+    flex-basis: 100%;
   }
   .scroll {
     flex: 1;
