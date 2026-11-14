@@ -74,64 +74,66 @@
   </form>
 
   {#if feeds.list.length > 0}
-    <table class="grid" data-testid="feeds-table">
-      <thead><tr><th>Feed</th><th class="num">Inbox</th><th>Last poll</th><th>On</th><th></th></tr></thead>
-      <tbody>
-        {#each feeds.list as f (f.id)}
-          <tr class:off={!f.enabled} data-testid="feed-row">
-            <td>
-              <a
-                class="stitle"
-                href="/inbox?feed={f.id}"
-                onclick={(e) => {
-                  e.preventDefault();
-                  router.navigate('inbox', { feed: String(f.id) });
-                }}
-              >
-                <Icon name="list" size={14} /><span class="truncate">{f.owner}</span>
-                <span class="faint meta">{f.prs && f.issues ? 'PRs + issues' : f.prs ? 'PRs' : 'issues'}</span>
-              </a>
-              {#if f.lastError}<div class="err meta" title={f.lastError} data-testid="feed-last-error">
-                  {f.lastError}
-                </div>{/if}
-            </td>
-            <td class="num">{f.inboxCount}</td>
-            <td class="muted meta">
-              {f.lastPolledAt ? ago(f.lastPolledAt, sync.now) : 'not yet'}
-              {#if f.rate}<span class="faint" title="GitHub API calls left this hour">
-                  · {f.rate.remaining} left</span
-                >{/if}
-            </td>
-            <td
-              ><input
-                type="checkbox"
-                checked={f.enabled}
-                aria-label="Enabled"
-                onchange={(e) => void feeds.patch(f.id, { enabled: e.currentTarget.checked })}
-              /></td
-            >
-            <td class="num actions">
-              <button class="btn sm" onclick={() => void feeds.poll(f.id)} data-testid="feed-poll">Poll now</button>
-              {#if confirmRemove === f.id}
-                <button
-                  class="btn sm danger"
-                  onclick={() => {
-                    confirmRemove = null;
-                    void feeds.remove(f.id);
+    <div class="tablewrap">
+      <table class="grid" data-testid="feeds-table">
+        <thead><tr><th>Feed</th><th class="num">Inbox</th><th>Last poll</th><th>On</th><th></th></tr></thead>
+        <tbody>
+          {#each feeds.list as f (f.id)}
+            <tr class:off={!f.enabled} data-testid="feed-row">
+              <td>
+                <a
+                  class="stitle"
+                  href="/inbox?feed={f.id}"
+                  onclick={(e) => {
+                    e.preventDefault();
+                    router.navigate('inbox', { feed: String(f.id) });
                   }}
-                  title="Also removes its items from Nudge">Remove</button
                 >
-                <button class="btn sm ghost" onclick={() => (confirmRemove = null)}>Cancel</button>
-              {:else}
-                <button class="btn sm ghost" aria-label="Remove feed" onclick={() => (confirmRemove = f.id)}
-                  ><Icon name="trash" size={13} /></button
-                >
-              {/if}
-            </td>
-          </tr>
-        {/each}
-      </tbody>
-    </table>
+                  <Icon name="list" size={14} /><span class="truncate">{f.owner}</span>
+                  <span class="faint meta">{f.prs && f.issues ? 'PRs + issues' : f.prs ? 'PRs' : 'issues'}</span>
+                </a>
+                {#if f.lastError}<div class="err meta" title={f.lastError} data-testid="feed-last-error">
+                    {f.lastError}
+                  </div>{/if}
+              </td>
+              <td class="num">{f.inboxCount}</td>
+              <td class="muted meta">
+                {f.lastPolledAt ? ago(f.lastPolledAt, sync.now) : 'not yet'}
+                {#if f.rate}<span class="faint" title="GitHub API calls left this hour">
+                    · {f.rate.remaining} left</span
+                  >{/if}
+              </td>
+              <td
+                ><input
+                  type="checkbox"
+                  checked={f.enabled}
+                  aria-label="Enabled"
+                  onchange={(e) => void feeds.patch(f.id, { enabled: e.currentTarget.checked })}
+                /></td
+              >
+              <td class="num actions">
+                <button class="btn sm" onclick={() => void feeds.poll(f.id)} data-testid="feed-poll">Poll now</button>
+                {#if confirmRemove === f.id}
+                  <button
+                    class="btn sm danger"
+                    onclick={() => {
+                      confirmRemove = null;
+                      void feeds.remove(f.id);
+                    }}
+                    title="Also removes its items from Nudge">Remove</button
+                  >
+                  <button class="btn sm ghost" onclick={() => (confirmRemove = null)}>Cancel</button>
+                {:else}
+                  <button class="btn sm ghost" aria-label="Remove feed" onclick={() => (confirmRemove = f.id)}
+                    ><Icon name="trash" size={13} /></button
+                  >
+                {/if}
+              </td>
+            </tr>
+          {/each}
+        </tbody>
+      </table>
+    </div>
   {/if}
 
   <h3>Muted</h3>
@@ -193,6 +195,14 @@
     align-items: center;
     color: inherit;
     text-decoration: none;
+  }
+  .tablewrap {
+    overflow-x: auto;
+    /* The panel clips; on a phone the table is wider than it, so scroll it rather than cut off Poll now and Remove. */
+    flex-shrink: 0;
+  }
+  .actions {
+    white-space: nowrap;
   }
   .err {
     color: var(--danger);
