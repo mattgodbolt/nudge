@@ -250,8 +250,8 @@ export function inboxBindings(): Binding[] {
       id: 'triage.replied',
       keys: ['m'],
       group: 'Triage',
-      description: 'Mark replied (without replying)',
-      when: () => isYoutube(inbox.selected),
+      description: 'Mark replied (without replying here)',
+      when: () => !!inbox.selected,
       run: () => void inbox.triage('replied'),
     }),
     list({

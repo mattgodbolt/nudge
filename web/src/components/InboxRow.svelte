@@ -248,7 +248,7 @@
         testid="row-done"
       />
     {/if}
-    {#if c.state === 'inbox' && !gh}
+    {#if c.state === 'inbox'}
       <ActionButton
         id="triage.replied"
         label="Mark replied"

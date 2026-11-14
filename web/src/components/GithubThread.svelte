@@ -74,6 +74,15 @@
     </div>
     <div class="actions" role="toolbar" aria-label="Item actions" data-testid="thread-actions">
       <ActionButton id="triage.done" label="Done" icon="check" showLabel={!tile} {tile} testid="act-done" />
+      <ActionButton
+        id="triage.replied"
+        label="Mark replied"
+        short="Replied"
+        icon="check-all"
+        showLabel={!tile}
+        {tile}
+        testid="act-replied"
+      />
       {#if item.snoozedUntil}
         <ActionButton id="triage.inbox" label="Unsnooze" icon="inbox" showLabel={!tile} {tile} testid="act-unsnooze" />
       {:else if item.comment.state !== 'inbox'}

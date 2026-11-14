@@ -159,11 +159,22 @@ test('opening an item shows its description and a link to GitHub; e marks it don
   await expect(body).not.toContainText('<details>');
   await expect(body).not.toContainText('**');
   await expect(page.getByTestId('thread-view').locator('a.title')).toHaveAttribute('href', /github\.com\/demo-org\//);
-  // No reply composer or "mark replied" for GitHub items.
-  await expect(page.getByTestId('act-replied')).toHaveCount(0);
+  // No reply composer (you reply on GitHub), but you can say you did.
+  await expect(page.getByTestId('act-replied')).toHaveCount(1);
   await expect(page.getByTestId('act-reply')).toHaveCount(0);
 
   await page.keyboard.press('e');
+  await expect.poll(() => feedCount(page)).toBe(before - 1);
+  await expect(rows(page).filter({ hasText: firstTitle })).toHaveCount(0);
+});
+
+test('m marks a GitHub item replied (you answered it on GitHub) and it leaves the inbox', async ({ page }) => {
+  await openFeed(page);
+  const before = await feedCount(page);
+  const firstTitle = (await rows(page).first().getByTestId('row-title').innerText()).trim();
+  await rows(page).first().click();
+  await expect(page.getByTestId('thread-view')).toBeVisible();
+  await page.keyboard.press('m');
   await expect.poll(() => feedCount(page)).toBe(before - 1);
   await expect(rows(page).filter({ hasText: firstTitle })).toHaveCount(0);
 });
