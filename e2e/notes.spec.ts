@@ -62,8 +62,59 @@ test('a chip says whose turn it is and the next step, and the open item spells i
   await expect(theirs).toHaveText('waiting on them');
   await shot(page, 'desktop-chips');
   await withTurn(page, 'matt').first().click();
-  await expect(page.getByTestId('thread-suggestion')).toContainText('Suggestion: your turn · answer');
+  await expect(page.getByTestId('thread-suggestion')).toContainText('Your turn · answer');
 });
+
+// The suggestion must stay readable at any width: a row's chip has the row's width, the repo and badge are never
+// squeezed to a stub, and the open item's block sits whole inside its header, a few lines at most.
+for (const [name, width, height] of [
+  ['desktop', 1280, 800],
+  ['wide desktop', 1920, 1000],
+  ['phone', 390, 844],
+] as const) {
+  test(`suggestions are not clipped or squeezed at ${name} width`, async ({ page }) => {
+    await page.setViewportSize({ width, height });
+    await openGithub(page);
+    const row = withTurn(page, 'matt').first();
+    const r = (await row.boundingBox())!;
+    const chip = (await row.getByTestId('row-suggestion').boundingBox())!;
+    expect(chip.x).toBeGreaterThanOrEqual(r.x);
+    expect(chip.x + chip.width).toBeLessThanOrEqual(r.x + r.width);
+    expect(chip.y).toBeGreaterThanOrEqual(r.y);
+    expect(chip.y + chip.height).toBeLessThanOrEqual(r.y + r.height);
+    expect(chip.height).toBeLessThanOrEqual(20);
+    expect(chip.width).toBeGreaterThanOrEqual(Math.min(260, r.width * 0.6));
+    // The repo and the PR badge keep their room, and nothing on the line is a stub.
+    const kind = (await row.getByTestId('row-kind').boundingBox())!;
+    expect(kind.y + kind.height).toBeLessThanOrEqual(chip.y + 1);
+    const repo = row.locator('.vtitle');
+    expect((await repo.boundingBox())!.width).toBeGreaterThanOrEqual(110);
+    expect(await repo.evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
+    for (const l of await row.locator('.ghlabel').all()) {
+      if (!(await l.isVisible())) continue;
+      const b = (await l.boundingBox())!;
+      if (b.y + b.height > r.y + r.height || b.y < r.y) continue; // wrapped out of sight: whole or not at all
+      expect(await l.evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
+    }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+
+    await row.click();
+    const block = page.getByTestId('thread-suggestion');
+    await expect(block).toBeVisible();
+    const header = (await page.locator('[data-testid=thread-view] header').boundingBox())!;
+    const b = (await block.boundingBox())!;
+    expect(b.x).toBeGreaterThanOrEqual(header.x);
+    expect(b.x + b.width).toBeLessThanOrEqual(header.x + header.width + 1);
+    expect(b.y).toBeGreaterThanOrEqual(header.y);
+    expect(b.y + b.height).toBeLessThanOrEqual(header.y + header.height + 1);
+    // Wide enough to read, a handful of lines at most.
+    expect(b.width).toBeGreaterThanOrEqual(Math.min(300, width - 40));
+    expect(b.height).toBeLessThanOrEqual(110);
+    await expect(block.locator('.lead')).toContainText(/^Your turn · answer /);
+    await expect(block.locator('.why')).toContainText('confidence');
+    await shot(page, `suggestion-${width}`);
+  });
+}
 
 test('b, Tab, a reason, Enter snoozes with a why that shows in the row and the open item; b then 1 still needs no extra key', async ({
   page,

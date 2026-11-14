@@ -42,7 +42,7 @@ test('opening an item shows the reason in full, and keys still work', async ({ p
   await page.keyboard.press('k');
   await page.keyboard.press('Enter');
   await expect(page.getByTestId('thread-view')).toBeVisible();
-  await expect(page.getByTestId('thread-suggestion')).toContainText('Suggestion: ');
+  await expect(page.getByTestId('thread-suggestion')).toContainText(/confidence/);
 });
 
 test('Settings has a toggle that hides the chips, and the choice is remembered', async ({ page }) => {

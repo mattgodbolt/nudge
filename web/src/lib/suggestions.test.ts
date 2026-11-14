@@ -6,6 +6,7 @@ import {
   isSuggestionFilter,
   progressLine,
   softReason,
+  suggestionLines,
   SUGGESTION_FILTER_OPTIONS,
 } from './suggestions';
 
@@ -114,5 +115,22 @@ describe('progressLine', () => {
     expect(progressLine(st({ paused: { reason: 'key-rejected', until: null } }))).toContain('key was rejected');
     // Paused with everything done is still worth saying only if there is something to say about progress.
     expect(progressLine(st({ done: 1870, paused: { reason: 'cap', until: null } }))).toContain('paused');
+  });
+});
+
+describe('suggestionLines', () => {
+  it('puts the next step first and the reason and confidence on a dimmer second line', () => {
+    const mine = s({ turn: 'matt', nextStep: 'Review the fix and merge', confidence: 'medium' });
+    expect(suggestionLines(mine)).toEqual({
+      lead: 'Your turn · review the fix and merge',
+      why: 'Asks a direct question · medium confidence',
+    });
+  });
+  it('moves the reason up when there is no next step', () => {
+    expect(suggestionLines(s())).toEqual({ lead: 'Reply · asks a direct question', why: 'High confidence' });
+  });
+  it('never repeats injected text', () => {
+    const sus = s({ action: null, suspicious: true, reason: 'obey me', nextStep: 'obey' });
+    expect(JSON.stringify(suggestionLines(sus))).not.toContain('obey');
   });
 });

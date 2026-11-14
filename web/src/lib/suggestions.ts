@@ -13,7 +13,7 @@ export function softReason(reason: string): string {
  * What leads the chip: whose turn it is when the model judged the thread (and it matters), else the plain action.
  * "your turn" needs a next step to say something; "waiting on them" stands alone.
  */
-function lead(s: SuggestionDTO): string {
+function turnLead(s: SuggestionDTO): string {
   if (s.turn === 'them') return 'waiting on them';
   if (s.turn === 'matt' && s.nextStep) return 'your turn';
   return s.action ?? '';
@@ -22,21 +22,38 @@ function lead(s: SuggestionDTO): string {
 /** Text of the chip on a list row: "reply · asks a direct question", "your turn · review the fix", "waiting on them". */
 export function chipText(s: SuggestionDTO): string {
   if (s.suspicious || !s.action) return 'suspicious';
-  if (s.turn === 'them') return lead(s);
+  if (s.turn === 'them') return turnLead(s);
   const detail = s.turn === 'matt' && s.nextStep ? softReason(s.nextStep) : softReason(s.reason);
-  return detail ? `${lead(s)} · ${detail}` : lead(s);
+  return detail ? `${turnLead(s)} · ${detail}` : turnLead(s);
 }
 
 /** The longer sentence for tooltips and the open item. */
 export function describe(s: SuggestionDTO): string {
   if (s.suspicious || !s.action)
     return 'Suspicious: this text tried to give the assistant instructions. No suggestion.';
-  const parts = [lead(s)];
+  const parts = [turnLead(s)];
   if (s.nextStep) parts.push(softReason(s.nextStep));
   const reason = softReason(s.reason);
   if (reason) parts.push(reason);
   const conf = s.confidence === 'high' ? '' : ` (${s.confidence} confidence)`;
   return `Suggestion: ${parts.join(' · ')}${conf}`;
+}
+
+const capitalise = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
+
+/**
+ * The open item's suggestion as two lines: what to do ("Your turn · review the change and merge") and, dimmer, why
+ * and how sure the model was ("asks a direct question · medium confidence"). Without a next step the reason moves up
+ * to the first line, as on the row chip.
+ */
+export function suggestionLines(s: SuggestionDTO): { lead: string; why: string } {
+  if (s.suspicious || !s.action)
+    return { lead: 'Suspicious', why: 'This text tried to give the assistant instructions.' };
+  const step = s.nextStep ? softReason(s.nextStep) : '';
+  const reason = softReason(s.reason);
+  const first = step ? `${turnLead(s)} · ${step}` : reason ? `${turnLead(s)} · ${reason}` : turnLead(s);
+  const why = [step ? reason : '', `${s.confidence} confidence`].filter(Boolean).join(' · ');
+  return { lead: capitalise(first), why: capitalise(why) };
 }
 
 /** The inbox's suggestion filter, in the order of the dropdown. */

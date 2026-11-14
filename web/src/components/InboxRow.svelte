@@ -181,8 +181,7 @@
     {:else}
       <div class="text">{c.textPlain}</div>
     {/if}
-    <div class="video" class:haswhy={!!why}>
-      {#if ui.showSuggestions && item.suggestion}<SuggestionChip suggestion={item.suggestion} />{/if}
+    <div class="video">
       {#if why}
         <span class="vtitle why truncate" data-testid="row-why" title="You snoozed this to: {why}"
           >You snoozed this to: {why}</span
@@ -194,10 +193,16 @@
           >
           {refLabel(gh)}{:else}{item.video.title}{/if}</span
       >
-      {#if gh?.github}
-        {#each gh.github.labels.slice(0, 3) as name (name)}<span class="ghlabel">{name}</span>{/each}
-      {/if}
-      <LabelChips ids={item.labels} />
+      <!-- Chips wrap onto a hidden second line instead of shrinking, so one is shown whole or not at all. -->
+      <span class="tagline">
+        {#if gh?.github}
+          {#each gh.github.labels.slice(0, 3) as name (name)}<span class="ghlabel">{name}</span>{/each}
+        {/if}
+        <LabelChips ids={item.labels} />
+      </span>
+    </div>
+    <div class="suggest">
+      {#if ui.showSuggestions && item.suggestion}<SuggestionChip suggestion={item.suggestion} />{/if}
     </div>
   </div>
   <!-- Positioned over the row's bottom-right, so it never changes row height; acts on THIS row. -->
@@ -385,14 +390,30 @@
     gap: 6px;
     font-size: var(--fs-label);
     line-height: 14px;
+    height: 16px;
     padding-right: 104px; /* room for the quick actions */
     min-width: 0;
-    overflow: hidden; /* labels that do not fit are cut at the row's edge rather than running off it */
+    overflow: hidden;
   }
+  /* The repo and the PR/Issue badge keep their room; the labels get what is left, and only whole ones. */
   .vtitle {
     min-width: 0;
-    /* Gives way well before the labels beside it do. */
-    flex: 0 8 auto;
+    flex: 0 1 auto;
+    max-width: 70%;
+  }
+  .tagline {
+    flex: 1 1 0;
+    min-width: 0;
+    height: 16px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    overflow: hidden;
+  }
+  /* The next step has a line of its own, the whole width of the row: the quick actions only cover its end on hover. */
+  .suggest {
+    height: 16px;
+    min-width: 0;
   }
   /* Takes the container's place on the line while it is there: what to do about it matters more than where it is. */
   .why {
@@ -401,10 +422,6 @@
   }
   .vtitle.why {
     flex: 1 1 auto;
-  }
-  /* With his reason on the line, the chip yields room to it. */
-  .haswhy :global(.sug) {
-    max-width: 38%;
   }
   .vtitle.hide {
     display: none;
@@ -549,8 +566,9 @@
     border-radius: 999px;
     padding: 0 7px;
     white-space: nowrap;
-    flex: 0 1 auto;
-    min-width: 0;
+    flex: none;
+    max-width: 100%;
+    line-height: 14px;
     overflow: hidden;
     text-overflow: ellipsis;
   }

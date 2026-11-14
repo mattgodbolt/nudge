@@ -22,7 +22,13 @@ export function demoClassify(item: EvalItem, standingNotes: string[] = []): Clas
   if (last) {
     return last.isMatt
       ? { ...c, turn: 'them', nextStep: `Wait for ${item.github?.recent?.find((m) => !m.isMatt)?.author ?? 'a reply'}` }
-      : { ...c, turn: 'matt', nextStep: `Answer ${last.author}` };
+      : {
+          ...c,
+          turn: 'matt',
+          // As long-winded as the real model gets, so the layout is exercised with text that must wrap or be cut.
+          nextStep: `Answer ${last.author} and merge alongside the companion Compiler Explorer PR`,
+          reason: 'A first-time contributor opened a PR adding install targets to the infra repo, which needs review',
+        };
   }
   return c;
 }

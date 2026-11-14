@@ -86,7 +86,7 @@
       {#if item.snoozeWhy && item.comment.state === 'inbox'}
         <div class="why faint" data-testid="thread-why">You snoozed this to: {item.snoozeWhy}</div>
       {/if}
-      {#if item.snoozedUntil || item.labels.length > 0 || woke || (ui.showSuggestions && item.suggestion)}
+      {#if item.snoozedUntil || item.labels.length > 0 || woke}
         <div class="tags">
           {#if item.snoozedUntil}
             <span class="snz" data-testid="thread-snoozed"
@@ -95,11 +95,6 @@
           {:else if woke}
             <span class="snz" data-testid="thread-woke">⏰ back from snooze</span>
           {/if}
-          {#if ui.showSuggestions && item.suggestion}<SuggestionChip
-              suggestion={item.suggestion}
-              testid="thread-suggestion"
-              full
-            />{/if}
           <LabelChips ids={item.labels} max={5} />
         </div>
       {/if}
@@ -157,6 +152,11 @@
         testid="act-open"
       />
     </div>
+    {#if ui.showSuggestions && item.suggestion}<SuggestionChip
+        suggestion={item.suggestion}
+        testid="thread-suggestion"
+        full
+      />{/if}
   </header>
 
   <div class="scroll" bind:this={scroller}>

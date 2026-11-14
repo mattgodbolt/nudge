@@ -416,7 +416,7 @@
     {:else}
       <VirtualList
         items={inbox.items}
-        rowHeight={phone.value ? 156 : 84}
+        rowHeight={phone.value ? 176 : 102}
         selectedIndex={inbox.selectedIndex}
         onNearEnd={() => void inbox.loadMore()}
         onRefresh={() => {
