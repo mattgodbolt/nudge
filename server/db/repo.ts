@@ -41,6 +41,7 @@ import { createClientEvents, createEvents } from './events.js';
 import { createFeedsRepo, parseData } from './feeds.js';
 import { createTodosRepo } from './todos.js';
 import { createUsage } from './usage.js';
+import { createSuggestions, suggestionDto } from './suggestions.js';
 import { htmlToPlain } from './text.js';
 import { tierFor, unitsPerDay } from './tiers-lite.js';
 
@@ -915,8 +916,11 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
       v.title AS v_title, v.thumbnail_url AS v_thumb,
       p.id AS p_id, p.author_name AS p_author, p.text_plain AS p_text, p.is_own AS p_own,
       t.total_reply_count AS t_total,
-      EXISTS (SELECT 1 FROM drafts d WHERE d.item_id = i.id AND d.status = 'draft') AS has_draft
+      EXISTS (SELECT 1 FROM drafts d WHERE d.item_id = i.id AND d.status = 'draft') AS has_draft,
+      sg.verdict AS sg_verdict, sg.confidence AS sg_confidence, sg.reason AS sg_reason,
+      sg.injection_attempt AS sg_injection
     FROM items i
+    LEFT JOIN suggestions sg ON sg.item_id = i.id
     LEFT JOIN comments c ON c.id = i.id
     LEFT JOIN videos v ON v.id = c.video_id
     LEFT JOIN threads t ON t.id = c.thread_id
@@ -966,6 +970,14 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
       labels,
       snoozedUntil: r.snoozed_until && r.snoozed_until > at ? r.snoozed_until : null,
       wokeAt: r.woke_at ?? null,
+      suggestion: r.sg_verdict
+        ? suggestionDto({
+            verdict: r.sg_verdict,
+            confidence: r.sg_confidence,
+            reason: r.sg_reason,
+            injection: !!r.sg_injection,
+          })
+        : null,
     };
   }
 
@@ -1760,6 +1772,7 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
     ...todos,
     close: () => void db.close(),
     usage: createUsage(db, clock),
+    suggestions: createSuggestions(db, clock),
     clientEvents: createClientEvents(db),
     listGoogleAccounts,
     upsertGoogleAccount,

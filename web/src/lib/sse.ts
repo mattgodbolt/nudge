@@ -11,6 +11,7 @@ import { toasts } from './stores/toasts.svelte';
 
 const TYPES: ServerEvent['type'][] = [
   'inbox.changed',
+  'suggestions.changed',
   'sync.progress',
   'sync.done',
   'quota.update',
@@ -26,6 +27,9 @@ export function dispatch(e: ServerEvent) {
   switch (e.type) {
     case 'inbox.changed':
       inbox.applyServerEvent(e);
+      break;
+    case 'suggestions.changed':
+      inbox.applySuggestions(e.suggestions);
       break;
     case 'sync.progress':
       sync.status = e.status;

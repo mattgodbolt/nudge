@@ -15,6 +15,7 @@
   import GithubDiscussion from './GithubDiscussion.svelte';
   import Icon from './Icon.svelte';
   import LabelChips from './LabelChips.svelte';
+  import SuggestionChip from './SuggestionChip.svelte';
 
   let { item, now }: { item: InboxItem; now: number } = $props();
   // Each thread is mounted once per open (the parent keys on it), so this counts opens, not renders.
@@ -47,7 +48,7 @@
         <a href={it.containerUrl ?? '#'} target="_blank" rel="noopener noreferrer">{refLabel(it)}</a>
         · {it.kind === 'pr' ? 'Pull request' : 'Issue'}
       </div>
-      {#if item.snoozedUntil || item.labels.length > 0 || woke || chips.length > 0}
+      {#if item.snoozedUntil || item.labels.length > 0 || woke || chips.length > 0 || (ui.showSuggestions && item.suggestion)}
         <div class="tags">
           {#each chips as chip (chip.text)}
             <span class="badge chip {chip.tone}" title={chip.title}>{chip.text}</span>
@@ -59,6 +60,11 @@
           {:else if woke}
             <span class="snz" data-testid="thread-woke">⏰ back from snooze</span>
           {/if}
+          {#if ui.showSuggestions && item.suggestion}<SuggestionChip
+              suggestion={item.suggestion}
+              testid="thread-suggestion"
+              full
+            />{/if}
           <LabelChips ids={item.labels} max={5} />
         </div>
       {/if}

@@ -331,4 +331,24 @@ CREATE TABLE usage_daily (
   count INTEGER NOT NULL,
   PRIMARY KEY (day, key));
 `,
+  /* 011 suggestions: one current LLM suggestion per item (advisory; nothing acts on it) */ `
+-- state_key fingerprints what the model saw, so a changed thread is classified again and an unchanged one never is.
+-- One row per item: a new run replaces it. cost_usd is an estimate from token counts. Rules-only rows (no model call)
+-- have model 'rules' and cost 0. Additive only: nothing here touches an existing table; safe to delete wholesale.
+CREATE TABLE suggestions (
+  item_id TEXT PRIMARY KEY REFERENCES items(id) ON DELETE CASCADE,
+  state_key TEXT NOT NULL,
+  verdict TEXT NOT NULL CHECK (verdict IN ('needs_reply','needs_action','no_reply_needed','spam')),
+  category TEXT NOT NULL,
+  confidence TEXT NOT NULL CHECK (confidence IN ('low','medium','high')),
+  reason TEXT NOT NULL,
+  injection_attempt INTEGER NOT NULL DEFAULT 0,
+  model TEXT NOT NULL,
+  prompt_version TEXT NOT NULL,
+  input_tokens INTEGER NOT NULL DEFAULT 0,
+  output_tokens INTEGER NOT NULL DEFAULT 0,
+  cost_usd REAL NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL);
+CREATE INDEX idx_suggestions_created ON suggestions(created_at);
+`,
 ];

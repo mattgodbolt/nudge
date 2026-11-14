@@ -12,6 +12,7 @@
   import Avatar from './Avatar.svelte';
   import Icon from './Icon.svelte';
   import LabelChips from './LabelChips.svelte';
+  import SuggestionChip from './SuggestionChip.svelte';
 
   let {
     item,
@@ -179,6 +180,7 @@
       <div class="text">{c.textPlain}</div>
     {/if}
     <div class="video">
+      {#if ui.showSuggestions && item.suggestion}<SuggestionChip suggestion={item.suggestion} />{/if}
       <span class="vtitle faint truncate"
         >{#if todo}{c.textPlain || 'Todo'}{:else if gh}<span class="kind" data-testid="row-kind"
             >{gh.kind === 'pr' ? 'PR' : 'Issue'}</span

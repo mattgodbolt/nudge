@@ -11,6 +11,8 @@ import { openRepo } from './db/repo.js';
 import { createFakeClient } from './demo/fake-client.js';
 import { createFakeGithubClient, DEMO_GITHUB_OWNER } from './demo/github.js';
 import { createFakeLlmClient } from './demo/llm.js';
+import { createDemoClassifier } from './demo/suggest.js';
+import { createSuggestWorker } from './suggest/worker.js';
 import { createLlmClient } from './providers/anthropic/client.js';
 import { decorateDemo, nonDemoSources, seedDemo } from './demo/seed.js';
 import { createDemoPosting } from './demo/post.js';
@@ -111,6 +113,17 @@ async function main(): Promise<void> {
 
   const llm = config.demo ? createFakeLlmClient() : createLlmClient();
 
+  // Advisory suggestions on inbox items. Demo mode only runs them (with a fake, offline classifier) when asked to, so
+  // the other demo servers and tests are untouched. Off entirely without an API key.
+  const demoSuggest = config.demo && process.env.NUDGE_DEMO_SUGGEST === '1';
+  const suggestWorker = createSuggestWorker({
+    repo,
+    bus,
+    getApiKey: config.demo ? () => (demoSuggest ? 'demo' : null) : () => repo.getSettings().llm.apiKey,
+    ...(config.demo ? { makeClassifier: () => createDemoClassifier() } : {}),
+    ...(demoSuggest ? { startDelayMs: 500, debounceMs: 200 } : {}),
+  });
+
   const vapid = ensureVapidKeys(repo);
   const push = createPushNotifier({
     repo,
@@ -173,7 +186,10 @@ async function main(): Promise<void> {
     auth,
     addSource,
     testKey: config.demo ? async () => ({ ok: true, message: 'Demo mode: no YouTube calls are made' }) : testKey,
-    onSettingsChanged: () => scheduler.start(),
+    onSettingsChanged: () => {
+      scheduler.start();
+      suggestWorker.kick();
+    },
     backfillDetails: () => backfillVideoDetails(repo, yt),
     push,
     github,
@@ -202,6 +218,7 @@ async function main(): Promise<void> {
   scheduler.start();
   snoozeWaker.start();
   github.start();
+  suggestWorker.start();
   // Videos stored before duration/likes were tracked: fill them in once, quietly (best effort; the Stats page can retry).
   if (resolveKey().key) {
     backfillVideoDetails(repo, yt).catch((e: unknown) =>
@@ -221,6 +238,7 @@ async function main(): Promise<void> {
     scheduler.stop();
     snoozeWaker.stop();
     github.stop();
+    suggestWorker.stop();
     push.stop();
     await app.close();
     repo.close();

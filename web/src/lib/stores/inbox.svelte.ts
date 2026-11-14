@@ -1,4 +1,12 @@
-import type { CommentState, Counts, InboxItem, InboxOrder, InboxView, ServerEvent } from '../../../../shared/types';
+import type {
+  CommentState,
+  Counts,
+  InboxItem,
+  InboxOrder,
+  InboxView,
+  ServerEvent,
+  SuggestionDTO,
+} from '../../../../shared/types';
 import type { InboxPage } from '../../../../shared/api';
 import { api } from '../api';
 import { thread } from './thread.svelte';
@@ -552,6 +560,12 @@ export class InboxStore {
   }
 
   /** Drop label ids that no longer exist (a label was deleted). */
+  /** Attach arrived suggestions in place: no reordering, no refetch, so the cursor and scroll position stay put. */
+  applySuggestions(next: Record<string, SuggestionDTO | null>) {
+    if (!this.items.some((i) => i.comment.id in next)) return;
+    this.items = this.items.map((i) => (i.comment.id in next ? { ...i, suggestion: next[i.comment.id] ?? null } : i));
+  }
+
   pruneLabels(valid: ReadonlySet<number>) {
     if (this.items.some((i) => i.labels.some((l) => !valid.has(l)))) {
       this.items = this.items.map((i) =>

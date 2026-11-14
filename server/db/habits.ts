@@ -20,6 +20,12 @@ export interface HabitsReport {
   decisions: { total: number; withRank: number; rank0: number; deeper: number; byInput: Record<string, number> };
   /** Items that sat above an acted-on item: later actioned by the owner, or still not. */
   passedOver: { pairs: number; laterActioned: number; left: number };
+  /**
+   * Suggestion hit rate: for each item that had a suggestion when the owner first dealt with it (done, replied or
+   * snoozed), what the suggestion was against what he did. `hits` counts the agreeing actions: reply is hit by
+   * replied; act by done or snooze; skip and spam by done. Items with no suggestion are not counted.
+   */
+  suggestionHits: { suggested: string; total: number; hits: number; byAction: Record<string, number> }[];
   /** Median open dwell in ms by the view it was opened from, plus how many opens had a dwell. */
   openDwell: { view: string; opens: number; withDwell: number; medianMs: number | null }[];
 }
@@ -78,6 +84,7 @@ export function habitsReport(db: Db): HabitsReport {
   };
   const snoozeAt: { item: string; at: number }[] = [];
   const dec: { at: number; meta: Record<string, any> }[] = []; // eslint-disable-line @typescript-eslint/no-explicit-any
+  const judged = new Map<string, { suggested: string; action: string }>();
   const dwellByView = new Map<string, { opens: number; dwell: number[] }>();
   const byInput: Record<string, number> = {};
   let rank0 = 0;
@@ -92,6 +99,13 @@ export function habitsReport(db: Db): HabitsReport {
       const action = isSnooze ? (r.to_value ? 'snooze' : 'unsnooze') : (r.to_value ?? 'unknown');
       mix.set(key(action), (mix.get(key(action)) ?? 0) + 1);
       if (!firstAction.has(r.item_id)) firstAction.set(r.item_id, r);
+      if (
+        !judged.has(r.item_id) &&
+        typeof meta.suggested === 'string' &&
+        (action === 'done' || action === 'replied' || action === 'snooze')
+      ) {
+        judged.set(r.item_id, { suggested: meta.suggested, action });
+      }
       (userActs.get(r.item_id) ?? userActs.set(r.item_id, []).get(r.item_id)!).push(t);
       if (isSnooze && r.to_value) {
         snoozed++;
@@ -161,6 +175,24 @@ export function habitsReport(db: Db): HabitsReport {
     }
   }
 
+  const AGREES: Record<string, string[]> = {
+    reply: ['replied'],
+    act: ['done', 'snooze'],
+    skip: ['done'],
+    spam: ['done'],
+  };
+  const hitsBy = new Map<string, { total: number; hits: number; byAction: Record<string, number> }>();
+  for (const j of judged.values()) {
+    const h = hitsBy.get(j.suggested) ?? { total: 0, hits: 0, byAction: {} };
+    h.total++;
+    if (AGREES[j.suggested]?.includes(j.action)) h.hits++;
+    h.byAction[j.action] = (h.byAction[j.action] ?? 0) + 1;
+    hitsBy.set(j.suggested, h);
+  }
+  const suggestionHits = [...hitsBy]
+    .map(([suggested, h]) => ({ suggested, ...h }))
+    .sort((a, b) => b.total - a.total || a.suggested.localeCompare(b.suggested));
+
   const openDwell = [...dwellByView]
     .map(([view, v]) => ({ view, opens: v.opens, withDwell: v.dwell.length, medianMs: median(v.dwell) }))
     .sort((a, b) => b.opens - a.opens);
@@ -173,6 +205,7 @@ export function habitsReport(db: Db): HabitsReport {
     snoozeContext: sc,
     decisions: { total: dec.length, withRank: rank0 + deeper, rank0, deeper, byInput },
     passedOver: { pairs, laterActioned, left: pairs - laterActioned },
+    suggestionHits,
     openDwell,
   };
 }
@@ -229,8 +262,17 @@ export function formatHabits(r: HabitsReport): string {
     `  items passed over: ${r.passedOver.pairs}; later actioned ${pct(r.passedOver.laterActioned, r.passedOver.pairs)}; ` +
       `left ${pct(r.passedOver.left, r.passedOver.pairs)}`,
     '',
-    'Open dwell by view:',
+    'Suggestion hit rate (first action on items that had a suggestion):',
   );
+  if (r.suggestionHits.length === 0) out.push('  none');
+  for (const h of r.suggestionHits) {
+    const acts = Object.entries(h.byAction)
+      .sort((a, b) => b[1] - a[1])
+      .map(([k, n]) => `${k} ${n}`)
+      .join(', ');
+    out.push(`  suggested ${h.suggested}: ${pct(h.hits, h.total)} agreed (${acts})`);
+  }
+  out.push('', 'Open dwell by view:');
   if (r.openDwell.length === 0) out.push('  none');
   for (const o of r.openDwell)
     out.push(`  ${o.view}: median ${fmtDuration(o.medianMs)} (${o.withDwell} timed of ${o.opens} opens)`);

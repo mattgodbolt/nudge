@@ -50,6 +50,7 @@ function item(n: number, state: CommentDTO['state'] = 'inbox'): InboxItem {
     labels: [],
     snoozedUntil: null,
     wokeAt: null,
+    suggestion: null,
   };
 }
 

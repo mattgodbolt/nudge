@@ -234,3 +234,46 @@ describe('migration 010 (usage_daily)', () => {
     ).toThrow();
   });
 });
+
+describe('migration 011 (suggestions)', () => {
+  it('adds the suggestions table to a v10 database without touching existing rows', () => {
+    const db = new Database(':memory:');
+    db.pragma('foreign_keys = ON');
+    db.exec(MIGRATIONS.slice(0, 10).join('\n'));
+    db.pragma('user_version = 10');
+    db.prepare("INSERT INTO videos (id, title) VALUES ('v', 'T')").run();
+    db.prepare(
+      `INSERT INTO items (id, provider, kind, occurred_at, state, state_source, state_changed_at, first_seen_at)
+       VALUES ('i', 'github', 'pr', 't', 'inbox', 'sync', 't', 't')`,
+    ).run();
+    expect(db.prepare("SELECT name FROM sqlite_master WHERE name = 'suggestions'").get()).toBeUndefined();
+
+    migrate(db);
+
+    expect(db.pragma('user_version', { simple: true })).toBe(MIGRATIONS.length);
+    expect(db.prepare('SELECT title FROM videos').get()).toEqual({ title: 'T' });
+    const ins = (verdict: string, conf = 'high') =>
+      db
+        .prepare(
+          `INSERT INTO suggestions (item_id, state_key, verdict, category, confidence, reason, model, prompt_version, created_at)
+           VALUES ('i', 'k', ?, 'other', ?, 'because', 'm', 'p', 't')`,
+        )
+        .run(verdict, conf);
+    ins('needs_reply');
+    expect(db.prepare('SELECT injection_attempt, cost_usd, input_tokens FROM suggestions').get()).toEqual({
+      injection_attempt: 0,
+      cost_usd: 0,
+      input_tokens: 0,
+    });
+    // One current row per item; unknown verdicts and confidences are refused.
+    expect(() => ins('needs_reply')).toThrow();
+    expect(() => ins('bogus')).toThrow();
+    db.prepare('DELETE FROM suggestions').run();
+    expect(() => ins('spam', 'certain')).toThrow();
+    // A suggestion goes with its item.
+    ins('spam');
+    db.prepare("DELETE FROM items WHERE id = 'i'").run();
+    expect(db.prepare('SELECT COUNT(*) AS n FROM suggestions').get()).toEqual({ n: 0 });
+    expect(db.pragma('foreign_key_check')).toEqual([]);
+  });
+});

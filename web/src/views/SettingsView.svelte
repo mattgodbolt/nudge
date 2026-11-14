@@ -15,6 +15,7 @@
   import { anyNeedsReauth, clientSourceLabel, connectedLabel, googleState, googleToast } from '../lib/google';
   import { router } from '../lib/router.svelte';
   import { push } from '../lib/stores/push.svelte';
+  import { ui } from '../lib/stores/ui.svelte';
   import { onMount, untrack } from 'svelte';
 
   onMount(() => void push.init());
@@ -712,6 +713,19 @@
         {/each}
       </div>
       <p class="faint meta">Press <kbd class="mono">t</kbd> anywhere to cycle.</p>
+      <label class="field"
+        ><span>Show suggestions</span>
+        <input
+          type="checkbox"
+          checked={ui.showSuggestions}
+          data-testid="show-suggestions"
+          onchange={(e) => ui.setShowSuggestions(e.currentTarget.checked)}
+        />
+      </label>
+      <p class="faint meta">
+        A small hint on each item (reply, act, skip or spam) with the reason, from the assistant key's model. It only
+        suggests; nothing is ever done for you.
+      </p>
     </section>
 
     <section class="panel sec" data-testid="settings-usage">

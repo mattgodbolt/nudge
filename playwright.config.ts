@@ -5,13 +5,14 @@ const use = { permissions: ['clipboard-read', 'clipboard-write'] };
 // Three demo servers, so specs that change shared state cannot disturb each other (the specs run in parallel):
 // hand-off mode (4518, the default), API-posting mode (4519, NUDGE_DEMO_POST=api) for reply-api.spec.ts, and a private
 // one (4520) for snooze-labels.spec.ts, which reorders the inbox, labels comments and moves counts, and one (4521,
-// NUDGE_DEMO_GITHUB=1) with a fake GitHub feed for github.spec.ts, and one (4522) for assistant.spec.ts, which adds todos.
+// NUDGE_DEMO_GITHUB=1) with a fake GitHub feed for github.spec.ts, and one (4522) for assistant.spec.ts, which adds todos, and one (4523, NUDGE_DEMO_SUGGEST=1) with the fake suggestion
+// source for suggestions.spec.ts.
 export default defineConfig({
   testDir: 'e2e',
   projects: [
     {
       name: 'handoff',
-      testIgnore: /(reply-api|snooze-labels|github|assistant)\.spec\.ts/,
+      testIgnore: /(reply-api|snooze-labels|github|assistant|suggestions)\.spec\.ts/,
       use: { ...use, baseURL: 'http://127.0.0.1:4518' },
     },
     {
@@ -28,6 +29,11 @@ export default defineConfig({
       name: 'assistant',
       testMatch: /assistant\.spec\.ts/,
       use: { ...use, baseURL: 'http://127.0.0.1:4522' },
+    },
+    {
+      name: 'suggestions',
+      testMatch: /suggestions\.spec\.ts/,
+      use: { ...use, baseURL: 'http://127.0.0.1:4523' },
     },
     {
       name: 'github',
@@ -57,6 +63,12 @@ export default defineConfig({
     {
       command: 'npm run demo:e2e:assistant',
       url: 'http://127.0.0.1:4522/api/bootstrap',
+      reuseExistingServer: false,
+      timeout: 120000,
+    },
+    {
+      command: 'npm run demo:e2e:suggest',
+      url: 'http://127.0.0.1:4523/api/bootstrap',
       reuseExistingServer: false,
       timeout: 120000,
     },

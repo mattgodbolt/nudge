@@ -620,7 +620,7 @@ describe('migration 009 (item_events)', () => {
     const tables = () =>
       d
         .prepare(
-          "SELECT name, sql FROM sqlite_master WHERE name != 'item_events' AND name NOT LIKE 'idx_item_events%' AND name NOT LIKE '%usage_daily%' ORDER BY name",
+          "SELECT name, sql FROM sqlite_master WHERE name != 'item_events' AND name NOT LIKE 'idx_item_events%' AND name NOT LIKE '%usage_daily%' AND name NOT LIKE '%suggestions%' ORDER BY name",
         )
         .all();
     const before = tables();

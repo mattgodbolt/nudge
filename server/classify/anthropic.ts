@@ -59,6 +59,12 @@ export function renderItem(item: EvalItem): string {
     lines.push(
       `<github author_type="${esc(g.authorType ?? '')}" association="${esc(g.association ?? '')}" comments="${g.comments}" draft="${g.draft}" labels="${esc(g.labels.join(', '))}"/>`,
     );
+    // Only when known, so an item without it renders exactly as in the eval runs the prompt version was measured on.
+    if (g.lastCommenter) {
+      lines.push(
+        `<last_commenter is_matt="${g.lastCommenterIsMe === true}">${esc(clip(g.lastCommenter, 60))}</last_commenter>`,
+      );
+    }
   }
   if (item.thread?.length) {
     lines.push('<earlier_in_thread>');
@@ -110,6 +116,8 @@ export class ClassifierError extends Error {
   constructor(
     message: string,
     readonly fatal = false,
+    /** The HTTP status that caused it, when there was one (a network failure or a bad verdict has none). */
+    readonly status?: number,
   ) {
     super(message);
   }
@@ -177,12 +185,13 @@ export function createAnthropicClassifier(opts: {
           };
         }
         if (res) {
-          if (res.status === 401 || res.status === 403) throw new ClassifierError('API key rejected', true);
+          if (res.status === 401 || res.status === 403) throw new ClassifierError('API key rejected', true, res.status);
           const retryable = res.status === 429 || res.status >= 500;
           if (!retryable || attempt >= MAX_ATTEMPTS) {
             throw new ClassifierError(
               `HTTP ${res.status}: ${(await res.text().catch(() => '')).slice(0, 200)}`,
               res.status === 400,
+              res.status,
             );
           }
         }

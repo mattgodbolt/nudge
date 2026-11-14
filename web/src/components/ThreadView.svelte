@@ -13,6 +13,7 @@
   import ActionButton from './ActionButton.svelte';
   import Icon from './Icon.svelte';
   import LabelChips from './LabelChips.svelte';
+  import SuggestionChip from './SuggestionChip.svelte';
   import { tick, untrack } from 'svelte';
 
   let { item, now }: { item: InboxItem; now: number } = $props();
@@ -82,7 +83,7 @@
         {video?.channelTitle ?? ''}
         {#if video?.commentsDisabled}<span class="badge warn">Comments disabled</span>{/if}
       </div>
-      {#if item.snoozedUntil || item.labels.length > 0 || woke}
+      {#if item.snoozedUntil || item.labels.length > 0 || woke || (ui.showSuggestions && item.suggestion)}
         <div class="tags">
           {#if item.snoozedUntil}
             <span class="snz" data-testid="thread-snoozed"
@@ -91,6 +92,11 @@
           {:else if woke}
             <span class="snz" data-testid="thread-woke">⏰ back from snooze</span>
           {/if}
+          {#if ui.showSuggestions && item.suggestion}<SuggestionChip
+              suggestion={item.suggestion}
+              testid="thread-suggestion"
+              full
+            />{/if}
           <LabelChips ids={item.labels} max={5} />
         </div>
       {/if}

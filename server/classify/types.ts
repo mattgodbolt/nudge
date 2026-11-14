@@ -40,6 +40,9 @@ export interface EvalItem {
     draft: boolean;
     sourceState: string | null;
     reason: string | null;
+    /** Live suggestions only (absent from the offline eval set): who wrote the newest comment, when the poller knows. */
+    lastCommenter?: string;
+    lastCommenterIsMe?: boolean;
   };
 }
 

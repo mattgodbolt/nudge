@@ -49,4 +49,22 @@ describe('sse dispatch', () => {
     expect(inbox.counts.snoozed).toBe(1);
     expect(inbox.counts.byLabel).toEqual({ 1: 1 });
   });
+
+  it('suggestions.changed patches rows in place and leaves the rest of the list alone', () => {
+    const row = (id: string) => ({ comment: { id }, suggestion: null }) as never;
+    inbox.items = [row('a'), row('b')];
+    dispatch({
+      type: 'suggestions.changed',
+      suggestions: {
+        a: { action: 'reply', reason: 'Asks a question', confidence: 'high', suspicious: false },
+        elsewhere: null,
+      },
+    });
+    expect(inbox.items.map((i) => i.comment.id)).toEqual(['a', 'b']);
+    expect(inbox.items[0]!.suggestion).toMatchObject({ action: 'reply' });
+    expect(inbox.items[1]!.suggestion).toBeNull();
+    dispatch({ type: 'suggestions.changed', suggestions: { a: null } });
+    expect(inbox.items[0]!.suggestion).toBeNull();
+    inbox.items = [];
+  });
 });

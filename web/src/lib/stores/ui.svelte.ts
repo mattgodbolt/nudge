@@ -19,6 +19,8 @@ function save(key: string, value: unknown) {
 
 class UiStore {
   ownBannerDismissed = $state(load('yt-own-banner-dismissed', false));
+  /** Hint chips with the model's suggestion on each row. A per-device display choice, so it lives in the browser. */
+  showSuggestions = $state(load('nudge-show-suggestions', true));
   paletteOpen = $state(false);
   helpOpen = $state(false);
   sidebarCollapsed = $state(load('yt-sidebar-collapsed', false));
@@ -40,6 +42,10 @@ class UiStore {
   dismissOwnBanner() {
     this.ownBannerDismissed = true;
     save('yt-own-banner-dismissed', true);
+  }
+  setShowSuggestions(on: boolean) {
+    this.showSuggestions = on;
+    save('nudge-show-suggestions', on);
   }
   toggleSidebar() {
     this.sidebarCollapsed = !this.sidebarCollapsed;

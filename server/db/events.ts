@@ -1,5 +1,7 @@
 import type { Statement } from 'better-sqlite3';
+import type { Verdict } from '../classify/types.js';
 import type { Db } from './db.js';
+import { ACTION_OF } from './suggestions.js';
 
 /**
  * Append-only history of what happens to items (table item_events). It exists to become training and evaluation data
@@ -28,6 +30,10 @@ import type { Db } from './db.js';
  *                  listed, i.e. passed over), input ('key'|'button'|'palette'|'touch'|'other'), bulk, selectionSize }.
  *  - open:         the owner opened the item's detail. to_value is the view it was opened from; meta: { input,
  *                  dwellMs? } where dwellMs is how long it stayed open (sent on close, dropped under 300 ms).
+ *
+ * The owner's own actions (source `user`, kinds state/snooze/reply/decision) also carry `suggested` ('reply' | 'act' |
+ * 'skip' | 'spam') and `suggestedConfidence` in meta when the item had an LLM suggestion at that moment, so the hit rate
+ * can be measured later. Items with no suggestion, or one flagged as an injection attempt, get neither key.
  *
  * Not recorded, on purpose: an item's initial state when first seen (a bulk import would write thousands of rows;
  * the arrival time is items.first_seen_at and the first event's from_value says what it was), and the cascade when a
@@ -80,15 +86,38 @@ export interface Events {
   mergeSnoozeMeta(itemId: string, actionId: number, patch: Record<string, unknown>): boolean;
 }
 
+const SUGGESTION_KINDS: ReadonlySet<EventKind> = new Set(['state', 'snooze', 'reply', 'decision']);
+
 export function createEvents(db: Db): Events {
   // Prepared lazily: tests (and migrations) build repos around databases that are not at the latest version yet.
   let insert: Statement | undefined;
+  let currentSuggestion: Statement | null | undefined;
+
+  /** The suggestion in force for the item, as meta keys; nothing when there is none (or the table is not there yet). */
+  function suggestionMeta(itemId: string): Record<string, unknown> {
+    if (currentSuggestion === undefined) {
+      try {
+        currentSuggestion = db.prepare(
+          'SELECT verdict, confidence FROM suggestions WHERE item_id = ? AND injection_attempt = 0',
+        );
+      } catch {
+        currentSuggestion = null; // a database from before migration 11
+      }
+    }
+    const r = currentSuggestion?.get(itemId) as { verdict: Verdict; confidence: string } | undefined;
+    return r ? { suggested: ACTION_OF[r.verdict], suggestedConfidence: r.confidence } : {};
+  }
 
   function record(e: NewItemEvent): void {
     insert ??= db.prepare(
       'INSERT INTO item_events (item_id, at, kind, from_value, to_value, source, meta) VALUES (?, ?, ?, ?, ?, ?, ?)',
     );
-    insert.run(e.itemId, e.at, e.kind, e.from ?? null, e.to ?? null, e.source, e.meta ? JSON.stringify(e.meta) : null);
+    const extra =
+      e.source === 'user' && SUGGESTION_KINDS.has(e.kind) && !(e.meta && 'suggested' in e.meta)
+        ? suggestionMeta(e.itemId)
+        : {};
+    const meta = Object.keys(extra).length > 0 ? { ...e.meta, ...extra } : e.meta;
+    insert.run(e.itemId, e.at, e.kind, e.from ?? null, e.to ?? null, e.source, meta ? JSON.stringify(meta) : null);
   }
 
   function recordStateMoves(

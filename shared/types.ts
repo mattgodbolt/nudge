@@ -134,6 +134,19 @@ export interface GithubDiscussionDTO {
   /** ISO time this answer was fetched from GitHub (it may be served from a short cache). */
   fetchedAt: string;
 }
+/** What the model thinks the owner should do. Advisory only: nothing in Nudge ever acts on it. */
+export type SuggestedAction = 'reply' | 'act' | 'skip' | 'spam';
+export interface SuggestionDTO {
+  /**
+   * Null when the model said the text tried to instruct it (`suspicious`): such an item shows a warning and no
+   * suggestion, and the model's reason is withheld because it may repeat the attacker's words.
+   */
+  action: SuggestedAction | null;
+  /** One short plain sentence; empty when suspicious. */
+  reason: string;
+  confidence: 'low' | 'medium' | 'high';
+  suspicious: boolean;
+}
 export type InboxOrder = 'newest' | 'oldest' | 'arrived' | 'source';
 export interface InboxItem {
   item: ItemDTO;
@@ -155,6 +168,8 @@ export interface InboxItem {
   snoozedUntil: string | null;
   /** When the last snooze ended. Inbox ordering uses COALESCE(wokeAt, comment.publishedAt) so woken items resurface. */
   wokeAt: string | null;
+  /** The current LLM suggestion, or null while there is none (no key, not classified yet, or a todo). */
+  suggestion: SuggestionDTO | null;
 }
 export interface ThreadDetail {
   threadId: string;
@@ -383,6 +398,8 @@ export type ServerEvent =
       /** Why ids were added, when it is a genuine arrival: 'sync' = new on YouTube, 'woke' = a snooze ended. Push notifications key off this. */
       reason?: 'sync' | 'woke';
     }
+  /** Suggestions arrived or were replaced; a null value means the item no longer has one. Patch rows in place. */
+  | { type: 'suggestions.changed'; suggestions: Record<string, SuggestionDTO | null> }
   | { type: 'sync.progress'; status: SyncStatus }
   | { type: 'sync.done'; summary: SyncRunSummary }
   | { type: 'quota.update'; quota: QuotaDTO }
