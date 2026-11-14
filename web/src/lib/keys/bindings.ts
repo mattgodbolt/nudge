@@ -81,14 +81,6 @@ export function appBindings(): Binding[] {
       run: () => router.navigate('snoozed'),
     },
     {
-      id: 'go.label',
-      keys: ['g l'],
-      scope: 'global',
-      group: 'Go to',
-      description: 'Go to label…',
-      run: () => ui.openLabelGoto(),
-    },
-    {
       id: 'go.sources',
       keys: ['g s'],
       scope: 'global',
@@ -277,14 +269,6 @@ export function inboxBindings(): Binding[] {
       description: 'Snooze…',
       when: () => !!inbox.selected,
       run: () => ui.openSnooze(),
-    }),
-    list({
-      id: 'label.open',
-      keys: ['l'],
-      group: 'Triage',
-      description: 'Label as…',
-      when: () => !!inbox.selected,
-      run: () => ui.openLabelPicker(),
     }),
     list({
       id: 'triage.undo',

@@ -30,7 +30,7 @@ const INPUT_OF_VIA: Record<UsageVia, ItemEventInput> = {
 };
 
 export interface DecisionContext {
-  /** The action as the API call carried it: done, replied, inbox, snooze, unsnooze, label. */
+  /** The action as the API call carried it: done, replied, inbox, snooze, unsnooze. */
   action: string;
   view: string;
   /** Every item of the list on screen, top to bottom, as it was before the action. `passable` false = not pending. */

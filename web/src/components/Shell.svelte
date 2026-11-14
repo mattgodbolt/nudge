@@ -13,19 +13,15 @@
   import HelpOverlay from './HelpOverlay.svelte';
   import SnoozeMenu from './SnoozeMenu.svelte';
   import MuteMenu from './MuteMenu.svelte';
-  import MoreMenu from './MoreMenu.svelte';
   import Assistant from './Assistant.svelte';
   import { assistant } from '../lib/stores/assistant.svelte';
-  import LabelPicker from './LabelPicker.svelte';
   import Icon from './Icon.svelte';
   import TipLayer from './TipLayer.svelte';
   import Kbd from './Kbd.svelte';
 
   let { children }: { children: Snippet } = $props();
   // On narrow screens the sidebar collapses to a top nav unless we're in a sub-pane.
-  const hideNavOnMobile = $derived(
-    ui.pane === 'thread' && ['inbox', 'done', 'all', 'snoozed', 'label'].includes(router.route),
-  );
+  const hideNavOnMobile = $derived(ui.pane === 'thread' && ['inbox', 'done', 'all', 'snoozed'].includes(router.route));
 </script>
 
 <div class="shell" class:collapsed={ui.sidebarCollapsed} class:hide-nav={hideNavOnMobile}>
@@ -64,7 +60,6 @@
 <HelpOverlay />
 <SnoozeMenu />
 <MuteMenu />
-<MoreMenu />
 <Assistant />
 {#if !assistant.open}
   <button
@@ -77,7 +72,6 @@
     <Icon name="mic" size={26} />
   </button>
 {/if}
-<LabelPicker />
 <TipLayer />
 {#if keymap.pendingChord}
   <div class="chord" aria-live="polite"><Kbd label={keymap.pendingChord} /> <span class="muted">…</span></div>

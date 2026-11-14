@@ -14,20 +14,15 @@ describe('router', () => {
     expect(parseLocation('/snoozed', '?c=abc')).toEqual({ route: 'snoozed', params: {}, query: { c: 'abc' } });
   });
 
-  it('parses /label/:id', () => {
-    expect(parseLocation('/label/12', '?q=hi')).toEqual({ route: 'label', params: { id: '12' }, query: { q: 'hi' } });
-  });
-
-  it('falls back to the inbox for a malformed label route', () => {
+  it('sends a bookmarked /label/:id (the retired labels feature) to the inbox', () => {
+    expect(parseLocation('/label/12', '?q=hi').route).toBe('inbox');
     expect(parseLocation('/label', '').route).toBe('inbox');
-    expect(parseLocation('/label/abc', '').route).toBe('inbox');
-    expect(parseLocation('/label/0', '').route).toBe('inbox');
   });
 
   it('builds paths that parse back', () => {
     expect(buildPath('snoozed')).toBe('/snoozed');
-    expect(buildPath('label', { id: '3' }, { c: 'x' })).toBe('/label/3?c=x');
-    const url = new URL(buildPath('label', { id: '3' }), 'http://x');
+    expect(buildPath('snoozed', {}, { c: 'x' })).toBe('/snoozed?c=x');
+    const url = new URL(buildPath('source', { id: '3' }), 'http://x');
     expect(parseLocation(url.pathname, url.search).params.id).toBe('3');
   });
 });

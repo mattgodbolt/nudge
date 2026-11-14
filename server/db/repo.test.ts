@@ -580,7 +580,6 @@ describe('counts', () => {
       all: 4,
       snoozed: 0,
       bySource: { [sourceId]: 0, [s2.id]: 1, [empty.id]: 0 },
-      byLabel: {},
       byFeed: {},
       byRepo: {},
       todos: 0,

@@ -58,7 +58,7 @@ describe('buildDecisions', () => {
   });
 
   it('uses a null rank for an item that is not in the list', () => {
-    const [e] = buildDecisions({ action: 'label', view: 'inbox', list: list(3), targets: ['zzz'] }, 'other', iso());
+    const [e] = buildDecisions({ action: 'snooze', view: 'inbox', list: list(3), targets: ['zzz'] }, 'other', iso());
     expect(e!.meta).toMatchObject({ rank: null, above: [], listSize: 3 });
   });
 });

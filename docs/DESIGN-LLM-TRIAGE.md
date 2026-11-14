@@ -1,7 +1,13 @@
 # Nudge: LLM-assisted triage (design proposal)
 
 Status: historical proposal (2026-11-08). The items spine, GitHub feeds, mutes and the "Tell Nudge" assistant have since been built; the LLM triage in this document (issues #9, #10) has not. Treat the rest as design background, not current behaviour.
-pricing, prompt-caching and structured-outputs docs on 2026-11-08 (links at the end).
+
+> **Update (2026-11-14): user-defined labels were removed from Nudge.** The owner did not use them (production had
+> none), so the label list, `labels` / `item_labels` tables, label picker and label folders are gone (migration 015),
+> and the label parts of this proposal (label suggestions, a ghost new-label chip, label kNN, label descriptions,
+> `labels` / `newLabel` in the output schema, `applyLabels`) are dropped. Embeddings for near-duplicates are still a
+> possible later step. GitHub's own labels on PRs and issues are a different, read-only thing and are unaffected.
+> pricing, prompt-caching and structured-outputs docs on 2026-11-08 (links at the end).
 
 ## TL;DR
 
@@ -59,7 +65,7 @@ FCM), so (a) needs no network change.
 | ---------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
 | **(a) Anthropic API from the server** (key in `settings` like `apiKey`)                                                      | Best available. Haiku 5.5 is built for classification; Sonnet 5.5 if the eval says so                                                                                                                                                                                                 | Pennies (below)                                                  | One new runtime dependency (`@anthropic-ai/sdk`), a key in DB and backups, internet needed (fail-open)                                                                                                                                                               | **Recommended start**                                                                                           |
 | **(b) Local model on phoenix** (Ollama / llama.cpp container)                                                                | Small 1-4B instruction models (current Qwen, Gemma, Llama 3.x-class, Phi-mini; check what is current) are fine on obvious spam and emoji praise, and noticeably weaker on "is this correction worth answering", sarcasm, and labelling against your taxonomy. Easier to prompt-inject | £0 marginal, but about 3-5 GB RAM resident (Q4 3-4B), plus power | A second container, model updates, CPU contention with sync and builds. Throughput is fine: a 400-token prompt plus 50 tokens out is roughly 3-15 s per item on a 4-8 core CPU, and hundreds a week is trivial                                                       | Not worth it for public comments. Keep as a `Classifier` implementation for private sources later               |
-| **(b') Local _embeddings_ in-process** (onnxruntime-node or transformers.js, a ~25-130 MB model such as MiniLM or bge-small) | No judgement, but good for near-duplicates and "comments like this one you marked done" (kNN)                                                                                                                                                                                         | Free, ~10-50 ms per item on CPU, no extra container              | One dependency, model download in the image                                                                                                                                                                                                                          | **Worth it in a later phase** (dedupe, label kNN)                                                               |
+| **(b') Local _embeddings_ in-process** (onnxruntime-node or transformers.js, a ~25-130 MB model such as MiniLM or bge-small) | No judgement, but good for near-duplicates and "comments like this one you marked done" (kNN)                                                                                                                                                                                         | Free, ~10-50 ms per item on CPU, no extra container              | One dependency, model download in the image                                                                                                                                                                                                                          | **Worth it in a later phase** (dedupe)                                                                          |
 | **(c) Laptop worker** (`claude -p` / Claude Code in headless mode, pulling jobs over the tailnet)                            | Good model                                                                                                                                                                                                                                                                            | On your subscription                                             | Not always on, so notification gating and suggestions arrive hours late. Worst prompt-injection exposure: untrusted text fed to an _agent_ with shell tools on your laptop unless every tool is disabled. Also an awkward fit with subscription terms for automation | **No** for the live path. At most a "run the eval batch" helper, and the plain API is simpler for that too      |
 | **(d) Hybrid**                                                                                                               | Rules and embeddings decide the clear cases (impersonators, emoji-only, exact duplicates); the LLM gets the rest                                                                                                                                                                      | Saves less than a cent a week at your volume                     | More moving parts                                                                                                                                                                                                                                                    | Use the **rules tier** because it is _faster and more auditable_, not because of cost. Local LLM pre-filter: no |
 
@@ -76,7 +82,7 @@ stack.
 
 Per-item shape:
 
-- **Cached system prefix, about 2,000 tokens:** instructions, schema notes, your label list with descriptions, and
+- **Cached system prefix, about 2,000 tokens:** instructions, schema notes, and
   about 10 few-shot examples.
 - **Per-item input, about 400 tokens:** video title, parent comment, up to 5 recent thread messages capped at
   1,500 chars, and the comment itself.
@@ -136,8 +142,6 @@ question or correction). A spam comment left in the inbox costs you one keypress
 | Needs a human decision (collab/sponsor request, "can I use this in my course", CE feature requests)                                | LLM                                                                                                                                                    | Rare. A verdict value plus a reason                                                                                                                                                                              |
 | Sentiment                                                                                                                          | Skip                                                                                                                                                   | Low value. Criticism is often the comment most worth answering                                                                                                                                                   |
 | Toxicity / abuse                                                                                                                   | LLM flag (`toxic: boolean`)                                                                                                                            | Use only to _suppress notifications_ and offer a "hostile" chip. Never hide hostile but substantive comments                                                                                                     |
-| **Labels from your existing set**                                                                                                  | LLM with the label list and descriptions plus a few examples per label; **kNN on embeddings** once a label has about 10 or more examples               | Suggestions only. Add an optional `description` column to `labels` so the prompt knows what a label means                                                                                                        |
-| **Suggest a new label**                                                                                                            | LLM (`newLabel: string \| null`)                                                                                                                       | Never auto-created. Shown as a dashed ghost chip; accepting runs the existing `createLabel` path (name validation, `MAX_LABELS`)                                                                                 |
 | Near-duplicate _questions_ ("same question as 3 others on this video")                                                             | Embeddings                                                                                                                                             | Nice later: "4 people asked about -O3 here"                                                                                                                                                                      |
 | Thread summaries                                                                                                                   | LLM (Sonnet), **on demand only**, for threads with more than ~15 replies                                                                               | Cached by thread content hash                                                                                                                                                                                    |
 | Draft-reply suggestions                                                                                                            | Probably **don't build**                                                                                                                               | You write your own replies. If ever: on-demand only (palette command "Suggest reply"), shown in a collapsible panel _beside_ the composer, never pre-filled, never on by default. Drafts are not sent anywhere   |
@@ -152,9 +156,7 @@ question or correction). A spam comment left in the inbox costs you one keypress
                                              // numeric confidence is poorly calibrated anyway. Map each
                                              // (verdict, confidence) to a calibrated probability from the eval.
   "reason": "string",                        // one sentence; clamp to 200 chars server-side
-  "flags": { "isQuestion": bool, "isCorrection": bool, "isBugReport": bool, "toxic": bool },
-  "labels": ["<enum of current label names>"],
-  "newLabel": "string or null"
+  "flags": { "isQuestion": bool, "isCorrection": bool, "isBugReport": bool, "toxic": bool }
 }
 ```
 
@@ -193,8 +195,6 @@ snooze, which already solved "hidden from Inbox but still `state='inbox'`":
 - Nothing is ever deleted locally or on YouTube. A YouTube-side "hide user" or `setModerationStatus` action would
   need OAuth moderation scope; if ever, it is manual and explicit only.
 - `triage(ids,'inbox')` and `triage(…,'done'|'replied')` also clear the overlay, so any explicit action wins.
-- Auto-applied labels (if ever enabled) get `comment_labels.source='auto'`, so "remove all auto labels" is one
-  query. `applyLabels` has no undo today. Accepting a label suggestion uses the normal path.
 
 ### Auditability
 
@@ -228,7 +228,7 @@ Ground truth, strongest first:
   scoring change are free and only prompt edits cost money.
 - Reports a confusion matrix, **spam precision** (target ≥ 99.5% at the auto-file threshold; any false positive gets
   listed by name), **needs_reply recall** (target ≥ 95%; a "noise" verdict on a real question is the second-worst
-  error), "noise" precision, label agreement, cost per item and p50/p95 latency.
+  error), "noise" precision, cost per item and p50/p95 latency.
 - Compares rules-only, Haiku 5.5, and Sonnet 5.5 side by side. Pick the cheapest model that meets the targets.
 - Calibration: for each (verdict, confidence) bucket, records the empirical precision. That table becomes the
   shipped threshold config.
@@ -255,8 +255,7 @@ Comments are untrusted text written by strangers, some of them adversarial.
   is the status quo. An injection making a _real_ comment look like spam benefits nobody. Hiding requires agreement
   of rules-high or LLM-high above a calibrated threshold, and mode 4 is opt-in.
 - **Validate output server-side.** Enum checks, case-insensitive matching (the docs warn enum capitalisation can
-  drift), label names must exist, `newLabel` is checked with the same rules as `createLabel` (≤ `MAX_LABEL_NAME`),
-  and `reason` is clamped to 200 chars with URLs stripped. `reason` is rendered as text (Svelte escaping, never
+  drift), and `reason` is clamped to 200 chars with URLs stripped. `reason` is rendered as text (Svelte escaping, never
   through `sanitize.ts` / `{@html}`) and is **never** put into a push payload.
 - Classifier output is never fed back into another prompt (no model-to-model chains).
 
@@ -294,15 +293,13 @@ export interface ClassifyResult {
   confidence: 'low' | 'medium' | 'high';
   reason: string;
   flags: { isQuestion: boolean; isCorrection: boolean; isBugReport: boolean; toxic: boolean };
-  labels: number[];
-  newLabel: string | null;
   usage?: { inputTokens: number; cacheReadTokens: number; cacheWriteTokens: number; outputTokens: number };
 }
 /** One implementation per backend; tests and demo mode inject fakes (like PushSender / YouTubeClient / PostGateway). */
 export interface Classifier {
   readonly model: string; // 'claude-haiku-5-5', 'rules@3', 'fake'
   readonly promptVersion: string;
-  classify(input: ClassifyInput, labels: LabelDTO[], signal: AbortSignal): Promise<ClassifyResult>;
+  classify(input: ClassifyInput, signal: AbortSignal): Promise<ClassifyResult>;
 }
 export interface ClassifyService {
   status(): ClassifyStatusDTO; // mode, queue depth, today's/month's spend, budget, last error
@@ -344,7 +341,7 @@ Implementations live under `server/classify/`:
 - **Budget gate** before each call: `llm_usage` today and this month against the caps. Over the cap means the queue
   pauses, with `classify.status` showing "budget reached, resumes tomorrow". It mirrors `QuotaTracker.canPoll()`.
 - **Kill switch.** Mode Off cancels in-flight calls (AbortController), stops the worker and leaves the queue intact.
-- **Re-classify** button: enqueue the current inbox with a new `prompt_version` (needed when labels change).
+- **Re-classify** button: enqueue the current inbox with a new `prompt_version` (needed when the prompt changes).
 - **Events.** A new `ServerEvent` `{ type: 'classify.updated'; ids: string[] }` lets the store patch suggestions in
   place. Auto-filing emits the usual `inbox.changed` with `changedIds` and fresh `counts`, so the list and sidebar
   update through existing code.
@@ -370,8 +367,6 @@ CREATE TABLE classifications (
   probability REAL,                      -- calibrated from the eval table
   reason TEXT,
   flags TEXT NOT NULL DEFAULT '{}',      -- JSON
-  label_ids TEXT NOT NULL DEFAULT '[]',  -- JSON, existing labels only
-  new_label TEXT,
   input_tokens INTEGER, cache_read_tokens INTEGER, cache_write_tokens INTEGER, output_tokens INTEGER,
   cost_micros INTEGER,                   -- 1e-6 USD
   created_at TEXT NOT NULL,
@@ -389,8 +384,6 @@ CREATE TABLE llm_usage (                 -- like quota_ledger
   input_tokens INTEGER NOT NULL, cache_read_tokens INTEGER NOT NULL, cache_write_tokens INTEGER NOT NULL,
   output_tokens INTEGER NOT NULL, cost_micros INTEGER NOT NULL, PRIMARY KEY (day, model));
 
-ALTER TABLE labels ADD COLUMN description TEXT;                         -- fed to the prompt
-ALTER TABLE comment_labels ADD COLUMN source TEXT NOT NULL DEFAULT 'user'; -- 'user' | 'auto'
 ```
 
 No foreign key from `classifications.item_id` to `comments` (generic items later). `deleteSource(purge)` and
@@ -399,13 +392,13 @@ No foreign key from `classifications.item_id` to `comments` (generic items later
 
 ### API (`shared/api.ts`, `server/routes/api.ts`)
 
-- `InboxItem.suggestion?: { verdict, probability, reason, labels, newLabel, flags, model, promptVersion, at } | null`.
+- `InboxItem.suggestion?: { verdict, probability, reason, flags, model, promptVersion, at } | null`.
   It is included only when mode is Suggest or above, so Shadow really is invisible.
 - `GET /api/inbox?view=filtered` (and `InboxView` gains `'filtered'`; `Counts` gains `filtered`).
 - `POST /api/filter {ids, as: 'spam' | null}` returns a `SnoozeResult`-shaped result with an `actionId`.
   `POST /api/filter/:actionId/undo` mirrors the snooze routes.
 - `POST /api/classify/feedback {ids, accept: boolean}`. Accept applies the suggestion through the _existing_ paths
-  (spam → filter, noise → `triage(…,'done')`, labels → `applyLabels`) and returns the `actionId` for `z`. Reject
+  (spam → filter, noise → `triage(…,'done')`) and returns the `actionId` for `z`. Reject
   only records feedback and hides the chip.
 - `POST /api/classify/run {ids? | scope: 'inbox'}`, `GET /api/classify/status`, and
   `POST /api/settings/test-anthropic-key` (a tiny call, a few hundred tokens).
@@ -413,8 +406,8 @@ No foreign key from `classifications.item_id` to `comments` (generic items later
 
 ### UI
 
-- **InboxRow.** At most one compact chip after `LabelChips`, and _only for non-default verdicts_: "Likely spam",
-  "No reply needed", "Question", "Correction", "Bug report". Plus at most one dashed ghost label chip. No chip for
+- **InboxRow.** At most one compact chip, and _only for non-default verdicts_: "Likely spam",
+  "No reply needed", "Question", "Correction", "Bug report". No chip for
   plain "needs_reply" (the inbox is the default). Confidence shows on hover, not as a number on every row, to keep
   noise down.
 - **ThreadView.** A "Why" line under the focused comment, with Accept / Reject `ActionButton`s whose tooltips show
@@ -460,7 +453,7 @@ No foreign key from `classifications.item_id` to `comments` (generic items later
     maths.
   - `service.test.ts`: in-memory repo with the injected `now`; covers backoff, budget stop, kill switch, restart
     resume from `classify_queue`, `settled()` timeout.
-  - Repo tests for the filter overlay, undo, restore and counts (extend `snooze-labels.test.ts`).
+  - Repo tests for the filter overlay, undo, restore and counts (extend `snooze.test.ts`).
   - Notifier tests: suppressed vs fail-open vs shadow.
 - **Demo:** `NUDGE_DEMO=1` uses the fake classifier by default (mode Suggest), so `npm run demo` shows chips and a
   Filtered view with no key. `NUDGE_DEMO_CLASSIFY=off` turns it off.
@@ -478,7 +471,7 @@ No foreign key from `classifications.item_id` to `comments` (generic items later
 | **1. Plumbing + Shadow**                    | Medium                           | Migration 007, `Classifier`/`ClassifyService`, durable queue, `llm_usage`, budget and kill switch, key resolution, Settings card (mode / key / budget / spend), sidebar cost counter, fake classifier in demo, Stats scorecard                     | 2-4 weeks of shadow with no near-misses at the chosen threshold                                                                                            |
 | **2. Suggest**                              | Medium                           | Chips, why line, `a` / `Shift+A` / `!`, Filtered view and overlay with undo and restore, bulk, e2e spec                                                                                                                                            | You actually press `a` more than `Shift+A`                                                                                                                 |
 | **3. Notification gating + Auto-file spam** | Small                            | Notifier `settled` / filter changes (fail-open), mode 4 behind the calibrated threshold                                                                                                                                                            | A week with zero restores from Filtered                                                                                                                    |
-| **4. Labels & embeddings**                  | Small-medium                     | Label descriptions, label suggestions, ghost new-label chip, in-process embeddings for near-dup waves and label kNN                                                                                                                                | Suggestion acceptance rate                                                                                                                                 |
+| **4. Embeddings**                           | Small                            | In-process embeddings for near-dup waves (the label suggestions this phase once held were dropped with the labels feature)                                                                                                                         | Near-duplicate hit rate                                                                                                                                    |
 | **5. Multi-source**                         | Medium (rides on the items work) | `ClassifyInput` from GitHub/Tasks providers, per-source `llmPolicy`, GitHub structured rules (CI / bot / approval), optional Ollama for private sources, on-demand thread summaries                                                                |                                                                                                                                                            |
 
 ### Riskiest assumptions, in the order to test them (all in Phase 0)

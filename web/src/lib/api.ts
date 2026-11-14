@@ -89,7 +89,7 @@ export const api = {
   inbox: (q: InboxQuery) =>
     request<InboxPage>(
       'GET',
-      `/api/inbox${qs({ view: q.view, sourceId: q.sourceId, videoId: q.videoId, labelId: q.labelId, feedId: q.feedId, repo: q.repo, order: q.order, kind: q.kind, audience: q.audience, suggestion: q.suggestion, q: q.q, cursor: q.cursor, limit: q.limit })}`,
+      `/api/inbox${qs({ view: q.view, sourceId: q.sourceId, videoId: q.videoId, feedId: q.feedId, repo: q.repo, order: q.order, kind: q.kind, audience: q.audience, suggestion: q.suggestion, q: q.q, cursor: q.cursor, limit: q.limit })}`,
     ),
   thread: (id: string, focus?: string) =>
     request<T.ThreadDetail>('GET', `/api/threads/${encodeURIComponent(id)}${qs({ focus })}`),
@@ -101,13 +101,6 @@ export const api = {
   snooze: (commentIds: string[], until: string | null, why?: string) =>
     request<T.SnoozeResult>('POST', '/api/snooze', { commentIds, until, ...(why ? { why } : {}) }),
   undoSnooze: (actionId: number) => request<T.SnoozeResult>('POST', `/api/snooze/${actionId}/undo`),
-  labels: () => request<T.LabelDTO[]>('GET', '/api/labels'),
-  createLabel: (name: string, color?: T.LabelColor) => request<T.LabelDTO>('POST', '/api/labels', { name, color }),
-  patchLabel: (id: number, patch: Partial<Pick<T.LabelDTO, 'name' | 'color' | 'position'>>) =>
-    request<T.LabelDTO>('PATCH', `/api/labels/${id}`, patch),
-  deleteLabel: (id: number) => request<void>('DELETE', `/api/labels/${id}`),
-  applyLabels: (commentIds: string[], add: number[], remove: number[]) =>
-    request<T.LabelApplyResult>('POST', '/api/labels/apply', { commentIds, add, remove }),
   getDraft: (commentId: string) =>
     request<DraftDTO | null>('GET', `/api/drafts/${encodeURIComponent(commentId)}`, undefined, { allow404: true }),
   putDraft: (commentId: string, body: string) =>

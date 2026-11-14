@@ -5,13 +5,14 @@ import { ACTION_OF } from './suggestions.js';
 
 /**
  * Append-only history of what happens to items (table item_events). It exists to become training and evaluation data
- * for a classifier, and history cannot be reconstructed later, so every site that changes an item's state, snooze or
- * labels, or sends a reply, writes one of these in the same transaction as the change.
+ * for a classifier, and history cannot be reconstructed later, so every site that changes an item's state, snooze,
+ * or sends a reply, writes one of these in the same transaction as the change.
  *
  * Vocabulary:
  *  - state:        from_value/to_value are item states.
  *  - snooze:       from_value/to_value are the "until" ISO time, null meaning not snoozed (to_value null = unsnooze).
- *  - label_add / label_remove: the label NAME in to_value / from_value (labels get renamed and deleted), id in meta.
+ *  - label_add / label_remove: from when Nudge had user-defined labels (since removed, migration 015). Nothing writes
+ *                  them any more; old rows stay as history. The label NAME is in to_value / from_value, id in meta.
  *  - reply:        a reply was sent (YouTube, via the app) or first seen (GitHub, by sync).
  *  - mute/unmute:  a mute rule was added or removed. item_id is the item for `item` rules, '' otherwise (the rule
  *                  covers many items; the ones archived on the spot get their own `state` events from triage).
@@ -23,9 +24,9 @@ import { ACTION_OF } from './suggestions.js';
  * came from the remote service (closed or reopened upstream, new comments, ownership changes).
  *
  *  - decision:     what the owner decided about an item, with the context it was decided in (written by the browser via
- *                  POST /api/item-events, in addition to the state/snooze/label rows the action itself writes).
+ *                  POST /api/item-events, in addition to the state/snooze rows the action itself writes).
  *                  to_value is the action as the API call carried it ('done', 'replied', 'inbox', 'snooze',
- *                  'unsnooze', 'label'...); from_value is null. meta: { view, rank (0-based position in the list
+ *                  'unsnooze'...); from_value is null. meta: { view, rank (0-based position in the list
  *                  on screen, or null), listSize, above (ids of up to 10 items ranked just above that were still
  *                  listed, i.e. passed over), input ('key'|'button'|'palette'|'touch'|'other'), bulk, selectionSize }.
  *  - open:         the owner opened the item's detail. to_value is the view it was opened from; meta: { input,
@@ -45,7 +46,7 @@ import { ACTION_OF } from './suggestions.js';
  *
  * Not recorded, on purpose: an item's initial state when first seen (a bulk import would write thousands of rows;
  * the arrival time is items.first_seen_at and the first event's from_value says what it was), and the cascade when a
- * label or item is deleted.
+ * item is deleted.
  */
 export type EventKind =
   'state' | 'snooze' | 'label_add' | 'label_remove' | 'reply' | 'mute' | 'unmute' | 'undo' | 'decision' | 'open';

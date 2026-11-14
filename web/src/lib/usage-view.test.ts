@@ -59,6 +59,22 @@ describe('summarise', () => {
   });
 });
 
+describe('summarise with counts stored for a removed feature', () => {
+  it('still reads them, as one feature, without counting them as an invocation route', () => {
+    const old: UsageDTO = {
+      ...dto,
+      rows: [
+        { day: '2026-11-09', key: 'label.kbd', count: 4 },
+        { day: '2026-11-09', key: 'label.applied', count: 2 },
+        { day: '2026-11-10', key: 'done.kbd', count: 1 },
+      ],
+    };
+    const s = summarise(old);
+    expect(s.top[0]).toEqual({ feature: 'label', count: 6 });
+    expect(s.via).toEqual({ kbd: 1, btn: 0, touch: 0, palette: 0 });
+  });
+});
+
 describe('labels', () => {
   it('reads naturally', () => {
     expect(featureLabel('done')).toBe('Done');

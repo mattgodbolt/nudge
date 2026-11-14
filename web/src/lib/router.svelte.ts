@@ -1,6 +1,6 @@
 import { usage } from './usage';
 
-export type RouteName = 'inbox' | 'done' | 'all' | 'snoozed' | 'label' | 'sources' | 'source' | 'settings' | 'stats';
+export type RouteName = 'inbox' | 'done' | 'all' | 'snoozed' | 'sources' | 'source' | 'settings' | 'stats';
 
 export interface RouteState {
   route: RouteName;
@@ -21,12 +21,6 @@ export function parseLocation(pathname: string, search: string): RouteState {
     case 'settings':
     case 'stats':
       return { route: a, params: {}, query };
-    case 'label': {
-      const id = Number(b);
-      return Number.isInteger(id) && id > 0
-        ? { route: 'label', params: { id: b }, query }
-        : { route: 'inbox', params: {}, query };
-    }
     case 'sources':
       return b ? { route: 'source', params: { id: b }, query } : { route: 'sources', params: {}, query };
     default:
@@ -35,14 +29,7 @@ export function parseLocation(pathname: string, search: string): RouteState {
 }
 
 export function buildPath(route: RouteName, params: { id?: string } = {}, query: Record<string, string> = {}): string {
-  const base =
-    route === 'source'
-      ? `/sources/${params.id ?? ''}`
-      : route === 'label'
-        ? `/label/${params.id ?? ''}`
-        : route === 'inbox'
-          ? '/inbox'
-          : `/${route}`;
+  const base = route === 'source' ? `/sources/${params.id ?? ''}` : route === 'inbox' ? '/inbox' : `/${route}`;
   const u = new URLSearchParams();
   for (const [k, v] of Object.entries(query)) if (v) u.set(k, v);
   const s = u.toString();

@@ -3,7 +3,6 @@
   import { router, type RouteName } from '../lib/router.svelte';
   import { inbox } from '../lib/stores/inbox.svelte';
   import { feeds } from '../lib/stores/feeds.svelte';
-  import { labels, labelColorVar } from '../lib/stores/labels.svelte';
   import { sources } from '../lib/stores/sources.svelte';
   import { ui } from '../lib/stores/ui.svelte';
   import { assistant } from '../lib/stores/assistant.svelte';
@@ -190,27 +189,6 @@
     </div>
 
     <div class="group scroll">
-      {#if labels.list.length > 0}
-        <div class="label head">Labels</div>
-        {#each labels.list as l (l.id)}
-          {@const n = inbox.counts.byLabel[l.id] ?? 0}
-          <a
-            class="item sub"
-            class:active={router.route === 'label' && router.params.id === String(l.id)}
-            href="/label/{l.id}"
-            data-testid="sidebar-label"
-            onclick={(e) => {
-              e.preventDefault();
-              router.navigate('label', {}, { id: l.id });
-              ui.pane = 'list';
-            }}
-          >
-            <i class="dot" style:background={labelColorVar(l.color)}></i>
-            <span class="grow truncate">{l.name}</span>
-            {#if n > 0}<span class="count" data-testid="sidebar-label-count">{formatNumber(n)}</span>{/if}
-          </a>
-        {/each}
-      {/if}
       <div class="label head">Sources</div>
       <div class="label subhead">YouTube</div>
       {#each sources.list as s (s.id)}
@@ -462,13 +440,6 @@
     font-variant-numeric: tabular-nums;
     color: var(--text-faint);
   }
-  .dot {
-    width: 9px;
-    height: 9px;
-    margin: 0 2.5px;
-    border-radius: 50%;
-    flex: none;
-  }
   .count.zero {
     opacity: 0.45;
   }
@@ -513,8 +484,8 @@
   .more {
     display: none;
   }
-  /* Phone: the whole top bar is ONE row. A swipeable strip of every view (Inbox, Snoozed, Done, All, each label,
-     each source) as 44px chips, then fixed icon buttons: jump/search, refresh, and "more" which opens a popover
+  /* Phone: the whole top bar is ONE row. A swipeable strip of every view (Inbox, Snoozed, Done, All, each
+     source) as 44px chips, then fixed icon buttons: jump/search, refresh, and "more" which opens a popover
      with Manage sources, Stats and Settings. The brand is dropped: the page title below says where you are. */
   @media (max-width: 899px) {
     .chev {

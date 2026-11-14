@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 
 type Row = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
 
-/** A todo is an item like any other (provider 'todo'), so triage, snooze, labels, search and undo all just work. */
+/** A todo is an item like any other (provider 'todo'), so triage, snooze, search and undo all just work. */
 export function createTodosRepo(deps: { db: Database; now: () => string }) {
   const { db, now } = deps;
 

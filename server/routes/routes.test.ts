@@ -71,7 +71,6 @@ function stubRepo() {
       all: all.length,
       snoozed: 0,
       bySource: {},
-      byLabel: {},
       byFeed: {},
       byRepo: {},
       todos: 0,
@@ -136,7 +135,6 @@ function stubRepo() {
     },
     deleteDraft: (id: string) => void drafts.delete(id),
     counts,
-    listLabels: () => [],
   };
   sources.push({
     id: 1,

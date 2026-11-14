@@ -12,7 +12,6 @@
   import ActionButton from './ActionButton.svelte';
   import Avatar from './Avatar.svelte';
   import Icon from './Icon.svelte';
-  import LabelChips from './LabelChips.svelte';
   import SuggestionChip from './SuggestionChip.svelte';
 
   let {
@@ -32,7 +31,7 @@
     /** Some row is ticked: on a phone the ticks show on every row and a tap toggles instead of opening. */
     selecting?: boolean;
     now: number;
-    /** Label folders and All mix states, so each row says which one it is in. */
+    /** The All view mixes states, so each row says which one it is in. */
     showState?: boolean;
     snoozedView?: boolean;
     onclick: () => void;
@@ -197,7 +196,6 @@
         {#if gh?.github}
           {#each gh.github.labels.slice(0, 3) as name (name)}<span class="ghlabel">{name}</span>{/each}
         {/if}
-        <LabelChips ids={item.labels} />
       </span>
     </div>
     <div class="suggest">
@@ -234,13 +232,14 @@
         testid="row-dismiss"
       />
     {/if}
-    {#if c.state === 'inbox' && !phone.value}
+    {#if c.state === 'inbox'}
       <ActionButton
         id="triage.replied"
         label="Mark replied"
         short="Replied"
         icon="check-all"
         showLabel={false}
+        tile={phone.value}
         suggested={suggested === 'triage.replied'}
         tabindex={selected ? 0 : -1}
         onclick={() => void inbox.triage('replied', [c.id])}
@@ -270,33 +269,6 @@
         tabindex={selected ? 0 : -1}
         onclick={() => ui.openSnooze([c.id])}
         testid="row-snooze"
-      />
-    {/if}
-    <!-- A row on a phone has room for four big tiles, so the rarer actions share the fourth. -->
-    {#if phone.value && c.state === 'inbox'}
-      <ActionButton
-        id="row.more"
-        label="More actions"
-        short="More"
-        icon="more"
-        showLabel={false}
-        tile
-        suggested={suggested === 'triage.replied'}
-        pressed={ui.moreFor === c.id}
-        tabindex={selected ? 0 : -1}
-        onclick={() => ui.openMore(c.id)}
-        testid="row-more"
-      />
-    {:else}
-      <ActionButton
-        id="label.open"
-        label="Label"
-        icon="tag"
-        showLabel={false}
-        tile={phone.value}
-        tabindex={selected ? 0 : -1}
-        onclick={() => ui.openLabelPicker([c.id])}
-        testid="row-label"
       />
     {/if}
   </div>

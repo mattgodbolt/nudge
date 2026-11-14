@@ -17,7 +17,6 @@ export const BINDING_ACTIONS: Readonly<Record<string, UsageAction>> = {
   'triage.replied': 'replied',
   'triage.inbox': 'inbox',
   'snooze.open': 'snooze',
-  'label.open': 'label',
   'mute.open': 'mute',
   'triage.undo': 'undo',
   'reply.open': 'reply',

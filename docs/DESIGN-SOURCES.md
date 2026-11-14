@@ -2,6 +2,8 @@
 
 Status: historical proposal (2026-11-08). Largely built (items spine, GitHub feeds, mutes, native todos instead of the todo sources proposed here, see #7 and #8). Treat as design background, not current behaviour.
 
+> **Update (2026-11-14): user-defined labels were removed from Nudge** (migration 015 drops `labels` and `item_labels`; the label picker, label folders, `counts.byLabel` and `/api/labels*` are gone). The label rows, snippets and mentions below describe how the feature was carried across the items spine and are kept as history. GitHub's own labels on PRs and issues are unrelated and still shown.
+
 ## 0. Summary
 
 - **Generalise by adding an `items` table as the triage spine.** `items` owns everything shared: state, snooze,
@@ -80,7 +82,7 @@ detail. Triage, snooze, labels, counts, search and push operate on `items` alone
   value or column is a new table's CHECK, with no FTS rebuild of `comments`. It is the natural place for the LLM
   agent's classification hook.
 - Con: a real migration of live data, and a mechanical rewrite of about 25 SQL statements in `repo.ts` plus the DTO
-  rename through the web stores. It is mitigated by the strong existing tests (`repo.test.ts`, `snooze-labels.test.ts`,
+  rename through the web stores. It is mitigated by the strong existing tests (`repo.test.ts`, `snooze.test.ts`,
   `inbox.svelte.test.ts`) and by a counts-invariance check against a copy of the production DB.
 
 ### Recommended schema (migration 007)

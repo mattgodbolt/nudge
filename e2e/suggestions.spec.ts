@@ -119,21 +119,14 @@ test.describe('on a phone', () => {
     const withLabels = row.filter({ hasText: 'discussion' });
     const target = (await withLabels.count()) > 0 ? withLabels.first() : row.first();
     const r = (await target.boundingBox())!;
-    // Four big tiles: the three decisions made all the time, and More for the rest.
-    for (const id of ['row-done', 'row-dismiss', 'row-snooze', 'row-more']) {
+    // Four big tiles, all the decisions made at a glance: no overflow menu.
+    for (const id of ['row-done', 'row-dismiss', 'row-replied', 'row-snooze']) {
       const b = (await target.getByTestId(id).boundingBox())!;
       expect(b.height).toBeGreaterThanOrEqual(50);
       expect(b.y).toBeGreaterThanOrEqual(r.y);
       expect(b.y + b.height).toBeLessThanOrEqual(r.y + r.height);
       expect(b.x + b.width).toBeLessThanOrEqual(r.x + r.width);
     }
-    // The rest is one tap away, in a sheet that closes again.
-    await target.getByTestId('row-more').tap();
-    await expect(page.getByTestId('more-menu')).toBeVisible();
-    await expect(page.getByTestId('more-replied')).toBeVisible();
-    await expect(page.getByTestId('more-label')).toBeVisible();
-    await page.keyboard.press('Escape');
-    await expect(page.getByTestId('more-menu')).toBeHidden();
     // Every badge stays on one line, and labels stop at the row's right edge.
     for (const el of await target.locator('.badge, .ghlabel').all()) {
       const b = (await el.boundingBox())!;
@@ -177,16 +170,7 @@ for (const [name, viewport, touch] of [
       });
       expect(lines).toBeLessThanOrEqual(3);
 
-      for (const id of [
-        'act-done',
-        'act-dismiss',
-        'act-replied',
-        'act-snooze',
-        'act-label',
-        'act-mute',
-        'act-undo',
-        'act-open',
-      ]) {
+      for (const id of ['act-done', 'act-dismiss', 'act-replied', 'act-snooze', 'act-mute', 'act-undo', 'act-open']) {
         const button = page.getByTestId(id);
         await expect(button).toBeVisible();
         const b = (await button.boundingBox())!;

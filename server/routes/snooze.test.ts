@@ -7,7 +7,7 @@ import { fakeGoogleAuth } from '../reply/test-helpers.js';
 import { makeEnv } from '../sync/test-helpers.js';
 import type { ServerEvent } from '../../shared/types.js';
 
-// Real repo behind the real routes: snooze + label endpoints, validation and events.
+// Real repo behind the real routes: snooze endpoints, validation and events.
 const H = { 'x-nudge': '1', host: '127.0.0.1:4517' };
 
 let app: FastifyInstance;
@@ -134,80 +134,18 @@ describe('POST /api/snooze', () => {
   });
 });
 
-describe('labels routes', () => {
-  it('creates, lists, patches and deletes, emitting labels.changed', async () => {
-    const c = await send('POST', '/api/labels', { name: ' Question ' });
-    expect(c.statusCode).toBe(201);
-    const label = c.json();
-    expect(label).toMatchObject({ name: 'Question', color: 'red' });
-    expect(events.at(-1)).toMatchObject({ type: 'labels.changed', labels: [label] });
-    expect((await get('/api/labels')).json()).toEqual([label]);
-
-    const p = await send('PATCH', `/api/labels/${label.id}`, { name: 'Q', color: 'blue' });
-    expect(p.json()).toMatchObject({ id: label.id, name: 'Q', color: 'blue' });
-    expect(events.at(-1)).toMatchObject({ type: 'labels.changed' });
-
-    const d = await send('DELETE', `/api/labels/${label.id}`);
-    expect(d.statusCode).toBe(204);
-    expect((await get('/api/labels')).json()).toEqual([]);
-  });
-
-  it('maps errors: duplicate 409, too long / empty 400, unknown 404, bad colour 400', async () => {
-    await send('POST', '/api/labels', { name: 'Bug' });
-    const dup = await send('POST', '/api/labels', { name: 'bug' });
-    expect(dup.statusCode).toBe(409);
-    expect(dup.json().code).toBe('duplicate_label');
-    for (const name of ['', '   ', 'x'.repeat(41)]) {
-      const r = await send('POST', '/api/labels', { name });
-      expect(r.statusCode).toBe(400);
-      expect(r.json().code).toBe('bad_name');
-    }
-    expect((await send('POST', '/api/labels', { name: 'ok', color: 'chartreuse' })).statusCode).toBe(400);
-    expect((await send('PATCH', '/api/labels/999', { name: 'z' })).statusCode).toBe(404);
-    expect((await send('DELETE', '/api/labels/999')).statusCode).toBe(404);
-    expect((await send('DELETE', '/api/labels/abc')).statusCode).toBe(400);
-  });
-
-  it('answers 409 too_many_labels at the cap', async () => {
-    for (let i = 0; i < 100; i++) env.repo.createLabel(`L${i}`);
-    const r = await send('POST', '/api/labels', { name: 'extra' });
-    expect(r.statusCode).toBe(409);
-    expect(r.json().code).toBe('too_many_labels');
-  });
-
-  it('applies labels, filters the inbox by labelId and emits inbox.changed', async () => {
-    const l = (await send('POST', '/api/labels', { name: 'A' })).json();
-    const res = await send('POST', '/api/labels/apply', { commentIds: ['c1', 'nope'], add: [l.id, 777] });
-    expect(res.statusCode).toBe(200);
-    expect(res.json().labels).toEqual({ c1: [l.id] });
-    expect(res.json().counts.byLabel).toEqual({ [l.id]: 1 });
-    expect(events.at(-1)).toMatchObject({ type: 'inbox.changed', changedIds: ['c1'] });
-    const list = (await get(`/api/inbox?view=inbox&labelId=${l.id}`)).json();
-    expect(list.items.map((i: { comment: { id: string } }) => i.comment.id)).toEqual(['c1']);
-    expect(list.items[0].labels).toEqual([l.id]);
-    expect((await get('/api/inbox?labelId=abc')).statusCode).toBe(400);
-
-    const again = await send('POST', '/api/labels/apply', { commentIds: ['c1'], add: [l.id] });
-    expect(again.json().labels).toEqual({});
-    const rm = await send('POST', '/api/labels/apply', { commentIds: ['c1'], remove: [l.id] });
-    expect(rm.json().labels).toEqual({ c1: [] });
-    expect((await send('POST', '/api/labels/apply', { commentIds: [], add: [1] })).statusCode).toBe(400);
-    expect((await send('POST', '/api/labels/apply', { commentIds: ['c1'], add: 'x' })).statusCode).toBe(400);
-  });
-
-  it('delete emits inbox.changed for the comments that carried the label', async () => {
-    const l = (await send('POST', '/api/labels', { name: 'A' })).json();
-    await send('POST', '/api/labels/apply', { commentIds: ['c2'], add: [l.id] });
-    await send('DELETE', `/api/labels/${l.id}`);
-    const types = events.slice(-2).map((e) => e.type);
-    expect(types).toEqual(['labels.changed', 'inbox.changed']);
-    expect(events.at(-1)).toMatchObject({ changedIds: ['c2'] });
-  });
-
-  it('bootstrap includes labels and the new counts', async () => {
-    const l = (await send('POST', '/api/labels', { name: 'A' })).json();
+describe('bootstrap', () => {
+  it('reports the snoozed count', async () => {
+    await send('POST', '/api/snooze', { commentIds: ['c1'], until: inMs(HOUR) });
     const b = (await get('/api/bootstrap')).json();
-    expect(b.labels).toEqual([l]);
-    expect(b.counts).toMatchObject({ snoozed: 0, byLabel: { [l.id]: 0 } });
+    expect(b.counts).toMatchObject({ snoozed: 1, inbox: 1 });
+    expect(b).not.toHaveProperty('labels');
+  });
+});
+
+describe('retired label endpoints', () => {
+  it('are gone', async () => {
+    expect((await get('/api/labels')).statusCode).toBe(404);
+    expect((await send('POST', '/api/labels/apply', { commentIds: ['c1'], add: [1] })).statusCode).toBe(404);
   });
 });

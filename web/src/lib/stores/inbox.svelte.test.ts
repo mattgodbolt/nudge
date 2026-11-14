@@ -47,7 +47,6 @@ function item(n: number, state: CommentDTO['state'] = 'inbox'): InboxItem {
     arrivedAt: '2025-01-01T00:00:00.000Z',
     threadReplyCount: 0,
     hasDraft: false,
-    labels: [],
     snoozedUntil: null,
     wokeAt: null,
     snoozeWhy: null,
@@ -61,7 +60,6 @@ const counts = (inbox: number, done: number): Counts => ({
   all: inbox + done,
   snoozed: 0,
   bySource: {},
-  byLabel: {},
   byFeed: {},
   byRepo: {},
   todos: 0,
@@ -267,19 +265,18 @@ describe('InboxStore', () => {
   });
 });
 
-describe('InboxStore snooze and labels', () => {
+describe('InboxStore snooze', () => {
   let store: InboxStore;
   let fetchMock: ReturnType<typeof vi.fn>;
   let snoozeActionId: number | null;
 
   const snoozed = (n: number, until = '2099-01-01T08:00:00.000Z'): InboxItem => ({ ...item(n), snoozedUntil: until });
-  const full = (inboxN: number, snoozedN: number, byLabel: Record<number, number> = {}): Counts => ({
+  const full = (inboxN: number, snoozedN: number): Counts => ({
     inbox: inboxN,
     done: 0,
     all: inboxN + snoozedN,
     snoozed: snoozedN,
     bySource: {},
-    byLabel,
     byFeed: {},
     byRepo: {},
     todos: 0,
@@ -296,18 +293,11 @@ describe('InboxStore snooze and labels', () => {
       }
       if (url === '/api/snooze') return json({ actionId: snoozeActionId, changes: [], counts: full(3, 1) });
       if (url === '/api/snooze/11/undo') return json({ actionId: 11, changes: [], counts: full(4, 0) });
-      if (url === '/api/labels/apply') {
-        const b = JSON.parse(init!.body as string) as { commentIds: string[]; add: number[] };
-        return json({
-          labels: Object.fromEntries(b.commentIds.map((id) => [id, b.add])),
-          counts: full(4, 0, { 5: 2 }),
-        });
-      }
       return json({ error: 'nope', code: 'x' }, 404);
     });
     vi.stubGlobal('fetch', fetchMock);
     store = new InboxStore();
-    store.counts = full(4, 0, { 5: 0 });
+    store.counts = full(4, 0);
   });
   afterEach(() => vi.unstubAllGlobals());
 
@@ -411,86 +401,6 @@ describe('InboxStore snooze and labels', () => {
   it('sorts woken items first using wokeAt', () => {
     const woken = { ...item(4), wokeAt: '2026-01-01T00:00:00.000Z' };
     expect([item(1), woken].sort(compareItems).map((i) => i.comment.id)).toEqual(['c4', 'c1']);
-  });
-
-  it('queries with labelId and reloads when it changes', async () => {
-    await load();
-    await store.configure('all', { labelId: 5 });
-    const urls = fetchMock.mock.calls.map((c) => c[0] as string).filter((u) => u.startsWith('/api/inbox'));
-    expect(urls.at(-1)).toContain('view=all');
-    expect(urls.at(-1)).toContain('labelId=5');
-    const n = fetchMock.mock.calls.length;
-    await store.configure('all', { labelId: 5 });
-    expect(fetchMock.mock.calls.length).toBe(n); // unchanged: no reload
-    await store.configure('all', { labelId: 6 });
-    expect(fetchMock.mock.calls.length).toBe(n + 1);
-  });
-
-  it('applies labels in place, optimistically, then takes the server answer', async () => {
-    await load();
-    store.toggleSelect('c1');
-    store.toggleSelect('c2');
-    const p = store.applyLabels([5], []);
-    expect(store.items[0]!.labels).toEqual([5]);
-    expect(store.items[1]!.labels).toEqual([5]);
-    expect(store.items[2]!.labels).toEqual([]);
-    expect(store.counts.byLabel[5]).toBe(2);
-    expect(await p).toBe(true);
-    expect(ids()).toEqual(['c1', 'c2', 'c3', 'c4']);
-    expect(bodies('/api/labels/apply')[0]).toEqual({ commentIds: expect.any(Array), add: [5], remove: [] });
-    expect(store.counts.byLabel[5]).toBe(2);
-  });
-
-  it('quick add-then-remove ends with the label removed even though the first answer arrives later', async () => {
-    await load();
-    const answers: Array<(r: Response) => void> = [];
-    const sent: unknown[] = [];
-    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
-      if (url !== '/api/labels/apply') return json({}, 404);
-      sent.push(JSON.parse(String(init?.body)));
-      return new Promise<Response>((res) => answers.push(res));
-    });
-    const reply = (labels: number[]) =>
-      new Response(JSON.stringify({ labels: { c1: labels }, counts: full(4, 0, { 5: labels.length }) }), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      });
-    const add = store.applyLabels([5], [], ['c1']);
-    const remove = store.applyLabels([], [5], ['c1']);
-    expect(store.items[0]!.labels).toEqual([]); // optimistic: toggled on, then off
-    await Promise.resolve();
-    expect(sent).toHaveLength(1); // the second request waits for the first
-    answers[0]!(reply([5]));
-    await add;
-    expect(store.items[0]!.labels).toEqual([]); // a stale answer must not resurrect the label
-    await vi.waitFor(() => expect(sent).toHaveLength(2));
-    answers[1]!(reply([]));
-    await remove;
-    expect(store.items[0]!.labels).toEqual([]);
-    expect(sent).toEqual([
-      { commentIds: ['c1'], add: [5], remove: [] },
-      { commentIds: ['c1'], add: [], remove: [5] },
-    ]);
-  });
-
-  it('removes labels, and rolls back with an error toast on failure', async () => {
-    await load();
-    store.items = store.items.map((i) => ({ ...i, labels: [5, 7] }));
-    store.counts = full(4, 0, { 5: 4, 7: 4 });
-    fetchMock.mockImplementation(() => json({ error: 'boom', code: 'internal' }, 500));
-    expect(await store.applyLabels([], [5], ['c1'])).toBe(false);
-    expect(store.items[0]!.labels).toEqual([5, 7]);
-    expect(store.counts.byLabel).toEqual({ 5: 4, 7: 4 });
-    expect(toasts.items.at(-1)?.kind).toBe('error');
-  });
-
-  it('prunes deleted labels from items and counts', async () => {
-    await load();
-    store.items = store.items.map((i) => ({ ...i, labels: [5, 7] }));
-    store.counts = full(4, 0, { 5: 4, 7: 4 });
-    store.pruneLabels(new Set([7]));
-    expect(store.items[0]!.labels).toEqual([7]);
-    expect(store.counts.byLabel).toEqual({ 7: 4 });
   });
 });
 

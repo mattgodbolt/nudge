@@ -41,16 +41,6 @@
   --shadow-pop: 0 8px 30px rgba(0, 0, 0, 0.12), 0 0 0 1px rgba(0, 0, 0, 0.05);
   --scrim: rgba(24, 24, 27, 0.35);
   --own-bg: rgba(220, 38, 38, 0.05);
-  /* Label colours: the one place LABEL_COLORS tokens become CSS. Dots/text need >= 3:1 on --bg-elev. */
-  --label-red: #dc2626;
-  --label-orange: #c2410c;
-  --label-amber: #b45309;
-  --label-green: #15803d;
-  --label-teal: #0f766e;
-  --label-blue: #2563eb;
-  --label-violet: #7c3aed;
-  --label-pink: #db2777;
-  --label-gray: #71717a;
   color-scheme: light;
 }
 
@@ -76,14 +66,5 @@
   --shadow-pop: 0 12px 40px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.06);
   --scrim: rgba(0, 0, 0, 0.55);
   --own-bg: rgba(239, 68, 68, 0.08);
-  --label-red: #f87171;
-  --label-orange: #fb923c;
-  --label-amber: #fbbf24;
-  --label-green: #4ade80;
-  --label-teal: #2dd4bf;
-  --label-blue: #60a5fa;
-  --label-violet: #a78bfa;
-  --label-pink: #f472b6;
-  --label-gray: #a1a1aa;
   color-scheme: dark;
 }

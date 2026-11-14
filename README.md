@@ -2,7 +2,7 @@
 
 A local, keyboard-driven triage inbox. It pulls in the comments on your YouTube videos (and on videos you merely
 appear in), new pull requests and issues from GitHub accounts and organisations you follow, and your own todos, so
-all of them are cleared the same way: read, reply, snooze, label, done.
+all of them are cleared the same way: read, reply, snooze, done.
 
 Nudge is a personal tool for one person, not a SaaS. There are no accounts and no multi-user mode: it runs on your own
 machine (or a box on your LAN behind Tailscale), keeps its data in a local SQLite file and never writes to GitHub.
@@ -19,7 +19,7 @@ All screenshots in this README are the built-in demo mode: fake data, nothing re
   first-timer, outsider, bot), the live conversation thread, and mute rules. See [GitHub](#github).
 - **Todos:** "Tell Nudge" (`c`) turns a sentence, typed or dictated, into a todo, or snoozes or completes the selected
   item. See [Tell Nudge](#tell-nudge-todos-and-voice-commands).
-- **Triage tools:** done, snooze, undo for everything, labels, multi-select, search, filters, sort orders, a command
+- **Triage tools:** done, snooze, undo for everything, multi-select, search, filters, sort orders, a command
   palette, and a quota meter for the YouTube API.
 - **Phone and notifications:** an installable PWA with Web Push. See [Install on your phone](#install-on-your-phone-and-get-notifications).
 - **Stats and usage:** per-source video and comment totals, plus private counters of which features you use.
@@ -166,36 +166,35 @@ Notes:
 
 ## Keys (press `?` in the app for the full list)
 
-| Key                                      | Action                                           | Key         | Action                               |
-| ---------------------------------------- | ------------------------------------------------ | ----------- | ------------------------------------ |
-| `j` / `k`                                | next / previous                                  | `e` / `d`   | done                                 |
-| `m`                                      | mark replied (no reply)                          | `u`         | back to list (from the thread)       |
-| `z`                                      | undo                                             | `r`         | reply                                |
-| `x`, `J`/`K`                             | multi-select                                     | `* a` `* n` | select all / none                    |
-| `Shift+U`                                | move back to inbox                               | `v` / `V`   | open comment / video on YouTube      |
-| `Shift+N` / `S`                          | sync now / deep-sync video                       | `/`         | search                               |
-| `b`                                      | snooze… (`1`-`4` presets, `5` pick a time)       | `l`         | label as… (type to filter or create) |
-| `g i`, `g d`, `g a`, `g s`, `g t`, `g ,` | go to Inbox, Done, All, Sources, Stats, Settings | `Ctrl+K`    | command palette                      |
-| `g z`                                    | go to Snoozed                                    | `g l`       | go to label… (picker)                |
-| `Shift+O`                                | cycle sort order                                 | `c`         | tell Nudge… (todos, voice commands)  |
-| `n`                                      | no action needed (done, recorded as dismissed)   |             |                                      |
+| Key                                      | Action                                           | Key         | Action                              |
+| ---------------------------------------- | ------------------------------------------------ | ----------- | ----------------------------------- |
+| `j` / `k`                                | next / previous                                  | `e` / `d`   | done                                |
+| `m`                                      | mark replied (no reply)                          | `u`         | back to list (from the thread)      |
+| `z`                                      | undo                                             | `r`         | reply                               |
+| `x`, `J`/`K`                             | multi-select                                     | `* a` `* n` | select all / none                   |
+| `Shift+U`                                | move back to inbox                               | `v` / `V`   | open comment / video on YouTube     |
+| `Shift+N` / `S`                          | sync now / deep-sync video                       | `/`         | search                              |
+| `b`                                      | snooze… (`1`-`4` presets, `5` pick a time)       | `Ctrl+K`    | command palette                     |
+| `g i`, `g d`, `g a`, `g s`, `g t`, `g ,` | go to Inbox, Done, All, Sources, Stats, Settings | `c`         | tell Nudge… (todos, voice commands) |
+| `g z`                                    | go to Snoozed                                    |             |                                     |
+| `Shift+O`                                | cycle sort order                                 |             |                                     |
+| `n`                                      | no action needed (done, recorded as dismissed)   |             |                                     |
 
 **No action needed** (`n`) is Done for "there is nothing for me here": the item leaves the inbox and returns on new
 activity exactly as Done does, but it is recorded (and shown in All as "Dismissed") apart from the things you did, so
 the habits report can tell whether a "skip" suggestion was right. The open item's toolbar puts the decisions (Done, No
-action, Replied, Snooze) first and the tools (Label, Mute, Undo, Open) in a small icon cluster; the button the current
+action, Replied, Snooze) first and the tools (Mute, Undo, Open) in a small icon cluster; the button the current
 suggestion points at wears a faint ring. When a new version has been deployed, a quiet "New version available · Reload"
 bar appears; it never reloads by itself.
 
 Snoozing hides a comment until the time you pick; it returns to the top of the Inbox (a "back from snooze" marker
-shows for a day), and `z` undoes it. In the Snoozed view `Shift+U` unsnoozes. Labels (managed in Settings) are
-orthogonal to Inbox/Done: each gets a sidebar folder showing every comment carrying it, in any state.
+shows for a day), and `z` undoes it. In the Snoozed view `Shift+U` unsnoozes.
 
 Also: `t` cycles the theme, `[` toggles the sidebar, `Shift+R` refreshes, `.` shows newly arrived items, `Shift+M`
 mutes (GitHub), `g v` filters to the current video and `g c` clears filters.
 
 Selecting several: on a desktop, hover a row and click the tick on its avatar (or `x`); on a phone, long-press a row,
-then tap others to add or remove them. The bar above the list then applies Done, Snooze, Label etc. to all of them.
+then tap others to add or remove them. The bar above the list then applies Done, No action, Replied, Snooze etc. to all of them.
 
 Every triage action also has a button (thread header, row hover, multi-select bar, sidebar sync) whose tooltip
 shows the hotkey, read from the same keymap registry.
@@ -294,7 +293,7 @@ assistant is off or fails, your words are saved as a plain todo, so nothing you 
 ## GitHub
 
 Besides YouTube comments, Nudge can collect every new pull request and issue in a GitHub user's or organisation's
-repositories, so you can triage them with the same keys (`e` done, `b` snooze, `l` label).
+repositories, so you can triage them with the same keys (`e` done, `b` snooze, `m` replied).
 
 - **Add a feed:** Sources > GitHub, enter a user or organisation (for example `compiler-explorer`). It starts "from now
   on" by default; you can also import the last two weeks or everything open. Public repositories work with no token,
@@ -364,7 +363,7 @@ Nudge counts which of its own features you use and how, so you can see what earn
   `view.stats`, `search.run` (that a search ran), "Tell Nudge" calls, tool calls, failures and spend, sessions, rough
   active minutes, phone vs desktop and installed app vs browser tab. The list of possible keys is fixed in
   `shared/usage.ts`; the server drops anything else.
-- **What is never collected:** comment text, search strings, author names, item ids, label names, URLs or anything else
+- **What is never collected:** comment text, search strings, author names, item ids, URLs or anything else
   you typed or read. Keys name a feature, never the thing it was used on.
 - **Where it lives:** the `usage_daily` table in your own SQLite database. No third-party service, no network calls, no
   cookies. Demo mode and automated test runs record nothing.

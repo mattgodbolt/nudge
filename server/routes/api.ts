@@ -4,8 +4,7 @@ import type { InboxQuery, SettingsUpdate, SyncRequest } from '../../shared/api.j
 import { parseSourceInput } from '../../shared/youtube-urls.js';
 import type { Bootstrap, TriageTarget, ImportMode, PollTier, SnoozeResult, TriageResult } from '../../shared/types.js';
 import type { AppDeps, StoredSettings } from '../contracts.js';
-import { LabelError, PostError, YtError } from '../contracts.js';
-import { LABEL_COLORS, MAX_LABELS } from '../../shared/types.js';
+import { PostError, YtError } from '../contracts.js';
 import { isValidClientId, parseGoogleClientJson } from '../reply/google-client.js';
 import { setOwnChannelId } from '../sync/own-channels.js';
 import { LOGIN } from './github.js';
@@ -17,7 +16,6 @@ const VIEWS = ['inbox', 'done', 'all', 'snoozed'] as const;
 export const WHY_MAX = 200;
 const MIN_SNOOZE_MS = 30_000;
 const MAX_SNOOZE_MS = 366 * 24 * 60 * 60 * 1000;
-const LABEL_STATUS = { duplicate_label: 409, too_many_labels: 409, bad_name: 400, not_found: 404 } as const;
 const IMPORT_MODES = ['none', 'recent', 'all'] as const;
 const TIERS = ['hot', 'warm', 'cold', 'frozen', 'paused'] as const;
 const THEMES = ['system', 'light', 'dark'] as const;
@@ -28,16 +26,6 @@ async function asHttp<T>(fn: () => Promise<T>): Promise<T> {
     return await fn();
   } catch (e) {
     if (e instanceof PostError) throw new HttpError(e.status, e.message, e.code);
-    throw e;
-  }
-}
-
-/** Run a label operation, turning LabelError into the HTTP error the client understands. */
-function asLabelHttp<T>(fn: () => T): T {
-  try {
-    return fn();
-  } catch (e) {
-    if (e instanceof LabelError) throw new HttpError(LABEL_STATUS[e.code], e.message, e.code);
     throw e;
   }
 }
@@ -100,7 +88,6 @@ export function registerApiRoutes(app: FastifyInstance, deps: AppDeps): void {
     settings: buildSettingsDto(deps),
     capabilities: poster.capabilities(),
     counts: repo.counts(),
-    labels: repo.listLabels(),
     sources: repo.listSources(),
     quota: quota.snapshot(),
     sync: engine.status(),
@@ -120,7 +107,6 @@ export function registerApiRoutes(app: FastifyInstance, deps: AppDeps): void {
     const query: InboxQuery = { view: q.view === undefined ? 'inbox' : oneOf(q.view, 'view', VIEWS) };
     if (q.sourceId !== undefined) query.sourceId = int(q.sourceId, 'sourceId', { min: 1 });
     if (q.videoId) query.videoId = q.videoId;
-    if (q.labelId !== undefined) query.labelId = int(q.labelId, 'labelId', { min: 1 });
     if (q.feedId !== undefined) query.feedId = int(q.feedId, 'feedId', { min: 1 });
     if (q.repo) {
       if (!/^[\w.-]{1,100}\/[\w.-]{1,100}$/.test(q.repo)) throw bad('"repo" must look like owner/name');
@@ -217,54 +203,6 @@ export function registerApiRoutes(app: FastifyInstance, deps: AppDeps): void {
     }
     emitSnooze(result);
     return result;
-  });
-
-  /* ---- labels ---- */
-  const emitLabels = () => bus.emit({ type: 'labels.changed', labels: repo.listLabels() });
-  const colorOf = (v: unknown) => (v === undefined ? undefined : oneOf(v, 'color', LABEL_COLORS));
-
-  app.get('/api/labels', async () => repo.listLabels());
-
-  app.post('/api/labels', async (req, reply) => {
-    const b = asObject(req.body);
-    const label = asLabelHttp(() => repo.createLabel(str(b, 'name', { allowEmpty: true })!, colorOf(b.color)));
-    emitLabels();
-    return reply.code(201).send(label);
-  });
-
-  app.post('/api/labels/apply', async (req) => {
-    const b = asObject(req.body);
-    const ids = idList(b.commentIds, 'commentIds', 500);
-    const nums = (v: unknown, name: string): number[] => {
-      if (v === undefined) return [];
-      if (!Array.isArray(v) || v.length > MAX_LABELS) throw bad(`"${name}" must be an array of label ids`);
-      return v.map((x) => int(x, name, { min: 1 }));
-    };
-    const result = repo.applyLabels(ids, nums(b.add, 'add'), nums(b.remove, 'remove'));
-    emitInbox(Object.keys(result.labels));
-    return result;
-  });
-
-  app.patch<{ Params: { id: string } }>('/api/labels/:id', async (req) => {
-    const id = int(req.params.id, 'id', { min: 1 });
-    const b = asObject(req.body);
-    const patch: { name?: string; color?: (typeof LABEL_COLORS)[number]; position?: number } = {};
-    if (b.name !== undefined) patch.name = str(b, 'name', { allowEmpty: true })!;
-    if (b.color !== undefined) patch.color = colorOf(b.color);
-    if (b.position !== undefined) patch.position = int(b.position, 'position', { min: 0, max: 1_000_000 });
-    const label = asLabelHttp(() => repo.updateLabel(id, patch));
-    emitLabels();
-    return label;
-  });
-
-  app.delete<{ Params: { id: string } }>('/api/labels/:id', async (req, reply) => {
-    const id = int(req.params.id, 'id', { min: 1 });
-    // Remember who carried the label so open lists can drop the chip.
-    const affected = repo.listInbox({ view: 'all', labelId: id, limit: 500 }).items.map((i) => i.comment.id);
-    asLabelHttp(() => repo.deleteLabel(id));
-    emitLabels();
-    emitInbox(affected);
-    return reply.code(204).send();
   });
 
   /* ---- drafts ---- */

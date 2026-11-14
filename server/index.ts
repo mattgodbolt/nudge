@@ -150,11 +150,10 @@ async function main(): Promise<void> {
     const fresh = repo.listSources().length === 0;
     await seedDemo(repo, addSource); // no-op unless the DB is empty
     if (fresh) {
-      // Labels and snoozes need comments, which arrive with the first syncs: decorate once there are enough.
+      // Snoozes need comments, which arrive with the first syncs: decorate once there are enough.
       const stop = bus.subscribe((e) => {
         if (e.type !== 'sync.done' || !decorateDemo(repo)) return;
         stop();
-        bus.emit({ type: 'labels.changed', labels: repo.listLabels() });
         bus.emit({ type: 'inbox.changed', counts: repo.counts(), addedIds: [], changedIds: [] });
       });
     }

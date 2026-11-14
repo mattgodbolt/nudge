@@ -1,7 +1,6 @@
 import { api } from '../api';
 import { inbox } from './inbox.svelte';
 import { feeds } from './feeds.svelte';
-import { labels } from './labels.svelte';
 import { settings } from './settings.svelte';
 import { sources } from './sources.svelte';
 import { suggestStatus } from './suggestStatus.svelte';
@@ -21,7 +20,6 @@ class AppStore {
       settings.value = b.settings;
       settings.capabilities = b.capabilities;
       inbox.counts = b.counts;
-      labels.set(b.labels);
       sources.set(b.sources);
       feeds.set(b.feeds, b.mutes);
       suggestStatus.set(b.suggestStatus);

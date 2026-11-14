@@ -9,7 +9,7 @@
    * The open item's toolbar, shared by the YouTube, GitHub and todo threads. Two groups so it reads at a glance:
    *  - Decide: what the owner does to nearly every item (Reply, Done, No action needed, Mark replied, Snooze). Always
    *    labelled while there is room, and the one the suggestion points at wears a quiet ring.
-   *  - Tools: rarer, or not decisions at all (Label, Mute, Undo, Open on the site). Icon-only, tooltipped, in a
+   *  - Tools: rarer, or not decisions at all (Mute, Undo, Open on the site). Icon-only, tooltipped, in a
    *    subtle cluster, so they stay one click away without competing for the width the labels need.
    */
   let {
@@ -107,7 +107,6 @@
     {/if}
   </div>
   <div class="group tools" role="group" aria-label="Tools">
-    <ActionButton id="label.open" label="Label" icon="tag" showLabel={false} {tile} short="Label" testid="act-label" />
     {#if provider === 'github'}
       <ActionButton id="mute.open" label="Mute" icon="x" showLabel={false} {tile} short="Mute" testid="act-mute" />
     {/if}

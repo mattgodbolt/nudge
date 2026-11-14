@@ -3,7 +3,6 @@
   import { router } from '../lib/router.svelte';
   import { fuzzyFilter } from '../lib/fuzzy';
   import { inbox } from '../lib/stores/inbox.svelte';
-  import { labels } from '../lib/stores/labels.svelte';
   import { sources } from '../lib/stores/sources.svelte';
   import { ui } from '../lib/stores/ui.svelte';
   import { usage } from '../lib/usage';
@@ -77,14 +76,6 @@
         label: `Go to source: ${s.title ?? s.ytId}`,
         group: 'Go to',
         run: () => router.navigate('inbox', { source: String(s.id) }),
-      });
-    }
-    for (const l of labels.list) {
-      out.push({
-        id: `lbl.${l.id}`,
-        label: `Go to label: ${l.name}`,
-        group: 'Go to',
-        run: () => router.navigate('label', {}, { id: l.id }),
       });
     }
     const seenVideos = new Set<string>();

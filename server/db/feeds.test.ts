@@ -285,14 +285,11 @@ describe('filters and counts', () => {
     expect(repo.counts().byFeed).toEqual({ [feedId]: 5, [other.id]: 1 });
   });
 
-  it('searches titles and bodies, and triage, snooze and labels work on GitHub items like any other', () => {
+  it('searches titles and bodies, and triage and snooze work on GitHub items like any other', () => {
     const u = up(1, { createdAt: '2026-11-08T12:10:00.000Z', title: 'Segfault in the parser', bodyPlain: 'crashes' });
     repo.upsertGithubItems(feedId, [u]);
     expect(repo.listInbox({ view: 'inbox', q: 'segfault' }).total).toBe(1);
     expect(repo.listInbox({ view: 'inbox', q: 'crashes' }).total).toBe(1);
-    const label = repo.createLabel('Review', 'blue');
-    repo.applyLabels([u.id], [label.id], []);
-    expect(repo.listInbox({ view: 'inbox', labelId: label.id }).total).toBe(1);
     repo.snooze([u.id], '2999-01-01T00:00:00.000Z');
     expect(repo.counts()).toMatchObject({ inbox: 0, snoozed: 1 });
     repo.snooze([u.id], null);
@@ -300,7 +297,7 @@ describe('filters and counts', () => {
     expect(repo.counts()).toMatchObject({ inbox: 0, done: 1 });
   });
 
-  it('removing a feed removes its items, labels and search entries', () => {
+  it('removing a feed removes its items and search entries', () => {
     const u = up(1, { createdAt: '2026-11-08T12:10:00.000Z' });
     repo.upsertGithubItems(feedId, [u]);
     expect(repo.deleteFeed(feedId)).toBe(true);

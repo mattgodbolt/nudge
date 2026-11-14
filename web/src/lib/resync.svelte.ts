@@ -37,7 +37,7 @@ class Resync {
 
   /**
    * Bring this tab fully up to date: reload if a newer build was deployed, reopen the event stream, and refetch counts,
-   * labels, sources and the top of the list. Only a failure is reported.
+   * sources and the top of the list. Only a failure is reported.
    */
   async run(): Promise<void> {
     if (this.busy) return;

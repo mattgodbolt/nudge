@@ -402,4 +402,12 @@ ALTER TABLE mute_rules_new RENAME TO mute_rules;
 -- also what every row from before this migration means. Only meaningful while state = 'done'; triage sets and clears it.
 ALTER TABLE items ADD COLUMN done_reason TEXT CHECK (done_reason IS NULL OR done_reason IN ('no_action'));
 `,
+  /* 015 drop the user-defined labels feature */ `
+-- The owner removed Nudge's own labels (coloured tags on items). Nothing was worth keeping: production had none. The
+-- link table goes first because it references labels (ON DELETE CASCADE); dropping a table drops its indexes with it.
+-- item_events rows of kind label_add / label_remove stay: they are history, and the kinds remain valid in the type.
+-- GitHub's own labels live in the items' JSON data, not here, and are untouched.
+DROP TABLE item_labels;
+DROP TABLE labels;
+`,
 ];

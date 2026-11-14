@@ -36,10 +36,6 @@ class UiStore {
   snoozeFor = $state<string[] | null>(null);
   /** The GitHub item the mute menu is open for (null = closed). */
   muteFor = $state<string | null>(null);
-  /** The row whose "more actions" menu is open (phone rows keep four big tiles and put the rest here). */
-  moreFor = $state<string | null>(null);
-  /** The label picker: 'apply' toggles labels on `ids`, 'goto' jumps to a label folder. */
-  labelPicker = $state<{ mode: 'apply'; ids: string[] } | { mode: 'goto' } | null>(null);
 
   dismissOwnBanner() {
     this.ownBannerDismissed = true;
@@ -79,22 +75,6 @@ class UiStore {
     this.helpOpen = false;
     this.paletteOpen = false;
     this.muteFor = item.comment.id;
-  }
-  openMore(id: string) {
-    this.helpOpen = false;
-    this.paletteOpen = false;
-    this.moreFor = id;
-  }
-  openLabelPicker(ids = inbox.targetIds()) {
-    if (ids.length === 0) return;
-    this.helpOpen = false;
-    this.paletteOpen = false;
-    this.labelPicker = { mode: 'apply', ids };
-  }
-  openLabelGoto() {
-    this.helpOpen = false;
-    this.paletteOpen = false;
-    this.labelPicker = { mode: 'goto' };
   }
   scrollThread(delta: number) {
     this.threadScroll = { delta, tick: this.threadScroll.tick + 1 };

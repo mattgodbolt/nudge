@@ -205,30 +205,6 @@ describe('snooze events', () => {
   });
 });
 
-describe('label events', () => {
-  it('records adds and removes with the label name and id, only for real changes', () => {
-    repo.upsertThread(thread('c1'));
-    const bug = repo.createLabel('Bug');
-    repo.applyLabels(['c1', 'nope'], [bug.id], []);
-    repo.applyLabels(['c1'], [bug.id], []); // already there
-    repo.updateLabel(bug.id, { name: 'Defect' });
-    repo.applyLabels(['c1'], [], [bug.id]);
-    expect(events()).toEqual([
-      { itemId: 'c1', kind: 'label_add', from: null, to: 'Bug', source: 'user', meta: { labelId: bug.id } },
-      { itemId: 'c1', kind: 'label_remove', from: 'Defect', to: null, source: 'user', meta: { labelId: bug.id } },
-    ]);
-  });
-
-  it('survives deleting the label and the item', () => {
-    repo.upsertThread(thread('c1'));
-    const bug = repo.createLabel('Bug');
-    repo.applyLabels(['c1'], [bug.id], []);
-    repo.deleteLabel(bug.id);
-    db.prepare("DELETE FROM items WHERE id = 'c1'").run();
-    expect(events('c1')).toHaveLength(1);
-  });
-});
-
 describe('reply events', () => {
   const posted = () =>
     cmt('t1.mine', {
@@ -642,9 +618,9 @@ describe('migration 009 (item_events)', () => {
     const tables = () =>
       d
         .prepare(
-          // Later migrations add tables (usage_daily, suggestions, notes) and two items columns (snooze_why, done_reason), and rebuild
+          // Later migrations add tables (usage_daily, suggestions, notes), drop the label tables, and add two items columns (snooze_why, done_reason), and rebuild
           // mute_rules to allow the 'owner' kind (its rows are checked in migrations.test.ts).
-          "SELECT name, replace(replace(sql, ', snooze_why TEXT', ''), ', done_reason TEXT CHECK (done_reason IS NULL OR done_reason IN (''no_action''))', '') AS sql FROM sqlite_master WHERE name != 'item_events' AND name != 'mute_rules' AND name NOT LIKE 'idx_item_events%' AND name NOT LIKE '%usage_daily%' AND name NOT LIKE '%suggestions%' AND name NOT LIKE '%notes%' ORDER BY name",
+          "SELECT name, replace(replace(sql, ', snooze_why TEXT', ''), ', done_reason TEXT CHECK (done_reason IS NULL OR done_reason IN (''no_action''))', '') AS sql FROM sqlite_master WHERE name != 'item_events' AND name != 'mute_rules' AND name NOT LIKE 'idx_item_events%' AND name NOT LIKE '%usage_daily%' AND name NOT LIKE '%suggestions%' AND name NOT LIKE '%notes%' AND name NOT LIKE '%labels%' ORDER BY name",
         )
         .all();
     const before = tables();

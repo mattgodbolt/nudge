@@ -11,7 +11,6 @@
   import { ui } from '../lib/stores/ui.svelte';
   import ItemActions from './ItemActions.svelte';
   import Icon from './Icon.svelte';
-  import LabelChips from './LabelChips.svelte';
 
   let { item, now }: { item: InboxItem; now: number } = $props();
   /** "Done", "Dismissed" ... once the item is dealt with; empty while it is in the inbox. */
@@ -48,7 +47,7 @@
       {#if item.snoozeWhy && item.comment.state === 'inbox'}
         <div class="why faint" data-testid="thread-why">You snoozed this to: {item.snoozeWhy}</div>
       {/if}
-      {#if item.snoozedUntil || item.labels.length > 0 || woke || stateText}
+      {#if item.snoozedUntil || woke || stateText}
         <div class="tags">
           {#if stateText}<span class="badge" data-testid="thread-state">{stateText}</span>{/if}
           {#if item.snoozedUntil}
@@ -58,7 +57,6 @@
           {:else if woke}
             <span class="snz" data-testid="thread-woke">⏰ due now</span>
           {/if}
-          <LabelChips ids={item.labels} max={5} />
         </div>
       {/if}
     </div>

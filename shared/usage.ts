@@ -2,7 +2,7 @@
  * Internal usage counters: which features get used, and how. Counts only, kept in the local database (usage_daily).
  *
  * The allow-list below is the privacy mechanism. Every key is a fixed string defined here, so nothing typed or read
- * by the user (comment text, search strings, author names, item ids, label names, URLs) can ever become part of one:
+ * by the user (comment text, search strings, author names, item ids, URLs) can ever become part of one:
  * the server drops anything not in the list and the client never builds a key from content. Keep it that way when
  * adding keys: a key names a feature, never a thing the feature was applied to.
  */
@@ -19,7 +19,6 @@ export const USAGE_ACTIONS = {
   replied: ALL_VIA,
   inbox: ALL_VIA, // move back to the inbox / unsnooze
   snooze: ALL_VIA, // opening the snooze menu
-  label: ALL_VIA, // opening the label picker
   mute: ALL_VIA,
   undo: ALL_VIA,
   reply: ALL_VIA, // opening the composer
@@ -42,7 +41,6 @@ const CLIENT_PLAIN_KEYS = [
   'view.done',
   'view.all',
   'view.snoozed',
-  'view.label',
   'view.sources',
   'view.source',
   'view.stats',
@@ -55,7 +53,6 @@ const CLIENT_PLAIN_KEYS = [
   'search.run', // a search ran (never what was searched for)
   'snooze.preset',
   'snooze.custom',
-  'label.applied',
   'bulk.apply', // an action applied to more than one item at once
   'assistant.voice', // dictation started in "Tell Nudge"
   'push.open', // a push notification was tapped
@@ -99,12 +96,19 @@ export function actionKey(action: string, via: UsageVia): string | null {
   return clientKeySet.has(k) ? k : null;
 }
 
+/**
+ * Actions that were removed from the app. Their keys left the allow-list (so nothing can write them any more), but
+ * counts already stored under them still come back in a report; this keeps them reading as one feature ("Label")
+ * instead of a scatter of raw keys. Only label (user-defined labels, removed) is retired so far.
+ */
+const RETIRED_ACTIONS: ReadonlySet<string> = new Set(['label']);
+
 /** The feature a key belongs to: `done.kbd` and `done.btn` are both "done"; plain keys are their own feature. */
 export function featureOf(key: string): string {
   const dot = key.lastIndexOf('.');
   if (dot < 0) return key;
   const head = key.slice(0, dot);
-  return head in USAGE_ACTIONS ? head : key;
+  return head in USAGE_ACTIONS || RETIRED_ACTIONS.has(head) ? head : key;
 }
 
 /** All features, for the "never used" list. */

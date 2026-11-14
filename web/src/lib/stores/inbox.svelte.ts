@@ -19,7 +19,6 @@ import { decisions } from '../decisions';
 export interface InboxFilters {
   sourceId?: number;
   videoId?: string;
-  labelId?: number;
   feedId?: number;
   repo?: string;
   kind?: 'pr' | 'issue' | 'todo';
@@ -50,13 +49,12 @@ interface CommitResult {
 const PAGE = 100;
 
 export function emptyCounts(): Counts {
-  return { inbox: 0, done: 0, all: 0, snoozed: 0, bySource: {}, byLabel: {}, byFeed: {}, byRepo: {}, todos: 0 };
+  return { inbox: 0, done: 0, all: 0, snoozed: 0, bySource: {}, byFeed: {}, byRepo: {}, todos: 0 };
 }
 
 const isDone = (s: CommentState) => s === 'done' || s === 'replied' || s === 'auto_replied' || s === 'resolved';
 
-export function viewIncludes(view: InboxView, item: InboxItem, labelId?: number): boolean {
-  if (labelId !== undefined && !item.labels.includes(labelId)) return false;
+export function viewIncludes(view: InboxView, item: InboxItem): boolean {
   const { state } = item.comment;
   if (view === 'inbox') return state === 'inbox' && !item.snoozedUntil;
   if (view === 'snoozed') return state === 'inbox' && !!item.snoozedUntil;
@@ -72,7 +70,6 @@ function tally(item: InboxItem) {
     inbox: awake ? 1 : 0,
     snoozed: state === 'inbox' && item.snoozedUntil ? 1 : 0,
     done: isDone(state) ? 1 : 0,
-    labels: awake ? item.labels : [],
   };
 }
 
@@ -80,15 +77,11 @@ function tally(item: InboxItem) {
 function shiftCounts(counts: Counts, from: InboxItem, to: InboxItem, sign: 1 | -1 = 1): Counts {
   const a = tally(from);
   const b = tally(to);
-  const byLabel = { ...counts.byLabel };
-  for (const l of a.labels) byLabel[l] = Math.max(0, (byLabel[l] ?? 0) - sign);
-  for (const l of b.labels) byLabel[l] = (byLabel[l] ?? 0) + sign;
   return {
     ...counts,
     inbox: counts.inbox + sign * (b.inbox - a.inbox),
     snoozed: counts.snoozed + sign * (b.snoozed - a.snoozed),
     done: counts.done + sign * (b.done - a.done),
-    byLabel,
   };
 }
 
@@ -140,11 +133,10 @@ export class InboxStore {
   selected = $derived<InboxItem | null>(this.items[this.selectedIndex] ?? null);
   pendingCount = $derived(this.pending.size);
 
-  /** What the list on screen is, for habit context: search, a label folder, a source, else the inbox/done/... view. */
+  /** What the list on screen is, for habit context: search, a source, else the inbox/done/... view. */
   get viewName(): string {
     const f = this.filters;
     if (f.q) return 'search';
-    if (f.labelId !== undefined) return 'label';
     if (f.sourceId !== undefined || f.feedId !== undefined || f.videoId !== undefined || f.repo !== undefined)
       return 'source';
     return this.view;
@@ -201,7 +193,6 @@ export class InboxStore {
       view === this.view &&
       filters.sourceId === this.filters.sourceId &&
       filters.videoId === this.filters.videoId &&
-      filters.labelId === this.filters.labelId &&
       filters.feedId === this.filters.feedId &&
       filters.repo === this.filters.repo &&
       filters.kind === this.filters.kind &&
@@ -215,7 +206,7 @@ export class InboxStore {
     const viewChanged = view !== this.view;
     // Counts only: that a search ran or a filter was applied, never what it was.
     if (filters.q && filters.q !== this.filters.q) usage.count('search.run');
-    const filterKeys = ['sourceId', 'videoId', 'labelId', 'feedId', 'repo', 'kind', 'audience', 'suggestion'] as const;
+    const filterKeys = ['sourceId', 'videoId', 'feedId', 'repo', 'kind', 'audience', 'suggestion'] as const;
     if (filterKeys.some((k) => filters[k] !== undefined && filters[k] !== this.filters[k])) {
       usage.count('filter.applied');
     }
@@ -377,7 +368,7 @@ export class InboxStore {
     this.items = items;
   }
 
-  /* ---------- triage, snooze and labels ---------- */
+  /* ---------- triage and snooze ---------- */
 
   /** The ids an action applies to: explicit `only`, else the multi-selection, else the cursor row. */
   targetIds(only?: string[]): string[] {
@@ -538,7 +529,7 @@ export class InboxStore {
     }
     const prevCounts = $state.snapshot(this.counts) as Counts;
     this.#setItems(entry.changes, 'before');
-    const first = entry.changes.find((c) => viewIncludes(this.view, c.before, this.filters.labelId));
+    const first = entry.changes.find((c) => viewIncludes(this.view, c.before));
     if (first) this.selectedId = first.before.comment.id;
     try {
       const actionId = await entry.actionId;
@@ -555,97 +546,10 @@ export class InboxStore {
     }
   }
 
-  /**
-   * Add/remove labels on `ids` (default: selection or cursor row). Rows stay where they are (a label folder
-   * does not drop a row you just un-labelled); counts follow. Rolled back with an error toast on failure.
-   */
-  async applyLabels(add: number[], remove: number[], only?: string[]): Promise<boolean> {
-    const wanted = new Set(this.targetIds(only));
-    const ids = this.items.filter((i) => wanted.has(i.comment.id)).map((i) => i.comment.id);
-    if (ids.length === 0) return false;
-    usage.count('label.applied');
-    this.#decide('label', ids);
-    if (ids.length > 1) usage.count('bulk.apply');
-    const change = (item: InboxItem): InboxItem => {
-      const labels = [...item.labels.filter((l) => !remove.includes(l) || add.includes(l))];
-      for (const l of add) if (!labels.includes(l)) labels.push(l);
-      return labels.length === item.labels.length && labels.every((l, i) => l === item.labels[i])
-        ? item
-        : { ...item, labels };
-    };
-    const changed = this.items.map((i) => ({ before: i, after: wanted.has(i.comment.id) ? change(i) : i }));
-    const moved = changed.filter((c) => c.before !== c.after);
-    if (moved.length === 0) return true;
-
-    const rollback = new Map(moved.map((c) => [c.before.comment.id, c.before.labels]));
-    this.#replaceLabels(new Map(moved.map((c) => [c.before.comment.id, c.after.labels])));
-    for (const c of moved) this.counts = shiftCounts(this.counts, c.before, c.after);
-    for (const id of ids) this.#labelsPending.set(id, (this.#labelsPending.get(id) ?? 0) + 1);
-    // Requests go out one at a time so the server applies them in the order the user made them, and a response only
-    // overwrites a comment when no newer change to it is still outstanding (else a stale answer would undo a toggle).
-    const run = this.#labelQueue.then(async () => {
-      try {
-        const result = await api.applyLabels(ids, add, remove);
-        const settled = this.#settleLabels(ids);
-        this.#replaceLabels(new Map(Object.entries(result.labels).filter(([id]) => settled.has(id))));
-        if (this.#labelsPending.size === 0) this.counts = result.counts;
-        return true;
-      } catch (e) {
-        const settled = this.#settleLabels(ids);
-        this.#replaceLabels(new Map([...rollback].filter(([id]) => settled.has(id))));
-        if (this.#labelsPending.size === 0) {
-          for (const c of moved) this.counts = shiftCounts(this.counts, c.after, c.before);
-        }
-        toasts.error(`Could not update labels: ${e instanceof Error ? e.message : 'unknown error'}`);
-        return false;
-      }
-    });
-    this.#labelQueue = run.then(() => undefined);
-    return run;
-  }
-
-  #labelQueue: Promise<void> = Promise.resolve();
-  #labelsPending = new Map<string, number>();
-
-  /** Mark one outstanding label request finished for these ids; returns those with nothing else outstanding. */
-  #settleLabels(ids: string[]): Set<string> {
-    const settled = new Set<string>();
-    for (const id of ids) {
-      const n = (this.#labelsPending.get(id) ?? 1) - 1;
-      if (n <= 0) {
-        this.#labelsPending.delete(id);
-        settled.add(id);
-      } else this.#labelsPending.set(id, n);
-    }
-    return settled;
-  }
-
-  /** Overwrite the label list of the given items in place. */
-  #replaceLabels(byId: Map<string, number[]>) {
-    if (byId.size === 0) return;
-    this.items = this.items.map((i) => {
-      const labels = byId.get(i.comment.id);
-      return labels ? { ...i, labels } : i;
-    });
-  }
-
-  /** Drop label ids that no longer exist (a label was deleted). */
   /** Attach arrived suggestions in place: no reordering, no refetch, so the cursor and scroll position stay put. */
   applySuggestions(next: Record<string, SuggestionDTO | null>) {
     if (!this.items.some((i) => i.comment.id in next)) return;
     this.items = this.items.map((i) => (i.comment.id in next ? { ...i, suggestion: next[i.comment.id] ?? null } : i));
-  }
-
-  pruneLabels(valid: ReadonlySet<number>) {
-    if (this.items.some((i) => i.labels.some((l) => !valid.has(l)))) {
-      this.items = this.items.map((i) =>
-        i.labels.every((l) => valid.has(l)) ? i : { ...i, labels: i.labels.filter((l) => valid.has(l)) },
-      );
-    }
-    const byLabel = Object.fromEntries(Object.entries(this.counts.byLabel).filter(([k]) => valid.has(Number(k))));
-    if (Object.keys(byLabel).length !== Object.keys(this.counts.byLabel).length) {
-      this.counts = { ...this.counts, byLabel };
-    }
   }
 
   /** Move every change to its `target` side, keeping the list sorted, counts in step and the cursor sensible. */
@@ -656,7 +560,6 @@ export class InboxStore {
     for (const c of changes) counts = shiftCounts(counts, c[other], c[target]);
     this.counts = counts;
 
-    const labelId = this.filters.labelId;
     const oldItems = this.items;
     const selIdx = this.selectedIndex;
     const next: InboxItem[] = [];
@@ -668,12 +571,10 @@ export class InboxStore {
         continue;
       }
       present.add(item.comment.id);
-      // Keep the freshest label list: it may have changed since the change was recorded.
-      const updated = { ...c[target], labels: item.labels };
-      if (viewIncludes(this.view, updated, labelId)) next.push(updated);
+      if (viewIncludes(this.view, c[target])) next.push(c[target]);
     }
     for (const c of changes) {
-      if (!present.has(c.before.comment.id) && viewIncludes(this.view, c[target], labelId)) next.push(c[target]);
+      if (!present.has(c.before.comment.id) && viewIncludes(this.view, c[target])) next.push(c[target]);
     }
     next.sort((x, y) => compareItems(x, y, this.order));
     this.items = next;

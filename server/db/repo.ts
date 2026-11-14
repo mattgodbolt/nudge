@@ -6,9 +6,6 @@ import type {
   Counts,
   ImportMode,
   InboxItem,
-  LabelApplyResult,
-  LabelColor,
-  LabelDTO,
   PollTier,
   PushPrefs,
   SnoozeResult,
@@ -20,10 +17,8 @@ import type {
   TriageResult,
   VideoDTO,
 } from '../../shared/types.js';
-import { LABEL_COLORS, MAX_LABEL_NAME, MAX_LABELS } from '../../shared/types.js';
 import type { DraftDTO, InboxPage, InboxQuery } from '../../shared/api.js';
 import { permalink } from '../../shared/youtube-urls.js';
-import { LabelError } from '../contracts.js';
 import type {
   GithubSnoozeItem,
   GoogleAccountRow,
@@ -940,10 +935,10 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
   const ARRIVED_VALUE = 'COALESCE(i.woke_at, i.first_seen_at)';
   const RANK = "(CASE i.provider WHEN 'todo' THEN 0 WHEN 'github' THEN 1 ELSE 2 END)";
 
-  function inboxItem(r: Row, labels: number[], at: string): InboxItem {
+  function inboxItem(r: Row, at: string): InboxItem {
     const item = feeds.itemFromRow(r);
     const youtube = r.provider === 'youtube';
-    // Non-YouTube items get a comment-shaped stand-in so selection, snooze, labels and undo work unchanged.
+    // Non-YouTube items get a comment-shaped stand-in so selection, snooze and undo work unchanged.
     const comment: CommentDTO = youtube
       ? commentDto({ ...r, id: r.item_id })
       : {
@@ -976,7 +971,6 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
       arrivedAt: r.arrived_at,
       threadReplyCount: r.t_total ?? 0,
       hasDraft: !!r.has_draft,
-      labels,
       snoozedUntil: r.snoozed_until && r.snoozed_until > at ? r.snoozed_until : null,
       wokeAt: r.woke_at ?? null,
       // Shown while snoozed and after it wakes; once the item has never been snoozed there is nothing to show.
@@ -992,22 +986,6 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
           })
         : null,
     };
-  }
-
-  /** Label ids per comment for one page of rows, in a single query. */
-  function labelsFor(ids: string[]): Map<string, number[]> {
-    const out = new Map<string, number[]>();
-    if (ids.length === 0) return out;
-    for (const r of db
-      .prepare(
-        'SELECT item_id, label_id FROM item_labels WHERE item_id IN (SELECT value FROM json_each(?)) ORDER BY label_id',
-      )
-      .all(JSON.stringify(ids)) as Row[]) {
-      const list = out.get(r.item_id);
-      if (list) list.push(r.label_id);
-      else out.set(r.item_id, [r.label_id]);
-    }
-    return out;
   }
 
   function listInbox(q: InboxQuery): InboxPage {
@@ -1070,10 +1048,6 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
       const clause = bySuggestion[q.suggestion];
       if (clause) where.push(clause);
     }
-    if (q.labelId !== undefined) {
-      where.push('i.id IN (SELECT item_id FROM item_labels WHERE label_id = @labelId)');
-      args.labelId = q.labelId;
-    }
     if (q.q && q.q.trim()) {
       const fts = ftsQuery(q.q);
       if (!fts) return { items: [], nextCursor: null, total: 0 };
@@ -1117,9 +1091,8 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
     const more = rows.length > limit;
     const pageRows = more ? rows.slice(0, limit) : rows;
     const last = pageRows[pageRows.length - 1];
-    const labels = labelsFor(pageRows.map((r) => r.item_id as string));
     return {
-      items: pageRows.map((r) => inboxItem(r, labels.get(r.item_id) ?? [], at)),
+      items: pageRows.map((r) => inboxItem(r, at)),
       nextCursor:
         more && last
           ? `${ranked ? `${last.provider === 'todo' ? 0 : last.provider === 'github' ? 1 : 2}|` : ''}${
@@ -1181,16 +1154,6 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
       .all({ now: at }) as Row[]) {
       bySource[r.source_id] = r.n;
     }
-    const byLabel: Record<number, number> = {};
-    for (const l of db.prepare('SELECT id FROM labels').all() as Row[]) byLabel[l.id] = 0;
-    for (const r of db
-      .prepare(
-        `SELECT il.label_id, COUNT(*) AS n FROM item_labels il JOIN items i ON i.id = il.item_id
-         WHERE i.state = 'inbox' AND ${NOT_SNOOZED} GROUP BY il.label_id`,
-      )
-      .all({ now: at }) as Row[]) {
-      byLabel[r.label_id] = r.n;
-    }
     const byFeed: Record<number, number> = {};
     for (const f of db.prepare('SELECT id FROM feeds').all() as Row[]) byFeed[f.id] = 0;
     for (const r of db
@@ -1222,7 +1185,6 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
       all,
       snoozed,
       bySource,
-      byLabel,
       byFeed,
       byRepo,
       todos,
@@ -1474,107 +1436,6 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
       ).run(at);
       // Only inbox comments change what the user sees; others are tidied silently.
       return { woken: due.filter((r) => r.state === 'inbox').map((r) => r.id as string), counts: counts() };
-    })();
-  }
-
-  /* ---------------- labels ---------------- */
-  const labelDto = (r: Row): LabelDTO => ({ id: r.id, name: r.name, color: r.color, position: r.position });
-  const getLabel = (id: number): LabelDTO | null => {
-    const r = db.prepare('SELECT * FROM labels WHERE id = ?').get(id) as Row | undefined;
-    return r ? labelDto(r) : null;
-  };
-
-  function listLabels(): LabelDTO[] {
-    return (db.prepare('SELECT * FROM labels ORDER BY position, id').all() as Row[]).map(labelDto);
-  }
-
-  function cleanLabelName(name: string, exceptId?: number): string {
-    const clean = name.trim().replace(/\s+/g, ' ');
-    if (clean === '') throw new LabelError('bad_name', 'Label name must not be empty');
-    if ([...clean].length > MAX_LABEL_NAME) {
-      throw new LabelError('bad_name', `Label name must be at most ${MAX_LABEL_NAME} characters`);
-    }
-    const dup = db
-      .prepare('SELECT id FROM labels WHERE name = ? COLLATE NOCASE AND id IS NOT ?')
-      .get(clean, exceptId ?? null);
-    if (dup) throw new LabelError('duplicate_label', `A label named "${clean}" already exists`);
-    return clean;
-  }
-
-  function checkColor(color: string): LabelColor {
-    if (!(LABEL_COLORS as readonly string[]).includes(color)) throw new LabelError('bad_name', 'Unknown label colour');
-    return color as LabelColor;
-  }
-
-  function createLabel(name: string, color?: LabelColor): LabelDTO {
-    return db.transaction(() => {
-      const clean = cleanLabelName(name);
-      const stats = db.prepare('SELECT COUNT(*) AS n, COALESCE(MAX(position), 0) AS p FROM labels').get() as Row;
-      if (stats.n >= MAX_LABELS) throw new LabelError('too_many_labels', `At most ${MAX_LABELS} labels are allowed`);
-      const col = color === undefined ? LABEL_COLORS[stats.n % LABEL_COLORS.length]! : checkColor(color);
-      const res = db
-        .prepare('INSERT INTO labels (name, color, position, created_at) VALUES (?, ?, ?, ?)')
-        .run(clean, col, stats.p + 1, now());
-      return getLabel(Number(res.lastInsertRowid))!;
-    })();
-  }
-
-  function updateLabel(id: number, patch: { name?: string; color?: LabelColor; position?: number }): LabelDTO {
-    return db.transaction(() => {
-      const cur = getLabel(id);
-      if (!cur) throw new LabelError('not_found', `No such label ${id}`);
-      const name = patch.name === undefined ? cur.name : cleanLabelName(patch.name, id);
-      const color = patch.color === undefined ? cur.color : checkColor(patch.color);
-      const position = patch.position ?? cur.position;
-      db.prepare('UPDATE labels SET name = ?, color = ?, position = ? WHERE id = ?').run(name, color, position, id);
-      return getLabel(id)!;
-    })();
-  }
-
-  function deleteLabel(id: number): void {
-    // item_labels rows go with it (ON DELETE CASCADE).
-    if (db.prepare('DELETE FROM labels WHERE id = ?').run(id).changes === 0) {
-      throw new LabelError('not_found', `No such label ${id}`);
-    }
-  }
-
-  function applyLabels(ids: string[], add: number[], remove: number[]): LabelApplyResult {
-    return db.transaction(() => {
-      const known = new Set((db.prepare('SELECT id FROM labels').all() as Row[]).map((r) => r.id as number));
-      const toAdd = [...new Set(add)].filter((l) => known.has(l));
-      const toRemove = [...new Set(remove)].filter((l) => known.has(l) && !toAdd.includes(l));
-      const exists = db.prepare('SELECT 1 FROM items WHERE id = ?');
-      const current = db.prepare('SELECT label_id FROM item_labels WHERE item_id = ? ORDER BY label_id');
-      const ins = db.prepare('INSERT OR IGNORE INTO item_labels (item_id, label_id) VALUES (?, ?)');
-      const del = db.prepare('DELETE FROM item_labels WHERE item_id = ? AND label_id = ?');
-      const names = new Map(
-        (db.prepare('SELECT id, name FROM labels').all() as Row[]).map((r) => [r.id as number, r.name as string]),
-      );
-      const at = now();
-      const labels: Record<string, number[]> = {};
-      for (const id of new Set(ids)) {
-        if (!exists.get(id)) continue;
-        let changed = false;
-        for (const l of toAdd) {
-          if (ins.run(id, l).changes === 0) continue;
-          changed = true;
-          ev.record({ itemId: id, at, kind: 'label_add', to: names.get(l)!, source: 'user', meta: { labelId: l } });
-        }
-        for (const l of toRemove) {
-          if (del.run(id, l).changes === 0) continue;
-          changed = true;
-          ev.record({
-            itemId: id,
-            at,
-            kind: 'label_remove',
-            from: names.get(l)!,
-            source: 'user',
-            meta: { labelId: l },
-          });
-        }
-        if (changed) labels[id] = (current.all(id) as Row[]).map((r) => r.label_id as number);
-      }
-      return { labels, counts: counts() };
     })();
   }
 
@@ -1890,11 +1751,6 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
     snooze,
     undoSnooze,
     wakeSnoozed,
-    listLabels,
-    createLabel,
-    updateLabel,
-    deleteLabel,
-    applyLabels,
     markHandedOff,
     getDraft,
     putDraft: (commentId, body) => saveDraft(commentId, body, 'draft'),

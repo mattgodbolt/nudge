@@ -10,18 +10,6 @@ export type DoneReason = 'no_action';
 export type TriageTarget = 'done' | 'dismissed' | 'replied' | 'inbox';
 /** 'snoozed' = inbox comments hidden until their snoozedUntil; 'inbox' excludes them until they wake. */
 export type InboxView = 'inbox' | 'done' | 'all' | 'snoozed';
-/** Label colours are named tokens (the web maps them to CSS colours for light and dark themes). */
-export const LABEL_COLORS = ['red', 'orange', 'amber', 'green', 'teal', 'blue', 'violet', 'pink', 'gray'] as const;
-export type LabelColor = (typeof LABEL_COLORS)[number];
-export const MAX_LABEL_NAME = 40;
-export const MAX_LABELS = 100;
-export interface LabelDTO {
-  id: number;
-  name: string;
-  color: LabelColor;
-  /** Sidebar order, ascending. */
-  position: number;
-}
 export type SourceKind = 'channel' | 'playlist' | 'video';
 export type PollTier = 'hot' | 'warm' | 'cold' | 'frozen' | 'paused';
 export type ImportMode = 'none' | 'recent' | 'all';
@@ -165,7 +153,7 @@ export interface InboxItem {
   item: ItemDTO;
   /**
    * For YouTube the real comment. For other providers a comment-shaped stand-in (id, author, text, state) so the
-   * shared triage code (selection, snooze, labels, undo) keeps working unchanged.
+   * shared triage code (selection, snooze, undo) keeps working unchanged.
    */
   comment: CommentDTO;
   video: Pick<VideoDTO, 'id' | 'title' | 'thumbnailUrl'>;
@@ -175,8 +163,6 @@ export interface InboxItem {
   arrivedAt: string;
   threadReplyCount: number;
   hasDraft: boolean;
-  /** Ids of the labels on this comment. */
-  labels: number[];
   /** ISO time the comment is snoozed until (future), or null. A past value never reaches the client: it is woken. */
   snoozedUntil: string | null;
   /** When the last snooze ended. Inbox ordering uses COALESCE(wokeAt, comment.publishedAt) so woken items resurface. */
@@ -216,8 +202,6 @@ export interface Counts {
   /** Inbox comments currently hidden by a snooze. `inbox` and `bySource` exclude these. */
   snoozed: number;
   bySource: Record<number, number>;
-  /** Comments with each label that need attention (state inbox, not snoozed). Every label has an entry (0 if none). */
-  byLabel: Record<number, number>;
   /** Inbox items per non-YouTube feed. */
   byFeed: Record<number, number>;
   /** Inbox items per GitHub repository ("owner/repo"); repositories with nothing waiting are absent. */
@@ -428,18 +412,12 @@ export interface SnoozeResult {
   changes: { commentId: string; from: string | null; to: string | null }[];
   counts: Counts;
 }
-export interface LabelApplyResult {
-  /** Full label-id list for every comment whose labels changed. */
-  labels: Record<string, number[]>;
-  counts: Counts;
-}
 export type ReplyResult =
   { mode: 'handoff'; url: string; actionId: number } | { mode: 'posted'; comment: CommentDTO; actionId: number };
 export interface Bootstrap {
   settings: SettingsDTO;
   capabilities: Capabilities;
   counts: Counts;
-  labels: LabelDTO[];
   sources: SourceDTO[];
   quota: QuotaDTO;
   sync: SyncStatus;
@@ -486,7 +464,6 @@ export type ServerEvent =
   | { type: 'quota.update'; quota: QuotaDTO }
   | { type: 'sources.changed'; sources: SourceDTO[] }
   | { type: 'feeds.changed'; feeds: FeedDTO[]; mutes: MuteRuleDTO[] }
-  | { type: 'labels.changed'; labels: LabelDTO[] }
   | { type: 'settings.changed'; settings: SettingsDTO }
   | { type: 'capabilities.changed'; capabilities: Capabilities }
   | { type: 'error'; message: string; sourceId?: number; videoId?: string };

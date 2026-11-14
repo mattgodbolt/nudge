@@ -15,7 +15,6 @@
   import Avatar from './Avatar.svelte';
   import GithubDiscussion from './GithubDiscussion.svelte';
   import Icon from './Icon.svelte';
-  import LabelChips from './LabelChips.svelte';
   import SuggestionChip from './SuggestionChip.svelte';
 
   let { item, now }: { item: InboxItem; now: number } = $props();
@@ -57,7 +56,7 @@
       {#if item.snoozeWhy && item.comment.state === 'inbox'}
         <div class="why faint" data-testid="thread-why">You snoozed this to: {item.snoozeWhy}</div>
       {/if}
-      {#if item.snoozedUntil || item.labels.length > 0 || woke || chips.length > 0 || stateText}
+      {#if item.snoozedUntil || woke || chips.length > 0 || stateText}
         <div class="tags">
           {#if stateText}<span class="badge" data-testid="thread-state">{stateText}</span>{/if}
           {#each chips as chip (chip.text)}
@@ -70,7 +69,6 @@
           {:else if woke}
             <span class="snz" data-testid="thread-woke">⏰ back from snooze</span>
           {/if}
-          <LabelChips ids={item.labels} max={5} />
         </div>
       {/if}
     </div>

@@ -1,6 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { LabelError, type Repo, type YtComment, type YtThread } from '../contracts.js';
-import { MAX_LABELS, MAX_LABEL_NAME } from '../../shared/types.js';
+import type { Repo, YtComment, YtThread } from '../contracts.js';
 import { createRepo, UndoError } from './repo.js';
 import { openDb } from './db.js';
 
@@ -30,8 +29,8 @@ function thread(id: string, publishedAt: string, videoId = 'vid1'): YtThread {
 
 let repo: Repo;
 let sourceId: number;
-const inboxIds = (view: 'inbox' | 'snoozed' | 'done' | 'all' = 'inbox', labelId?: number) =>
-  repo.listInbox({ view, labelId, limit: 500 }).items.map((i) => i.comment.id);
+const inboxIds = (view: 'inbox' | 'snoozed' | 'done' | 'all' = 'inbox') =>
+  repo.listInbox({ view, limit: 500 }).items.map((i) => i.comment.id);
 
 beforeEach(() => {
   nowMs = T0.getTime();
@@ -176,102 +175,5 @@ describe('waking', () => {
       if (i === 0) expect(cursor).toBe(`${at(1)}|c3`);
     }
     expect(all).toEqual(['c3', 'c1', 'c2', 'c4']);
-  });
-});
-
-describe('labels', () => {
-  it('creates labels with cycling colours, increasing positions and normalised names', () => {
-    const a = repo.createLabel('  Needs   reply ');
-    const b = repo.createLabel('Bug');
-    const c = repo.createLabel('Idea', 'pink');
-    expect(a).toMatchObject({ name: 'Needs reply', color: 'red', position: 1 });
-    expect(b).toMatchObject({ color: 'orange', position: 2 });
-    expect(c).toMatchObject({ color: 'pink', position: 3 });
-    expect(repo.listLabels().map((l) => l.name)).toEqual(['Needs reply', 'Bug', 'Idea']);
-  });
-
-  it('validates names', () => {
-    repo.createLabel('Bug');
-    const code = (fn: () => unknown) => {
-      try {
-        fn();
-      } catch (e) {
-        return e instanceof LabelError ? e.code : 'other';
-      }
-      return 'none';
-    };
-    expect(code(() => repo.createLabel('   '))).toBe('bad_name');
-    expect(code(() => repo.createLabel('x'.repeat(MAX_LABEL_NAME + 1)))).toBe('bad_name');
-    expect(code(() => repo.createLabel('x'.repeat(MAX_LABEL_NAME)))).toBe('none');
-    expect(code(() => repo.createLabel(' bUG '))).toBe('duplicate_label');
-    expect(code(() => repo.updateLabel(999, { name: 'z' }))).toBe('not_found');
-    expect(code(() => repo.deleteLabel(999))).toBe('not_found');
-  });
-
-  it('enforces the label cap', () => {
-    for (let i = 0; i < MAX_LABELS; i++) repo.createLabel(`L${i}`);
-    expect(() => repo.createLabel('one more')).toThrowError(expect.objectContaining({ code: 'too_many_labels' }));
-  });
-
-  it('updates name/colour/position; renaming to its own name in another case is allowed', () => {
-    const a = repo.createLabel('bug');
-    const b = repo.createLabel('Idea');
-    expect(repo.updateLabel(a.id, { name: 'BUG', color: 'teal', position: 9 })).toMatchObject({
-      name: 'BUG',
-      color: 'teal',
-      position: 9,
-    });
-    expect(() => repo.updateLabel(a.id, { name: 'idea' })).toThrowError(
-      expect.objectContaining({ code: 'duplicate_label' }),
-    );
-    expect(repo.listLabels().map((l) => l.id)).toEqual([b.id, a.id]);
-  });
-
-  it('applies labels idempotently, skipping unknown ids, and reports only real changes', () => {
-    const a = repo.createLabel('A');
-    const b = repo.createLabel('B');
-    const r1 = repo.applyLabels(['c1', 'c2', 'ghost'], [b.id, a.id, 4242], []);
-    expect(r1.labels).toEqual({ c1: [a.id, b.id], c2: [a.id, b.id] });
-    const r2 = repo.applyLabels(['c1', 'c2'], [a.id], []);
-    expect(r2.labels).toEqual({});
-    const r3 = repo.applyLabels(['c1'], [], [a.id, 4242]);
-    expect(r3.labels).toEqual({ c1: [b.id] });
-    expect(repo.listInbox({ view: 'inbox' }).items.map((i) => [i.comment.id, i.labels])).toEqual([
-      ['c1', [b.id]],
-      ['c2', [a.id, b.id]],
-      ['c3', []],
-      ['c4', []],
-    ]);
-  });
-
-  it('filters by labelId, per view, and counts byLabel for unsnoozed inbox comments only', () => {
-    const a = repo.createLabel('A');
-    const b = repo.createLabel('B');
-    repo.applyLabels(['c1', 'c2', 'c3'], [a.id], []);
-    repo.snooze(['c2'], at(9));
-    repo.triage(['c3'], 'done');
-    expect(inboxIds('inbox', a.id)).toEqual(['c1']);
-    expect(inboxIds('snoozed', a.id)).toEqual(['c2']);
-    expect(inboxIds('done', a.id)).toEqual(['c3']);
-    expect(inboxIds('all', a.id)).toEqual(['c1', 'c2', 'c3']);
-    expect(repo.listInbox({ view: 'all', labelId: a.id }).total).toBe(3);
-    expect(repo.counts().byLabel).toEqual({ [a.id]: 1, [b.id]: 0 });
-  });
-
-  it('deleting a label removes it from every comment and from counts', () => {
-    const a = repo.createLabel('A');
-    const b = repo.createLabel('B');
-    repo.applyLabels(['c1', 'c2'], [a.id, b.id], []);
-    repo.deleteLabel(a.id);
-    expect(repo.listLabels().map((l) => l.id)).toEqual([b.id]);
-    expect(repo.listInbox({ view: 'inbox' }).items[0]!.labels).toEqual([b.id]);
-    expect(repo.counts().byLabel).toEqual({ [b.id]: 2 });
-  });
-
-  it('removes label rows when the comment is deleted', () => {
-    const a = repo.createLabel('A');
-    repo.applyLabels(['c1'], [a.id], []);
-    repo.removeLocalComment('c1');
-    expect(repo.counts().byLabel).toEqual({ [a.id]: 0 });
   });
 });

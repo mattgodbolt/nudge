@@ -7,8 +7,6 @@ export interface InboxQuery {
   view: T.InboxView;
   sourceId?: number;
   videoId?: string;
-  /** Only comments carrying this label. With view 'all' this is the label's folder (every state except own). */
-  labelId?: number;
   /** Only items from this non-YouTube feed. */
   feedId?: number;
   /** Only items in this repository ("owner/repo"). */
@@ -79,13 +77,6 @@ export const CLIENT_HEADER = 'X-Nudge';
  *                                                  owner's one-line reason, kept on the item and on the snooze event. Only comments in state inbox change. `until` must be a
  *                                                  future ISO time within a year (400 bad_until); null unsnoozes.
  * POST   /api/snooze/:actionId/undo             -> SnoozeResult (409 cannot_undo, as triage undo)
- * GET    /api/labels                            -> LabelDTO[]
- * POST   /api/labels {name, color?}             -> 201 LabelDTO. 409 duplicate_label (case-insensitive), 400 bad_name
- *                                                  (empty or > MAX_LABEL_NAME), 409 too_many_labels
- * PATCH  /api/labels/:id {name?, color?, position?} -> LabelDTO
- * DELETE /api/labels/:id                        -> 204 (the label is removed from every comment)
- * POST   /api/labels/apply {commentIds, add?: number[], remove?: number[]} -> LabelApplyResult. Idempotent.
- *   Label endpoints emit `labels.changed`; anything that changes counts emits `inbox.changed`.
  * GET    /api/drafts/:commentId                 -> DraftDTO | 404
  * PUT    /api/drafts/:commentId {body}          -> DraftDTO
  * DELETE /api/drafts/:commentId                 -> 204

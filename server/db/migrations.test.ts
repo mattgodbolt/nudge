@@ -30,6 +30,9 @@ describe('migration 003 (google accounts + reply posts)', () => {
   });
 });
 
+const tableNames = (db: Database.Database) =>
+  (db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as { name: string }[]).map((r) => r.name);
+
 describe('migration 005 (snooze + labels)', () => {
   it('upgrades a v4 database in place, keeping comments and the FTS index', () => {
     const db = new Database(':memory:');
@@ -58,7 +61,15 @@ describe('migration 005 (snooze + labels)', () => {
         .prepare("SELECT id FROM items WHERE rowid IN (SELECT rowid FROM items_fts WHERE items_fts MATCH 'hello')")
         .all(),
     ).toHaveLength(1);
+  });
+
+  it('created labels whose links cascade away with the label (the schema as it stood before migration 015)', () => {
+    const db = new Database(':memory:');
     db.pragma('foreign_keys = ON');
+    db.exec(MIGRATIONS.slice(0, 14).join('\n'));
+    db.prepare(
+      "INSERT INTO items (id, provider, kind, state, state_source, state_changed_at, first_seen_at, occurred_at) VALUES ('c1', 'youtube', 'comment', 'inbox', 'sync', 'x', 'x', 'x')",
+    ).run();
     db.prepare("INSERT INTO labels (name, color, position, created_at) VALUES ('Q', 'red', 1, 'n')").run();
     db.prepare("INSERT INTO item_labels VALUES ('c1', 1)").run();
     db.prepare('DELETE FROM labels WHERE id = 1').run();
@@ -94,7 +105,7 @@ describe('migration 007 (items)', () => {
     return db;
   }
 
-  it('carries every comment across with its state, snooze, labels, draft and searchable text', () => {
+  it('carries every comment across with its state, snooze, draft and searchable text', () => {
     const db = v6();
     migrate(db);
     expect(db.pragma('user_version', { simple: true })).toBe(MIGRATIONS.length);
@@ -162,10 +173,8 @@ describe('migration 007 (items)', () => {
         occurred_at: '2024-01-04',
       },
     ]);
-    expect(db.prepare('SELECT item_id, label_id FROM item_labels ORDER BY item_id').all()).toEqual([
-      { item_id: 'c1', label_id: 1 },
-      { item_id: 'c3', label_id: 1 },
-    ]);
+    // Migration 015 later drops the label tables: they are gone from a fully migrated database.
+    expect(tableNames(db)).not.toContain('item_labels');
     expect(db.prepare('SELECT item_id, body, status FROM drafts').all()).toEqual([
       { item_id: 'c2', body: 'draft body', status: 'draft' },
     ]);
@@ -180,12 +189,11 @@ describe('migration 007 (items)', () => {
     expect(db.pragma('integrity_check', { simple: true })).toBe('ok');
   });
 
-  it('deleting a comment (or its whole thread) removes its item, label links, draft and search entry', () => {
+  it('deleting a comment (or its whole thread) removes its item, draft and search entry', () => {
     const db = v6();
     migrate(db);
     db.prepare("DELETE FROM comments WHERE id = 'c1'").run();
     expect(db.prepare("SELECT 1 FROM items WHERE id = 'c1'").get()).toBeUndefined();
-    expect(db.prepare("SELECT 1 FROM item_labels WHERE item_id = 'c1'").get()).toBeUndefined();
     db.prepare("DELETE FROM threads WHERE id = 't'").run();
     expect(db.prepare('SELECT COUNT(*) AS n FROM items').get()).toEqual({ n: 0 });
     expect(db.prepare('SELECT COUNT(*) AS n FROM drafts').get()).toEqual({ n: 0 });
@@ -358,5 +366,66 @@ describe('migration 013 (mute_rules owner kind)', () => {
     expect((db.prepare("SELECT id FROM mute_rules WHERE kind = 'owner'").get() as { id: number }).id).toBeGreaterThan(
       9,
     );
+  });
+});
+
+describe('migration 015 (drop user-defined labels)', () => {
+  /** A v14 database with labels applied to items and label events in the history, built by the real earlier migrations. */
+  function v14() {
+    const db = new Database(':memory:');
+    db.pragma('foreign_keys = ON');
+    db.exec(MIGRATIONS.slice(0, 14).join('\n'));
+    db.pragma('user_version = 14');
+    const add = db.prepare(
+      `INSERT INTO items (id, provider, kind, author, state, state_source, state_changed_at, first_seen_at, occurred_at, data)
+       VALUES (?, 'github', 'pr', 'ann', 'inbox', 'sync', 'x', 'x', '2024-01-01', ?)`,
+    );
+    add.run('i1', JSON.stringify({ labels: ['bug'] }));
+    add.run('i2', '{}');
+    db.prepare(
+      "INSERT INTO labels (id, name, color, position, created_at) VALUES (1, 'Q', 'red', 1, 'n'), (2, 'F', 'blue', 2, 'n')",
+    ).run();
+    db.prepare("INSERT INTO item_labels VALUES ('i1', 1), ('i1', 2), ('i2', 2)").run();
+    db.prepare(
+      "INSERT INTO item_events (item_id, at, kind, to_value, source) VALUES ('i1', 't1', 'label_add', 'Q', 'user'), ('i1', 't2', 'label_remove', 'F', 'user')",
+    ).run();
+    return db;
+  }
+
+  it('drops both label tables and their index, leaving items and GitHub labels alone', () => {
+    const db = v14();
+    migrate(db);
+    expect(db.pragma('user_version', { simple: true })).toBe(MIGRATIONS.length);
+    expect(tableNames(db)).not.toContain('labels');
+    expect(tableNames(db)).not.toContain('item_labels');
+    const refs = db
+      .prepare(
+        "SELECT name FROM sqlite_master WHERE name LIKE '%label%' OR sql LIKE '%item_labels%' OR sql LIKE '% labels%'",
+      )
+      .all();
+    expect(refs).toEqual([]);
+    expect(db.prepare('SELECT id, state, data FROM items ORDER BY id').all()).toEqual([
+      { id: 'i1', state: 'inbox', data: '{"labels":["bug"]}' },
+      { id: 'i2', state: 'inbox', data: '{}' },
+    ]);
+    expect(db.pragma('foreign_key_check')).toEqual([]);
+    expect(db.pragma('integrity_check', { simple: true })).toBe('ok');
+  });
+
+  it('keeps label_add and label_remove history rows', () => {
+    const db = v14();
+    migrate(db);
+    expect(db.prepare('SELECT kind, to_value FROM item_events ORDER BY id').all()).toEqual([
+      { kind: 'label_add', to_value: 'Q' },
+      { kind: 'label_remove', to_value: 'F' },
+    ]);
+  });
+
+  it('works on a database that never had a label', () => {
+    const db = new Database(':memory:');
+    db.exec(MIGRATIONS.slice(0, 14).join('\n'));
+    db.pragma('user_version = 14');
+    migrate(db);
+    expect(tableNames(db)).not.toContain('labels');
   });
 });
