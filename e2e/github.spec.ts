@@ -414,3 +414,93 @@ test.describe('on a phone, the top of the inbox leaves the room to the list', ()
     await expect(page.getByRole('link', { name: 'Settings' })).toBeHidden();
   });
 });
+
+const SHOTS = '/tmp/claude-1000/-home-matthew-dev-nudge/8310d065-b0ad-4a4a-8d51-bf2a6cd22982/scratchpad';
+
+async function addRepoFeed(page: Page, name: string) {
+  await page.goto('/sources');
+  await page.getByTestId('feed-owner').fill(name);
+  await page.getByTestId('feed-import').selectOption('all');
+  await page.getByTestId('feed-add').click();
+}
+
+async function removeFeed(page: Page, name: string) {
+  const row = page.getByTestId('feeds-table').getByTestId('feed-row').filter({ hasText: name });
+  await row.getByRole('button', { name: 'Remove feed' }).click();
+  await row.getByRole('button', { name: 'Remove', exact: true }).click();
+  await expect(row).toHaveCount(0);
+}
+
+test('Sources: a single repository can be followed on its own, and an unknown one reports an error', async ({
+  page,
+}) => {
+  await page.goto('/sources');
+  await expect(page.getByTestId('feed-owner')).toHaveAttribute('placeholder', /owner\/repo/);
+
+  // demo-org is already a whole feed, so one of its repositories adds nothing.
+  await page.getByTestId('feed-owner').fill('demo-org/docs');
+  await page.getByTestId('feed-add').click();
+  await expect(page.getByTestId('toast').filter({ hasText: /already covered by the demo-org feed/ })).toBeVisible();
+
+  await page.getByTestId('feed-owner').fill('quiet-org/nope');
+  await page.getByTestId('feed-add').click();
+  const missing = page.getByTestId('feeds-table').getByTestId('feed-row').filter({ hasText: 'quiet-org/nope' });
+  await expect(missing.getByTestId('feed-last-error')).toContainText('no repository called "quiet-org/nope"', {
+    timeout: 15_000,
+  });
+  await removeFeed(page, 'quiet-org/nope');
+
+  await page.getByTestId('feed-owner').fill('https://github.com/quiet-org/tiny');
+  await page.getByTestId('feed-import').selectOption('all');
+  await page.getByTestId('feed-add').click();
+  const row = page.getByTestId('feeds-table').getByTestId('feed-row').filter({ hasText: 'quiet-org/tiny' });
+  await expect(row.getByTestId('feed-kind')).toHaveText('repo');
+  await expect(row.getByTestId('feed-last-error')).toHaveCount(0);
+  await expect(row.getByRole('button', { name: 'Poll now' })).toBeVisible();
+  await expect(row.locator('td.num').first()).toHaveText('3', { timeout: 15_000 });
+
+  await page.screenshot({ path: `${SHOTS}/repo-feed-desktop.png`, fullPage: true });
+
+  // Its items are filed under it, and only its own repository is there.
+  const side = page.getByTestId('sidebar-feed').filter({ hasText: 'quiet-org/tiny' });
+  await expect(side.getByTestId('sidebar-feed-count')).toHaveText('3');
+  await side.click();
+  await expect(page.getByTestId('feed-chip')).toContainText('quiet-org/tiny');
+  await expect(rows(page).first().getByTestId('row-title')).toContainText('Quiet repository item');
+
+  // On/off and Poll now work as for any feed.
+  await page.goto('/sources');
+  await row.getByRole('checkbox', { name: 'Enabled' }).uncheck();
+  await expect(row).toHaveClass(/off/);
+  await row.getByRole('checkbox', { name: 'Enabled' }).check();
+  await row.getByRole('button', { name: 'Poll now' }).click();
+
+  // Removing it removes its items, and leaves demo-org alone.
+  await removeFeed(page, 'quiet-org/tiny');
+  await expect(page.getByTestId('feeds-table').getByTestId('feed-row').filter({ hasText: 'demo-org' })).toBeVisible();
+  await expect(side).toHaveCount(0);
+});
+
+test.describe('a repository feed on a phone', () => {
+  test.use({ viewport: { width: 390, height: 844 }, hasTouch: true });
+
+  test('the form and table fit, and the table scrolls rather than clipping its buttons', async ({ page }) => {
+    await addRepoFeed(page, 'quiet-org/tiny');
+    const row = page.getByTestId('feeds-table').getByTestId('feed-row').filter({ hasText: 'quiet-org/tiny' });
+    await expect(row.getByTestId('feed-kind')).toBeVisible();
+    await expect(row.locator('td.num').first()).toHaveText('3', { timeout: 15_000 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+    for (const id of ['feed-owner', 'feed-import', 'feed-add']) {
+      const b = (await page.getByTestId(id).boundingBox())!;
+      expect(b.x).toBeGreaterThanOrEqual(0);
+      expect(b.x + b.width).toBeLessThanOrEqual(390);
+      expect(b.height).toBeGreaterThanOrEqual(44);
+    }
+    // The table sits in a scrolling wrapper, so the action buttons can be reached.
+    const wrap = page.getByTestId('github-feeds').locator('.tablewrap');
+    expect(await wrap.evaluate((el) => getComputedStyle(el).overflowX)).toBe('auto');
+    await row.getByRole('button', { name: 'Poll now' }).scrollIntoViewIfNeeded();
+    await page.screenshot({ path: `${SHOTS}/repo-feed-390.png`, fullPage: true });
+    await removeFeed(page, 'quiet-org/tiny');
+  });
+});

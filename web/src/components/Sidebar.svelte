@@ -237,18 +237,18 @@
         <div class="label subhead">GitHub</div>
         {#each feeds.list as f (f.id)}
           {@const n = inbox.counts.byFeed[f.id] ?? f.inboxCount}
-          {@const repos = reposOf(f.owner)}
-          {@const open = isOpen(f.id)}
+          {@const repos = f.kind === 'repo' ? [] : reposOf(f.owner)}
+          {@const open = f.kind !== 'repo' && isOpen(f.id)}
           <div class="feedrow">
-            <button
-              type="button"
-              class="chev"
-              class:closed={!open}
-              aria-label="{open ? 'Collapse' : 'Expand'} {f.owner}"
-              aria-expanded={open}
-              data-testid="feed-toggle"
-              onclick={() => toggle(f.id)}><Icon name="chevron-down" size={12} /></button
-            >
+            {#if f.kind === 'repo'}<span class="chev spacer" aria-hidden="true"></span>{:else}<button
+                type="button"
+                class="chev"
+                class:closed={!open}
+                aria-label="{open ? 'Collapse' : 'Expand'} {f.owner}"
+                aria-expanded={open}
+                data-testid="feed-toggle"
+                onclick={() => toggle(f.id)}><Icon name="chevron-down" size={12} /></button
+              >{/if}
             <a
               class="item sub grow"
               class:active={router.route === 'inbox' && router.query.feed === String(f.id) && !router.query.repo}

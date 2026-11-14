@@ -6,6 +6,7 @@ const feed = (over: Partial<FeedDTO> = {}): FeedDTO => ({
   id: 1,
   provider: 'github',
   owner: 'org',
+  kind: 'owner',
   ownerType: null,
   prs: true,
   issues: true,

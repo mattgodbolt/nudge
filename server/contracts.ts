@@ -138,6 +138,7 @@ export interface StoredSettings {
   llm: { apiKey: string | null; model: string };
 }
 export interface NewFeed {
+  /** A user or organisation, or "owner/name" for a single-repository feed (decides the feed's kind). */
   owner: string;
   prs: boolean;
   issues: boolean;
@@ -146,7 +147,9 @@ export interface NewFeed {
 export interface FeedRow {
   id: number;
   provider: 'github';
+  /** The user or organisation, or "owner/name" when kind is 'repo'. */
   owner: string;
+  kind: 'owner' | 'repo';
   ownerType: 'org' | 'user' | null;
   prs: boolean;
   issues: boolean;
@@ -635,6 +638,8 @@ export interface GithubClient {
   /** Who owns this token (GET /user) and the scopes it carries, for the Settings "Test" button. */
   whoami(token: string): Promise<{ login: string; scopes: string[] | null }>;
   ownerType(owner: string, token: string | null): Promise<'org' | 'user' | null>;
+  /** Does this repository ("owner/name") exist (and is it visible with this token)? */
+  repoExists(repo: string, token: string | null): Promise<boolean>;
   /** One page (up to 100) of /search/issues, oldest update first. */
   search(q: string, page: number, token: string | null): Promise<GithubSearchPage>;
   /** Login of the newest comment on an issue or PR (given its comment count), or null. */

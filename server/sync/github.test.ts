@@ -36,14 +36,21 @@ interface Script {
   commenter: string | null;
   fail: unknown;
   ownerType: 'org' | 'user' | null;
+  repoExists: boolean;
+  lookups: string[];
 }
 function fakeClient(s: Script): GithubClient {
   return {
     async whoami() {
       return { login: 'me', scopes: [] };
     },
-    async ownerType() {
+    async ownerType(o) {
+      s.lookups.push(`owner:${o}`);
       return s.ownerType;
+    },
+    async repoExists(r) {
+      s.lookups.push(`repo:${r}`);
+      return s.repoExists;
     },
     async search(q, page) {
       s.queries.push(`${page}:${q}`);
@@ -70,7 +77,7 @@ const poller = (over = {}) =>
   createGithubPoller({ repo, bus, client: fakeClient(script), clock: clock.now, intervalMs: 300_000, ...over });
 
 beforeEach(() => {
-  script = { pages: [], queries: [], commenter: null, fail: null, ownerType: 'org' };
+  script = { pages: [], queries: [], commenter: null, fail: null, ownerType: 'org', repoExists: true, lookups: [] };
   clock = makeClock(new Date('2026-11-08T12:00:00.000Z'));
   repo = createRepo(openDb(':memory:'), clock.now);
   bus = makeBus();
@@ -202,6 +209,33 @@ describe('GitHub poller', () => {
     script.queries.length = 0;
     clock.advance(10 * 60_000);
     await p.tick();
+    expect(script.queries).toEqual([]);
+  });
+
+  it('searches a repo feed with repo:, checks the repository rather than the owner, and keeps owner_type empty', async () => {
+    const id = repo.addFeed({ owner: 'org/app', prs: true, issues: true, importMode: 'all' }).id;
+    repo.deleteFeed(feedId);
+    script.pages = [[item(1, { repo: 'org/app' })]];
+    await poller().pollNow();
+    expect(script.lookups).toEqual(['repo:org/app']);
+    expect(script.queries).toEqual([
+      '1:repo:org/app is:pr updated:>=1970-01-01T00:00:00Z is:open',
+      '1:repo:org/app is:issue updated:>=1970-01-01T00:00:00Z is:open',
+    ]);
+    expect(repo.getFeed(id)).toMatchObject({ ownerType: null, lastError: null, rate: { remaining: 28 } });
+    expect(repo.getFeedRow(id)!.cursor).not.toBeNull();
+    // Later polls use the cursor, with the overlap, like any feed.
+    clock.advance(10 * 60_000);
+    await poller().pollNow();
+    expect(script.queries.at(-1)).toContain('updated:>=2026-11-08T11:45:00Z');
+  });
+
+  it('reports an unknown repository as the feed error, and backs off', async () => {
+    const id = repo.addFeed({ owner: 'org/gone', prs: true, issues: true, importMode: 'none' }).id;
+    script.repoExists = false;
+    await poller().pollNow(id);
+    expect(repo.getFeedRow(id)).toMatchObject({ errorCount: 1 });
+    expect(repo.getFeedRow(id)!.lastError).toMatch(/no repository called "org\/gone"/);
     expect(script.queries).toEqual([]);
   });
 

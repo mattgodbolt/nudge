@@ -35,7 +35,8 @@
   <h2>GitHub</h2>
   <p class="meta muted">
     Every new pull request and issue in a GitHub user's or organisation's repositories lands in your inbox, so you can
-    press <kbd class="mono">e</kbd> on the ones that need nothing.
+    press <kbd class="mono">e</kbd> on the ones that need nothing. Give <span class="mono">owner/repo</span> (e.g.
+    compiler-explorer/compiler-explorer) instead to follow just one repository, then widen to the whole owner later.
     {#if !configured}
       No token yet: public repositories work, with a low rate limit. Add a read-only token in
       <a
@@ -53,8 +54,8 @@
     <input
       class="input"
       bind:value={owner}
-      placeholder="GitHub user or organisation, e.g. compiler-explorer"
-      aria-label="GitHub user or organisation"
+      placeholder="owner or owner/repo"
+      aria-label="GitHub user, organisation or repository (owner/repo)"
       data-testid="feed-owner"
       autocomplete="off"
       spellcheck="false"
@@ -91,6 +92,7 @@
                   }}
                 >
                   <Icon name="list" size={14} /><span class="truncate">{f.owner}</span>
+                  {#if f.kind === 'repo'}<span class="faint meta" data-testid="feed-kind">repo</span>{/if}
                   <span class="faint meta">{f.prs && f.issues ? 'PRs + issues' : f.prs ? 'PRs' : 'issues'}</span>
                 </a>
                 {#if f.lastError}<div class="err meta" title={f.lastError} data-testid="feed-last-error">

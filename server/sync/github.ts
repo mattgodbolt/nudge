@@ -47,8 +47,17 @@ export function createGithubPoller(deps: GithubPollerDeps): GithubPoller & { tic
     const token = settings.token;
     const mine = new Set(settings.myAccounts.map((l) => l.toLowerCase()));
     try {
-      const ownerType = feed.ownerType ?? (await client.ownerType(feed.owner, token));
-      if (!ownerType) throw new GithubError(`GitHub has no user or organisation called "${feed.owner}"`, 404);
+      // A repo feed is one `repo:` qualifier: no user/organisation lookup, only a check that the repository exists.
+      let ownerType: 'org' | 'user' | null = null;
+      if (feed.kind === 'repo') {
+        if (!(await client.repoExists(feed.owner, token))) {
+          throw new GithubError(`GitHub has no repository called "${feed.owner}"`, 404);
+        }
+      } else {
+        ownerType = feed.ownerType ?? (await client.ownerType(feed.owner, token));
+        if (!ownerType) throw new GithubError(`GitHub has no user or organisation called "${feed.owner}"`, 404);
+      }
+      const scope = feed.kind === 'repo' ? `repo:${feed.owner}` : `${ownerType}:${feed.owner}`;
 
       const since = feed.cursor
         ? new Date(Date.parse(feed.cursor) - OVERLAP_MS)
@@ -63,7 +72,7 @@ export function createGithubPoller(deps: GithubPollerDeps): GithubPoller & { tic
       // Where a kind that hit the page cap stopped: the next poll must resume from the earliest of these.
       const stoppedAt: string[] = [];
       for (const kind of kinds) {
-        const q = `${ownerType}:${feed.owner} ${kind} updated:>=${ghTime(since)}${openOnly}`;
+        const q = `${scope} ${kind} updated:>=${ghTime(since)}${openOnly}`;
         let newestOfKind = '';
         for (let page = 1; page <= maxPages; page++) {
           const res = await client.search(q, page, token);

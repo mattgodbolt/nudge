@@ -221,8 +221,13 @@ export type FeedProvider = 'github';
 export interface FeedDTO {
   id: number;
   provider: FeedProvider;
-  /** The GitHub user or organisation whose pull requests and issues arrive here. */
+  /**
+   * The GitHub user or organisation whose pull requests and issues arrive here; for a 'repo' feed, the single
+   * repository as "owner/name".
+   */
   owner: string;
+  /** 'owner': every repository of a user or organisation. 'repo': one repository. */
+  kind: 'owner' | 'repo';
   ownerType: 'org' | 'user' | null;
   prs: boolean;
   issues: boolean;

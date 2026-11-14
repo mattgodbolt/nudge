@@ -68,7 +68,9 @@ describe('feeds', () => {
     expect(env.bus.of('feeds.changed')).toHaveLength(1);
 
     expect((await send('POST', '/api/feeds', { owner: 'Compiler-Explorer' })).statusCode).toBe(409);
-    expect((await send('POST', '/api/feeds', { owner: 'a/b' })).statusCode).toBe(400);
+    expect((await send('POST', '/api/feeds', { owner: 'a/b/c' })).statusCode).toBe(400);
+    expect((await send('POST', '/api/feeds', { owner: '/b' })).statusCode).toBe(400);
+    expect((await send('POST', '/api/feeds', { owner: 'x[bot]/b' })).statusCode).toBe(400);
     expect((await send('POST', '/api/feeds', { owner: 'x[bot]' })).statusCode).toBe(400);
     expect((await send('POST', '/api/feeds', { owner: 'y', prs: false, issues: false })).statusCode).toBe(400);
     expect((await send('POST', '/api/feeds', { owner: 'z', importMode: 'sideways' })).statusCode).toBe(400);
@@ -125,6 +127,28 @@ describe('mutes', () => {
 
     expect((await send('DELETE', `/api/mutes/${body.rule.id}`)).statusCode).toBe(204);
     expect((await send('GET', '/api/feeds')).json().mutes).toEqual([]);
+  });
+
+  it('adds a repo feed from owner/repo or a GitHub URL, and refuses duplicates and repos an owner feed covers', async () => {
+    let res = await send('POST', '/api/feeds', { owner: 'https://github.com/org/app/', importMode: 'all' });
+    expect(res.statusCode).toBe(201);
+    expect(res.json()).toMatchObject({ owner: 'org/app', kind: 'repo', importMode: 'all' });
+    expect(polled).toEqual([res.json().id]);
+    expect((await send('POST', '/api/feeds', { owner: 'ORG/app' })).statusCode).toBe(409);
+    // A different repository under the same owner is fine, and so is the owner feed afterwards.
+    expect((await send('POST', '/api/feeds', { owner: 'org/other.js' })).statusCode).toBe(201);
+    res = await send('POST', '/api/feeds', { owner: 'org' });
+    expect(res.statusCode).toBe(201);
+    expect(res.json().kind).toBe('owner');
+    // ... but now the owner feed covers every repository under it.
+    res = await send('POST', '/api/feeds', { owner: 'org/third' });
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error ?? res.json().message).toMatch(/already covered by the org feed/);
+    expect((await send('GET', '/api/feeds')).json().feeds.map((f: { kind: string }) => f.kind)).toEqual([
+      'repo',
+      'repo',
+      'owner',
+    ]);
   });
 
   it('muting an owner archives all its repositories (undoably) and lists as an owner rule', async () => {

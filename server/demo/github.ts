@@ -3,6 +3,8 @@ import { GithubError, type GithubClient, type GithubItemUpsert } from '../contra
 import { githubItemId } from '../db/feeds.js';
 
 export const DEMO_GITHUB_OWNER = 'demo-org';
+/** A second owner with one small, quiet repository: what a single-repo feed is for. */
+export const DEMO_QUIET_REPO = 'quiet-org/tiny';
 
 interface Person {
   login: string;
@@ -79,6 +81,25 @@ export function createFakeGithubClient(
   // A backlog: a few hundred older items (up to months old), as when a whole organisation is imported.
   for (let k = 0; k < (opts.backlog ?? 0); k++) add(100 + k * 7);
 
+  // Appended after the rest so the numbering above does not move: three open items in a repo of its own.
+  for (let k = 0; k < 3; k++) {
+    const number = 7 + k;
+    const created = new Date(base - (5 + k * 20) * 3_600_000).toISOString();
+    items.push({
+      ...items[k]!,
+      id: githubItemId('quiet-org', 'tiny', number),
+      repo: DEMO_QUIET_REPO,
+      number,
+      title: `Quiet repository item (#${number})`,
+      url: `https://github.com/${DEMO_QUIET_REPO}/${k === 2 ? 'issues' : 'pull'}/${number}`,
+      kind: k === 2 ? 'issue' : 'pr',
+      createdAt: created,
+      updatedAt: created,
+      comments: 0,
+      labels: [],
+    });
+  }
+
   return {
     /** A new pull request arrives (the demo "tick"). */
     tick(): void {
@@ -89,7 +110,10 @@ export function createFakeGithubClient(
         return { login: 'demo-owner', scopes: ['public_repo'] };
       },
       async ownerType(owner) {
-        return owner === DEMO_GITHUB_OWNER ? 'org' : null;
+        return owner === DEMO_GITHUB_OWNER || owner === 'quiet-org' ? 'org' : null;
+      },
+      async repoExists(repo) {
+        return items.some((i) => i.repo.toLowerCase() === repo.toLowerCase());
       },
       async search(q, page) {
         // Like the real API: a search must say which kind it wants.
@@ -99,7 +123,12 @@ export function createFakeGithubClient(
         const m = /updated:>=(\S+)/.exec(q);
         const since = m ? Date.parse(m[1]!) : 0;
         const wantsPr = /\bis:pr\b/.test(q);
+        // Like the real API: `org:`/`user:` match an owner, `repo:` one repository.
+        const scope = /\b(org|user|repo):(\S+)/.exec(q);
+        const inScope = (i: GithubItemUpsert) =>
+          !scope || (scope[1] === 'repo' ? i.repo : i.repo.split('/')[0]!).toLowerCase() === scope[2]!.toLowerCase();
         const hits = items
+          .filter(inScope)
           .filter((i) => Date.parse(i.updatedAt) >= since)
           .filter((i) => (wantsPr ? i.kind === 'pr' : i.kind === 'issue'))
           .sort((a, b) => a.updatedAt.localeCompare(b.updatedAt));

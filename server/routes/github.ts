@@ -60,14 +60,25 @@ export function registerGithubRoutes(app: FastifyInstance, deps: AppDeps): void 
       .trim()
       .replace(/^https?:\/\/github\.com\//i, '')
       .replace(/\/+$/, '');
-    if (!LOGIN.test(owner) || owner.endsWith('[bot]')) throw bad('"owner" must be a GitHub user or organisation name');
+    const isRepo = owner.includes('/');
+    if (isRepo ? !REPO.test(owner) || /\.git$/i.test(owner) : !LOGIN.test(owner) || owner.endsWith('[bot]')) {
+      throw bad('"owner" must be a GitHub user or organisation name, or a repository like owner/name');
+    }
     const prs = bool(b, 'prs') ?? true;
     const issues = bool(b, 'issues') ?? true;
     if (!prs && !issues) throw bad('Pick pull requests, issues, or both');
     const importMode: ImportMode =
       b.importMode === undefined ? 'none' : oneOf(b.importMode, 'importMode', IMPORT_MODES);
-    if (repo.listFeeds().some((f) => f.owner.toLowerCase() === owner.toLowerCase())) {
+    const feeds = repo.listFeeds();
+    if (feeds.some((f) => f.owner.toLowerCase() === owner.toLowerCase())) {
       throw new HttpError(409, `${owner} is already a feed`, 'duplicate_feed');
+    }
+    // An owner feed already covers every repository under it. (The reverse is allowed: the owner feed takes over.)
+    const covering = isRepo
+      ? feeds.find((f) => f.kind === 'owner' && f.owner.toLowerCase() === owner.split('/')[0]!.toLowerCase())
+      : undefined;
+    if (covering) {
+      throw new HttpError(409, `${owner} is already covered by the ${covering.owner} feed`, 'duplicate_feed');
     }
     const feed = repo.addFeed({ owner, prs, issues, importMode });
     emitFeeds();

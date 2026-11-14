@@ -43,6 +43,7 @@ export function createFeedsRepo(deps: FeedsDeps) {
     id: r.id,
     provider: r.provider,
     owner: r.owner,
+    kind: r.kind === 'repo' ? 'repo' : 'owner',
     ownerType: r.owner_type,
     prs: !!r.prs,
     issues: !!r.issues,
@@ -68,6 +69,7 @@ export function createFeedsRepo(deps: FeedsDeps) {
       id: f.id,
       provider: f.provider,
       owner: f.owner,
+      kind: f.kind,
       ownerType: f.ownerType,
       prs: f.prs,
       issues: f.issues,
@@ -104,14 +106,26 @@ export function createFeedsRepo(deps: FeedsDeps) {
 
   function addFeed(f: NewFeed): FeedDTO {
     const owner = f.owner.trim();
+    const kind = owner.includes('/') ? 'repo' : 'owner';
     const at = now();
-    const res = db
-      .prepare(
-        `INSERT INTO feeds (provider, owner, prs, issues, import_mode, added_at, baseline_at, next_poll_at)
-         VALUES ('github', ?, ?, ?, ?, ?, ?, ?)`,
-      )
-      .run(owner, f.prs ? 1 : 0, f.issues ? 1 : 0, f.importMode, at, deps.baselineFor(f.importMode), at);
-    return getFeed(Number(res.lastInsertRowid))!;
+    return db.transaction(() => {
+      const res = db
+        .prepare(
+          `INSERT INTO feeds (provider, kind, owner, prs, issues, import_mode, added_at, baseline_at, next_poll_at)
+           VALUES ('github', ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(kind, owner, f.prs ? 1 : 0, f.issues ? 1 : 0, f.importMode, at, deps.baselineFor(f.importMode), at);
+      const id = Number(res.lastInsertRowid);
+      // An owner feed takes over items its repo feeds already hold, so removing a repo feed later cannot take them.
+      if (kind === 'owner') {
+        db.prepare(
+          `UPDATE items SET feed_id = ? WHERE provider = 'github'
+             AND lower(substr(container_key, 1, instr(container_key, '/') - 1)) = lower(?)
+             AND feed_id IN (SELECT id FROM feeds WHERE kind = 'repo')`,
+        ).run(id, owner);
+      }
+      return getFeed(id)!;
+    })();
   }
 
   function updateFeed(
@@ -128,7 +142,24 @@ export function createFeedsRepo(deps: FeedsDeps) {
     return getFeed(id);
   }
 
-  const deleteFeed = (id: number): boolean => db.prepare('DELETE FROM feeds WHERE id = ?').run(id).changes > 0;
+  /**
+   * Items belong to one feed, and deleting a feed deletes its items (ON DELETE CASCADE). An item that two feeds cover
+   * (a repo feed under an owner feed) belongs to the owner feed, the broader one. So deleting a repo feed never takes
+   * anything the owner feed also covers; and deleting the owner feed first hands each repo's items to that repo's own
+   * feed, if it has one, rather than losing them.
+   */
+  function deleteFeed(id: number): boolean {
+    return db.transaction(() => {
+      const f = db.prepare('SELECT kind, owner FROM feeds WHERE id = ?').get(id) as Row | undefined;
+      if (f?.kind === 'owner') {
+        db.prepare(
+          `UPDATE items SET feed_id = (SELECT r.id FROM feeds r WHERE r.kind = 'repo' AND lower(r.owner) = lower(items.container_key))
+           WHERE feed_id = ? AND lower(container_key) IN (SELECT lower(owner) FROM feeds WHERE kind = 'repo')`,
+        ).run(id);
+      }
+      return db.prepare('DELETE FROM feeds WHERE id = ?').run(id).changes > 0;
+    })();
+  }
 
   function recordFeedPoll(id: number, r: FeedPollResult): void {
     db.prepare(
@@ -288,8 +319,17 @@ export function createFeedsRepo(deps: FeedsDeps) {
    */
   function upsertGithubItems(feedId: number, ups: GithubItemUpsert[]): UpsertGithubResult {
     const mine = deps.myAccounts();
-    const feed = db.prepare('SELECT baseline_at FROM feeds WHERE id = ?').get(feedId) as Row | undefined;
+    const feed = db.prepare('SELECT baseline_at, kind FROM feeds WHERE id = ?').get(feedId) as Row | undefined;
     const baseline: string = feed?.baseline_at ?? EPOCH;
+    // A repo feed's items belong to the owner feed when there is one (see deleteFeed).
+    const ownerFeedFor = db.prepare("SELECT id FROM feeds WHERE kind = 'owner' AND lower(owner) = lower(?)");
+    const owningFeed = (container: string): number => {
+      if (feed?.kind !== 'repo') return feedId;
+      const o = ownerFeedFor.get(container.split('/')[0]!) as Row | undefined;
+      return o ? o.id : feedId;
+    };
+    const feedKind = db.prepare('SELECT kind FROM feeds WHERE id = ?');
+    const repoint = db.prepare('UPDATE items SET feed_id = ? WHERE id = ?');
     const rules = listMuteRules();
     const muteHit = (u: GithubItemUpsert): boolean =>
       rules.some(
@@ -302,7 +342,9 @@ export function createFeedsRepo(deps: FeedsDeps) {
       );
     const res: UpsertGithubResult = { added: [], reopened: [], changed: [] };
     const at = now();
-    const get = db.prepare('SELECT state, state_source, source_state, snoozed_until, data FROM items WHERE id = ?');
+    const get = db.prepare(
+      'SELECT state, state_source, source_state, snoozed_until, data, feed_id FROM items WHERE id = ?',
+    );
     const insert = db.prepare(
       `INSERT INTO items (id, provider, kind, feed_id, container_key, container_title, title, author, author_avatar_url,
          is_own, body_plain, url, occurred_at, source_state, reason, data, muted, state, state_source,
@@ -389,7 +431,7 @@ export function createFeedsRepo(deps: FeedsDeps) {
           insert.run({
             ...common,
             kind: u.kind,
-            feedId,
+            feedId: owningFeed(u.repo),
             repo: u.repo,
             createdAt: u.createdAt,
             reason,
@@ -400,6 +442,10 @@ export function createFeedsRepo(deps: FeedsDeps) {
           continue;
         }
         refresh.run(common);
+        const owning = owningFeed(u.repo);
+        if (existing.feed_id !== owning && (feedKind.get(existing.feed_id) as Row | undefined)?.kind === 'repo') {
+          repoint.run(owning, u.id);
+        }
         // My own comment on a thread is a reply made on GitHub; the first poll that sees the count grow with me as
         // the newest commenter is the closest we get to when it happened.
         if (grew && u.lastCommenterIsMe === true) {

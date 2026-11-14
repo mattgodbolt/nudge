@@ -252,6 +252,12 @@ export function createGithubClient(opts: { fetch?: typeof fetch } = {}): GithubC
       return body.type === 'Organization' ? 'org' : body.type === 'User' ? 'user' : null;
     },
 
+    async repoExists(repo, token) {
+      const [owner = '', name = ''] = repo.split('/');
+      const { body } = await call(`/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`, token);
+      return !!body && !Array.isArray(body);
+    },
+
     async search(q, page, token): Promise<GithubSearchPage> {
       const params = new URLSearchParams({ q, sort: 'updated', order: 'asc', per_page: '100', page: String(page) });
       const { res, body } = await call(`/search/issues?${params}`, token);

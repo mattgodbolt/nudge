@@ -308,3 +308,66 @@ describe('filters and counts', () => {
     expect(repo.listInbox({ view: 'all', q: 'Change' }).total).toBe(0);
   });
 });
+
+describe('repo feeds', () => {
+  const inRepo = (name: string, n: number) =>
+    up(n, {
+      id: githubItemId('org', name, n),
+      repo: `org/${name}`,
+      createdAt: '2026-11-08T12:10:00.000Z',
+    });
+  let rawDb: ReturnType<typeof openDb>;
+  const feedOf = (id: string): number =>
+    (rawDb.prepare('SELECT feed_id FROM items WHERE id = ?').get(id) as { feed_id: number }).feed_id;
+  beforeEach(() => {
+    rawDb = openDb(':memory:');
+    repo = createRepo(rawDb, () => now);
+    now = new Date('2026-11-08T12:00:00.000Z');
+  });
+
+  it('stores owner/repo in the owner column with kind repo, and may sit beside an owner feed of that owner', () => {
+    const r = repo.addFeed({ owner: 'org/app', prs: true, issues: true, importMode: 'all' });
+    expect(r).toMatchObject({ owner: 'org/app', kind: 'repo', ownerType: null, importMode: 'all' });
+    const o = repo.addFeed({ owner: 'org', prs: true, issues: true, importMode: 'none' });
+    expect(o.kind).toBe('owner');
+    expect(repo.listFeeds().map((f) => f.owner)).toEqual(['org/app', 'org']);
+    expect(() => repo.addFeed({ owner: 'org/app', prs: true, issues: true, importMode: 'none' })).toThrow(/UNIQUE/);
+  });
+
+  it('a repo feed keeps its own items, and removing it removes them', () => {
+    const r = repo.addFeed({ owner: 'org/app', prs: true, issues: true, importMode: 'none' });
+    repo.upsertGithubItems(r.id, [inRepo('app', 1)]);
+    expect(feedOf(githubItemId('org', 'app', 1))).toBe(r.id);
+    expect(repo.deleteFeed(r.id)).toBe(true);
+    expect(repo.listInbox({ view: 'all' }).total).toBe(0);
+  });
+
+  it('adding the owner feed later takes over the repo feed items, so removing the repo feed keeps them', () => {
+    const r = repo.addFeed({ owner: 'org/app', prs: true, issues: true, importMode: 'none' });
+    repo.upsertGithubItems(r.id, [inRepo('app', 1), inRepo('other', 2)]);
+    const o = repo.addFeed({ owner: 'ORG', prs: true, issues: true, importMode: 'none' });
+    expect(feedOf(githubItemId('org', 'app', 1))).toBe(o.id);
+    expect(feedOf(githubItemId('org', 'other', 2))).toBe(o.id);
+    expect(repo.deleteFeed(r.id)).toBe(true);
+    expect(repo.listInbox({ view: 'all' }).total).toBe(2);
+    expect(repo.getFeed(o.id)!.itemCount).toBe(2);
+  });
+
+  it('a repo feed polled while an owner feed exists files new items under the owner feed, and moves old ones', () => {
+    const r = repo.addFeed({ owner: 'org/app', prs: true, issues: true, importMode: 'none' });
+    const o = repo.addFeed({ owner: 'org', prs: true, issues: true, importMode: 'none' });
+    repo.upsertGithubItems(r.id, [inRepo('app', 3)]);
+    expect(feedOf(githubItemId('org', 'app', 3))).toBe(o.id);
+    repo.deleteFeed(r.id);
+    expect(repo.listInbox({ view: 'all' }).total).toBe(1);
+  });
+
+  it('removing the owner feed hands a repo feed its repository items, and drops the rest', () => {
+    const o = repo.addFeed({ owner: 'org', prs: true, issues: true, importMode: 'none' });
+    const r = repo.addFeed({ owner: 'org/app', prs: true, issues: true, importMode: 'none' });
+    repo.upsertGithubItems(o.id, [inRepo('app', 1), inRepo('other', 2)]);
+    repo.deleteFeed(o.id);
+    expect(feedOf(githubItemId('org', 'app', 1))).toBe(r.id);
+    expect(repo.listInbox({ view: 'all' }).items.map((i) => i.item.id)).toEqual([githubItemId('org', 'app', 1)]);
+  });
+});
