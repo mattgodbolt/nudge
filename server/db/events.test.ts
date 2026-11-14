@@ -620,8 +620,9 @@ describe('migration 009 (item_events)', () => {
     const tables = () =>
       d
         .prepare(
-          // Later migrations add tables (usage_daily, suggestions, notes) and one items column (snooze_why).
-          "SELECT name, replace(sql, ', snooze_why TEXT', '') AS sql FROM sqlite_master WHERE name != 'item_events' AND name NOT LIKE 'idx_item_events%' AND name NOT LIKE '%usage_daily%' AND name NOT LIKE '%suggestions%' AND name NOT LIKE '%notes%' ORDER BY name",
+          // Later migrations add tables (usage_daily, suggestions, notes) and one items column (snooze_why), and rebuild
+          // mute_rules to allow the 'owner' kind (its rows are checked in migrations.test.ts).
+          "SELECT name, replace(sql, ', snooze_why TEXT', '') AS sql FROM sqlite_master WHERE name != 'item_events' AND name != 'mute_rules' AND name NOT LIKE 'idx_item_events%' AND name NOT LIKE '%usage_daily%' AND name NOT LIKE '%suggestions%' AND name NOT LIKE '%notes%' ORDER BY name",
         )
         .all();
     const before = tables();

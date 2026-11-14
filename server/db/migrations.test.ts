@@ -328,3 +328,35 @@ describe('migration 012 (thread-aware suggestions, snooze why, notes)', () => {
     expect(db.prepare('SELECT COUNT(*) AS n FROM notes').get()).toEqual({ n: 1 });
   });
 });
+
+describe('migration 013 (mute_rules owner kind)', () => {
+  it('rebuilds the table to allow owner, keeping rule ids, values and uniqueness', () => {
+    const db = new Database(':memory:');
+    db.exec(MIGRATIONS.slice(0, 12).join('\n'));
+    db.pragma('user_version = 12');
+    db.prepare("INSERT INTO mute_rules (id, kind, value, created_at) VALUES (7, 'repo', 'org/app', 't1')").run();
+    db.prepare("INSERT INTO mute_rules (id, kind, value, created_at) VALUES (9, 'bots', '', 't2')").run();
+    expect(() =>
+      db.prepare("INSERT INTO mute_rules (kind, value, created_at) VALUES ('owner', 'org', 't')").run(),
+    ).toThrow();
+
+    migrate(db);
+
+    expect(db.pragma('user_version', { simple: true })).toBe(MIGRATIONS.length);
+    expect(db.prepare('SELECT id, kind, value, created_at FROM mute_rules ORDER BY id').all()).toEqual([
+      { id: 7, kind: 'repo', value: 'org/app', created_at: 't1' },
+      { id: 9, kind: 'bots', value: '', created_at: 't2' },
+    ]);
+    db.prepare("INSERT INTO mute_rules (kind, value, created_at) VALUES ('owner', 'org', 't')").run();
+    expect(() =>
+      db.prepare("INSERT INTO mute_rules (kind, value, created_at) VALUES ('owner', 'org', 't')").run(),
+    ).toThrow();
+    expect(() =>
+      db.prepare("INSERT INTO mute_rules (kind, value, created_at) VALUES ('nonsense', 'x', 't')").run(),
+    ).toThrow();
+    // The id sequence carries on past the highest existing id.
+    expect((db.prepare("SELECT id FROM mute_rules WHERE kind = 'owner'").get() as { id: number }).id).toBeGreaterThan(
+      9,
+    );
+  });
+});

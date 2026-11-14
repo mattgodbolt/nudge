@@ -245,6 +245,39 @@ test('Shift+M offers to mute the repo, the author or just the item; muting hides
   await expect(page.getByTestId('mute-rule').filter({ hasText: author })).toHaveCount(0);
 });
 
+test('Shift+M can mute a whole organisation, undoably; the rule reads as an organisation and can be unmuted', async ({
+  page,
+  request,
+}) => {
+  await openFeed(page);
+  await rows(page).first().click();
+  const before = await feedCount(page);
+  expect(before).toBeGreaterThan(5);
+
+  await page.keyboard.press('Shift+M');
+  await expect(page.getByTestId('mute-owner')).toContainText('Mute all of demo-org');
+  await page.getByTestId('mute-owner').click();
+  const toast = page.getByTestId('toast').filter({ hasText: 'Muted all of demo-org' });
+  await expect(toast).toBeVisible();
+  await expect(rows(page)).toHaveCount(0);
+  await toast.getByRole('button', { name: 'Undo' }).click();
+  await expect.poll(() => feedCount(page)).toBe(before);
+
+  // The same rule from the API, to look at how Sources lists it and that Unmute removes it.
+  const H = { 'x-nudge': '1' };
+  const muted = (await request.post('/api/mutes', { headers: H, data: { kind: 'owner', value: 'demo-org' } })).json();
+  const { rule, triage } = await muted;
+  await page.goto('/sources');
+  const row = page.getByTestId('mute-rule').filter({ hasText: 'demo-org' });
+  await expect(row).toContainText('Organisation');
+  await row.getByRole('button', { name: /Unmute/ }).click();
+  await expect(row).toHaveCount(0);
+  expect(rule.kind).toBe('owner');
+  expect((await request.post(`/api/triage/${triage.actionId}/undo`, { headers: H })).ok()).toBe(true);
+  await openFeed(page);
+  await expect.poll(() => feedCount(page)).toBe(before);
+});
+
 test('Settings: the token is masked, "my accounts" can be added and removed, and Test reports', async ({ page }) => {
   await page.goto('/settings');
   const card = page.getByTestId('settings-github');

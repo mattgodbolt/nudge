@@ -1045,6 +1045,23 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
       const clause = by[q.audience];
       if (clause) where.push(`i.provider = 'github' AND ${clause}`);
     }
+    if (q.suggestion) {
+      // An injection flag hides the suggestion's action (suggestionDto), so those rows only match 'suspicious'.
+      const sg = (cond: string) =>
+        `EXISTS (SELECT 1 FROM suggestions sx WHERE sx.item_id = i.id AND sx.injection_attempt = 0 AND ${cond})`;
+      const bySuggestion: Record<string, string> = {
+        reply: sg("sx.verdict = 'needs_reply'"),
+        act: sg("sx.verdict = 'needs_action'"),
+        skip: sg("sx.verdict = 'no_reply_needed'"),
+        spam: sg("sx.verdict = 'spam'"),
+        matt: sg("sx.turn = 'matt'"),
+        them: sg("sx.turn = 'them'"),
+        suspicious: 'EXISTS (SELECT 1 FROM suggestions sx WHERE sx.item_id = i.id AND sx.injection_attempt = 1)',
+        none: 'NOT EXISTS (SELECT 1 FROM suggestions sx WHERE sx.item_id = i.id)',
+      };
+      const clause = bySuggestion[q.suggestion];
+      if (clause) where.push(clause);
+    }
     if (q.labelId !== undefined) {
       where.push('i.id IN (SELECT item_id FROM item_labels WHERE label_id = @labelId)');
       args.labelId = q.labelId;

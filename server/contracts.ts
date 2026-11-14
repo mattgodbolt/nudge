@@ -35,6 +35,7 @@ import type {
   GithubDiscussionDTO,
   ItemDTO,
   MuteKind,
+  SuggestStatusDTO,
   MuteRuleDTO,
 } from '../shared/types.js';
 import type { DraftDTO, InboxPage, InboxQuery, SyncRequest } from '../shared/api.js';
@@ -649,6 +650,11 @@ export interface GithubClient {
     token: string | null,
     limit?: number,
   ): Promise<GithubRecentComment[]>;
+  /**
+   * The REST ("core") rate limit as of the last response that carried one, or null before any. The search API has its
+   * own, much smaller limit and is not reflected here. Absent on fakes.
+   */
+  coreRate?(): GithubRate | null;
   /** The conversation on an issue or PR (newest entries only), fetched live. Throws GithubError. */
   discussion(repo: string, number: number, kind: 'pr' | 'issue', token: string | null): Promise<GithubDiscussion>;
 }
@@ -690,7 +696,7 @@ export interface AppDeps {
   /** The assistant (absent in tests that do not exercise it). */
   llm?: LlmClient;
   /** The suggestion worker, so a note can ask for items to be looked at again (absent in tests that do not need it). */
-  suggest?: { notify(ids: string[]): void; kick(): void };
+  suggest?: { notify(ids: string[]): void; kick(): void; status?(): SuggestStatusDTO };
   resolveApiKey(): { key: string | null; source: 'env' | 'settings' | 'file' | null };
   demo: boolean;
   /** Short commit SHA of this server, shown in Settings. */

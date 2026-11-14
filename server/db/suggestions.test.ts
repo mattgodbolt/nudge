@@ -90,6 +90,56 @@ describe('suggestion store', () => {
   });
 });
 
+describe('filtering the inbox by suggestion', () => {
+  const ids = (suggestion: Parameters<Repo['listInbox']>[0]['suggestion']) =>
+    repo
+      .listInbox({ view: 'inbox', ...(suggestion ? { suggestion } : {}) })
+      .items.map((i) => i.item.id)
+      .sort();
+
+  beforeEach(() => {
+    repo.suggestions.save(row(1, { verdict: 'needs_reply', turn: 'matt' }));
+    repo.suggestions.save(row(2, { verdict: 'no_reply_needed', turn: 'them' }));
+    repo.suggestions.save(row(3, { verdict: 'needs_action', injectionAttempt: true, turn: 'matt' }));
+    // Item 4 has none yet.
+  });
+
+  it('picks items by verdict, by whose turn it is, as suspicious, or as having none yet', () => {
+    expect(ids('reply')).toEqual([id(1)]);
+    expect(ids('skip')).toEqual([id(2)]);
+    expect(ids('matt')).toEqual([id(1)]);
+    expect(ids('them')).toEqual([id(2)]);
+    expect(ids('suspicious')).toEqual([id(3)]);
+    expect(ids('none')).toEqual([id(4)]);
+    expect(ids(undefined)).toHaveLength(4);
+  });
+
+  it('never matches a suspicious item by its hidden verdict', () => {
+    expect(ids('act')).toEqual([]);
+  });
+
+  it('counts and pages only the filtered items, newest or oldest first', () => {
+    const q = { view: 'inbox' as const, suggestion: 'none' as const };
+    expect(repo.listInbox(q).total).toBe(1);
+    repo.suggestions.save(row(4));
+    expect(repo.listInbox({ ...q, suggestion: 'reply', order: 'oldest', limit: 1 })).toMatchObject({
+      total: 2,
+      items: [expect.objectContaining({ item: expect.objectContaining({ id: id(1) }) })],
+    });
+  });
+});
+
+describe('suggestion progress', () => {
+  it('counts inbox items and those with a current suggestion (a rule, or this prompt version)', () => {
+    repo.suggestions.save(row(1, { promptVersion: 'now' }));
+    repo.suggestions.save(row(2, { promptVersion: 'old' }));
+    repo.suggestions.save(row(3, { promptVersion: 'rule:x', model: 'rules' }));
+    expect(repo.suggestions.progress('now')).toEqual({ total: 4, done: 2 });
+    repo.triage([id(1)], 'done');
+    expect(repo.suggestions.progress('now')).toEqual({ total: 3, done: 1 });
+  });
+});
+
 describe('recording the suggestion with what the owner did', () => {
   it("adds suggested and suggestedConfidence to the owner's state and snooze events", () => {
     repo.suggestions.save(row(1, { verdict: 'no_reply_needed', confidence: 'low' }));
@@ -202,6 +252,47 @@ describe('habits: suggestion hit rate', () => {
     const rep = habitsReport(db);
     expect(rep.events).toBe(2);
     expect(rep.actionMix).toContainEqual({ provider: 'github', kind: 'pr', action: 'done', count: 2 });
+  });
+
+  describe('bulk actions are reported apart from single decisions', () => {
+    it('counts items changed by one action together as bulk, whatever the suggestion said', () => {
+      repo.suggestions.save(row(1, { verdict: 'no_reply_needed' }));
+      repo.suggestions.save(row(2, { verdict: 'no_reply_needed' }));
+      repo.suggestions.save(row(3, { verdict: 'needs_reply' }));
+      repo.suggestions.save(row(4, { verdict: 'needs_reply' }));
+      repo.triage([id(1), id(2)], 'done'); // one action, two items: bulk
+      repo.triage([id(3)], 'replied'); // alone: single, and agreed
+      repo.triage([id(4)], 'done'); // alone: single, and disagreed
+      const rep = habitsReport(db);
+      expect(rep.suggestionSummary).toEqual({ single: { total: 2, hits: 1 }, bulk: { total: 2, hits: 2 } });
+      expect(rep.suggestionHits.map((h) => [h.suggested, h.total, h.hits])).toEqual([['reply', 2, 1]]);
+      expect(rep.suggestionHitsBulk.map((h) => [h.suggested, h.total, h.hits])).toEqual([['skip', 2, 2]]);
+      const text = formatHabits(rep);
+      expect(text).toContain('single decisions: 2, agreed 50.0% (1/2)');
+      expect(text).toContain('bulk: 2, agreed 100.0% (2/2)');
+      expect(text).toContain('bulk actions:');
+    });
+
+    it('also trusts the browser decision event when it says bulk (a bulk of items that were already done)', () => {
+      repo.suggestions.save(row(1, { verdict: 'needs_reply' }));
+      repo.triage([id(1)], 'done');
+      db.prepare(
+        "INSERT INTO item_events (item_id, at, kind, to_value, source, meta) VALUES (?, ?, 'decision', 'done', 'user', ?)",
+      ).run(id(1), new Date().toISOString(), JSON.stringify({ bulk: true, selectionSize: 40 }));
+      expect(habitsReport(db).suggestionSummary).toEqual({
+        single: { total: 0, hits: 0 },
+        bulk: { total: 1, hits: 0 },
+      });
+    });
+
+    it('ignores a bulk decision for the same item from a long time ago', () => {
+      repo.suggestions.save(row(1, { verdict: 'needs_reply' }));
+      db.prepare(
+        "INSERT INTO item_events (item_id, at, kind, to_value, source, meta) VALUES (?, '2020-01-01T00:00:00.000Z', 'decision', 'inbox', 'user', ?)",
+      ).run(id(1), JSON.stringify({ bulk: true }));
+      repo.triage([id(1)], 'replied');
+      expect(habitsReport(db).suggestionSummary.single).toEqual({ total: 1, hits: 1 });
+    });
   });
 
   it('says so when no suggestion was ever acted on', () => {

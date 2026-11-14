@@ -194,6 +194,44 @@ describe('InboxStore', () => {
     expect(store.selectedIds.size).toBe(0);
   });
 
+  it('queries with the suggestion filter, and a selection never outlives the filter it was made under', async () => {
+    store.toggleSelect('c1');
+    store.toggleSelect('c2');
+    expect(store.selectedCount).toBe(2);
+    await store.configure('inbox', { suggestion: 'matt' });
+    const urls = fetchMock.mock.calls.map((c) => c[0] as string).filter((u) => u.startsWith('/api/inbox'));
+    expect(urls.at(-1)).toContain('suggestion=matt');
+    expect(store.selectedIds.size).toBe(0);
+  });
+
+  it('acts only on selected rows that are still on screen', async () => {
+    // An id left over in the set (say, from before the list changed) is never sent.
+    store.selectedIds = new Set(['c2', 'gone']);
+    expect(store.selectedCount).toBe(1);
+    expect(store.targetIds()).toEqual(['c2']);
+    store.selectedIds = new Set(['gone']);
+    expect(store.selectedCount).toBe(0);
+    expect(store.targetIds()).toEqual(['c1']); // nothing visible selected: the cursor row
+  });
+
+  it('selectAllMatching loads the remaining pages, then selects everything the filter matches', async () => {
+    const page = (from: number, to: number) => Array.from({ length: to - from + 1 }, (_, k) => item(from + k));
+    fetchMock.mockImplementation((url: string) => {
+      if (url.startsWith('/api/inbox')) {
+        return url.includes('cursor=p2')
+          ? json({ items: page(4, 6), nextCursor: null, total: 6 })
+          : json({ items: page(1, 3), nextCursor: 'p2', total: 6 });
+      }
+      return json({ error: 'nope', code: 'x' }, 404);
+    });
+    await store.configure('inbox', { suggestion: 'act' });
+    store.selectAll();
+    expect(store.selectedCount).toBe(3);
+    await store.selectAllMatching();
+    expect(ids()).toHaveLength(6);
+    expect(store.selectedCount).toBe(6);
+  });
+
   it('keeps items in place (state updated) in the All view', async () => {
     fetchMock.mockImplementation((url: string, init?: RequestInit) =>
       url === '/api/triage' && init?.method === 'POST'

@@ -31,6 +31,17 @@
         done: item.containerKey,
       });
     }
+    const owner = item.containerKey?.split('/')[0];
+    if (owner) {
+      out.push({
+        id: 'owner',
+        label: `Mute all of ${owner}`,
+        detail: 'Every repository of this organisation or user',
+        kind: 'owner',
+        value: owner,
+        done: `all of ${owner}`,
+      });
+    }
     if (item.author) {
       out.push({
         id: 'author',
@@ -95,7 +106,7 @@
       bind('down', ['ArrowDown', 'j'], () => (active = Math.min(active + 1, options.length - 1)), true),
       bind('up', ['ArrowUp', 'k'], () => (active = Math.max(active - 1, 0)), true),
       bind('enter', ['Enter'], () => choose(active)),
-      ...['1', '2', '3', '4'].map((k, i) => bind(`n${k}`, [k], () => choose(i))),
+      ...['1', '2', '3', '4', '5'].map((k, i) => bind(`n${k}`, [k], () => choose(i))),
     ]);
     return () => {
       unreg();

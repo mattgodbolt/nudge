@@ -11,7 +11,7 @@ import { openRepo } from './db/repo.js';
 import { createFakeClient } from './demo/fake-client.js';
 import { createFakeGithubClient, DEMO_GITHUB_OWNER } from './demo/github.js';
 import { createFakeLlmClient } from './demo/llm.js';
-import { createDemoClassifier } from './demo/suggest.js';
+import { createDemoClassifier, demoCapUsd } from './demo/suggest.js';
 import { createSuggestWorker } from './suggest/worker.js';
 import { createLlmClient } from './providers/anthropic/client.js';
 import { decorateDemo, nonDemoSources, seedDemo } from './demo/seed.js';
@@ -106,7 +106,10 @@ async function main(): Promise<void> {
   // GitHub feeds poll on their own schedule, independent of YouTube's key and quota. Demo mode never leaves the box.
   // NUDGE_DEMO_COMMENTS=1 gives some of the fake items a comment thread, ending on the owner's or on someone else's.
   const demoComments = config.demo && process.env.NUDGE_DEMO_COMMENTS === '1';
-  const fakeGithub = config.demo ? createFakeGithubClient(Date.now, { comments: demoComments }) : null;
+  const demoBacklog = config.demo ? Number(process.env.NUDGE_DEMO_BACKLOG ?? 0) || 0 : 0;
+  const fakeGithub = config.demo
+    ? createFakeGithubClient(Date.now, { comments: demoComments, backlog: demoBacklog })
+    : null;
   const githubClient = fakeGithub ? fakeGithub.client : createGithubClient();
   const github = createGithubPoller({ repo, bus, client: githubClient });
   if (fakeGithub && process.env.NUDGE_DEMO_GITHUB === '1' && repo.listFeeds().length === 0) {
@@ -122,13 +125,16 @@ async function main(): Promise<void> {
   // Advisory suggestions on inbox items. Demo mode only runs them (with a fake, offline classifier) when asked to, so
   // the other demo servers and tests are untouched. Off entirely without an API key.
   const demoSuggest = config.demo && process.env.NUDGE_DEMO_SUGGEST === '1';
+  const demoCapAfter = demoSuggest ? Number(process.env.NUDGE_DEMO_SUGGEST_CAP_AFTER ?? 0) || 0 : 0;
   const suggestWorker = createSuggestWorker({
     repo,
     bus,
     githubClient,
     getApiKey: config.demo ? () => (demoSuggest ? 'demo' : null) : () => repo.getSettings().llm.apiKey,
-    ...(config.demo ? { makeClassifier: () => createDemoClassifier() } : {}),
-    ...(demoSuggest ? { startDelayMs: 500, debounceMs: 200, passCap: 2000 } : {}),
+    ...(config.demo ? { makeClassifier: () => createDemoClassifier({ priced: demoCapAfter > 0 }) } : {}),
+    // NUDGE_DEMO_SUGGEST_CAP_AFTER=N: the daily cap bites after N model calls, so a demo can show the paused state.
+    ...(demoSuggest && demoCapAfter > 0 ? { dailyCapUsd: demoCapUsd(demoCapAfter) } : {}),
+    ...(demoSuggest ? { startDelayMs: 500, debounceMs: 200, passCap: demoBacklog > 0 ? 50 : 2000 } : {}),
   });
 
   const vapid = ensureVapidKeys(repo);

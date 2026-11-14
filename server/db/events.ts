@@ -35,6 +35,10 @@ import { ACTION_OF } from './suggestions.js';
  * 'skip' | 'spam') and `suggestedConfidence` (and `suggestedTurn`, when the model said whose move it was) in meta when the item had an LLM suggestion at that moment, so the hit rate
  * can be measured later. Items with no suggestion, or one flagged as an injection attempt, get neither key.
  *
+ * Bulk actions: items changed by one triage/snooze action share `meta.actionId` on their state/snooze rows, and the
+ * browser's decision rows carry `bulk` and `selectionSize`. The habits report uses either to keep bulk-actioned items
+ * out of the one-at-a-time suggestion hit rate (they are reported separately). No event shape changes for this.
+ *
  * Not recorded, on purpose: an item's initial state when first seen (a bulk import would write thousands of rows;
  * the arrival time is items.first_seen_at and the first event's from_value says what it was), and the cascade when a
  * label or item is deleted.

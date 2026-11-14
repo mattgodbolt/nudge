@@ -383,4 +383,17 @@ CREATE TABLE notes (
 CREATE INDEX idx_notes_item ON notes(item_id);
 CREATE INDEX idx_notes_created ON notes(created_at);
 `,
+  /* 013 mute_rules: allow kind 'owner' (mute a whole organisation or user) */ `
+-- SQLite cannot alter a CHECK constraint, so the table is rebuilt. Nothing references mute_rules, and its rows are kept
+-- with their ids (item_events.meta refers to rule ids).
+CREATE TABLE mute_rules_new (
+  id INTEGER PRIMARY KEY,
+  kind TEXT NOT NULL CHECK (kind IN ('repo','owner','author','bots','item')),
+  value TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  UNIQUE (kind, value));
+INSERT INTO mute_rules_new (id, kind, value, created_at) SELECT id, kind, value, created_at FROM mute_rules;
+DROP TABLE mute_rules;
+ALTER TABLE mute_rules_new RENAME TO mute_rules;
+`,
 ];

@@ -127,6 +127,21 @@ describe('mutes', () => {
     expect((await send('GET', '/api/feeds')).json().mutes).toEqual([]);
   });
 
+  it('muting an owner archives all its repositories (undoably) and lists as an owner rule', async () => {
+    const { id } = (await send('POST', '/api/feeds', { owner: 'org' })).json();
+    env.repo.upsertGithubItems(id, [up(1), up(2, 'dave')]);
+    const res = await send('POST', '/api/mutes', { kind: 'owner', value: 'org' });
+    const body = res.json();
+    expect(body.rule).toMatchObject({ kind: 'owner', value: 'org' });
+    expect(body.triage.changes).toHaveLength(2);
+    expect(env.repo.counts().inbox).toBe(0);
+    expect((await send('GET', '/api/feeds')).json().mutes).toEqual([expect.objectContaining({ kind: 'owner' })]);
+    expect((await send('POST', `/api/triage/${body.triage.actionId}/undo`)).statusCode).toBe(200);
+    expect((await send('DELETE', `/api/mutes/${body.rule.id}`)).statusCode).toBe(204);
+    expect((await send('POST', '/api/mutes', { kind: 'owner', value: 'org/app' })).statusCode).toBe(400);
+    expect((await send('POST', '/api/mutes', { kind: 'owner', value: '' })).statusCode).toBe(400);
+  });
+
   it('muting with nothing to archive returns no triage, and validates its input', async () => {
     const res = await send('POST', '/api/mutes', { kind: 'bots' });
     expect(res.json()).toMatchObject({ rule: { kind: 'bots', value: '' }, triage: null });

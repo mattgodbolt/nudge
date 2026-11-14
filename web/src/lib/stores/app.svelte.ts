@@ -4,6 +4,7 @@ import { feeds } from './feeds.svelte';
 import { labels } from './labels.svelte';
 import { settings } from './settings.svelte';
 import { sources } from './sources.svelte';
+import { suggestStatus } from './suggestStatus.svelte';
 import { sync } from './sync.svelte';
 import { theme } from './theme.svelte';
 import { router } from '../router.svelte';
@@ -23,6 +24,7 @@ class AppStore {
       labels.set(b.labels);
       sources.set(b.sources);
       feeds.set(b.feeds, b.mutes);
+      suggestStatus.set(b.suggestStatus);
       sync.quota = b.quota;
       sync.status = b.sync;
       theme.adopt(b.settings.theme);

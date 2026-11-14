@@ -17,6 +17,7 @@
   import { push } from '../lib/stores/push.svelte';
   import { notes } from '../lib/stores/notes.svelte';
   import { chipText } from '../lib/suggestions';
+  import SuggestProgress from '../components/SuggestProgress.svelte';
   import { ui } from '../lib/stores/ui.svelte';
   import { onMount, untrack } from 'svelte';
 
@@ -811,6 +812,7 @@
         A small hint on each item (reply, act, skip or spam) with the reason, from the assistant key's model. It only
         suggests; nothing is ever done for you.
       </p>
+      <SuggestProgress />
     </section>
 
     <section class="panel sec" data-testid="settings-usage">

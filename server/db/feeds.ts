@@ -14,13 +14,15 @@ import type { FeedPollResult, FeedRow, GithubItemUpsert, NewFeed, UpsertGithubRe
 type Row = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
 
 const EPOCH = '1970-01-01T00:00:00.000Z';
-const MUTE_KINDS: readonly MuteKind[] = ['repo', 'author', 'bots', 'item'];
+const MUTE_KINDS: readonly MuteKind[] = ['repo', 'owner', 'author', 'bots', 'item'];
 
 export const githubItemId = (owner: string, repo: string, number: number): string => `gh:${owner}/${repo}#${number}`;
 
 /** The columns that make an item's "muted" status, so the same predicate serves ingest and retroactive application. */
 const MUTED_SQL = `(
   i.container_key IN (SELECT value FROM mute_rules WHERE kind = 'repo')
+  OR lower(substr(i.container_key, 1, instr(i.container_key, '/') - 1))
+       IN (SELECT lower(value) FROM mute_rules WHERE kind = 'owner')
   OR lower(i.author) IN (SELECT lower(value) FROM mute_rules WHERE kind = 'author')
   OR (EXISTS (SELECT 1 FROM mute_rules WHERE kind = 'bots') AND json_extract(i.data, '$.authorType') = 'Bot')
   OR i.id IN (SELECT value FROM mute_rules WHERE kind = 'item'))`;
@@ -293,6 +295,7 @@ export function createFeedsRepo(deps: FeedsDeps) {
       rules.some(
         (r) =>
           (r.kind === 'repo' && r.value === u.repo) ||
+          (r.kind === 'owner' && r.value.toLowerCase() === u.repo.split('/')[0]!.toLowerCase()) ||
           (r.kind === 'author' && r.value.toLowerCase() === u.author.toLowerCase()) ||
           (r.kind === 'bots' && u.authorType === 'Bot') ||
           (r.kind === 'item' && r.value === u.id),

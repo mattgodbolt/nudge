@@ -33,7 +33,10 @@ const TITLES = [
  * A fake GitHub for demo mode and e2e: a fixed set of pull requests and issues spread over the last few days, plus
  * `tick()` to make a new pull request arrive. Deterministic given the clock.
  */
-export function createFakeGithubClient(now: () => number = Date.now, opts: { comments?: boolean } = {}) {
+export function createFakeGithubClient(
+  now: () => number = Date.now,
+  opts: { comments?: boolean; /** Extra, older items: a backlog to triage. */ backlog?: number } = {},
+) {
   const base = now();
   const items: GithubItemUpsert[] = [];
   let seq = 0;
@@ -73,6 +76,8 @@ export function createFakeGithubClient(now: () => number = Date.now, opts: { com
   }
 
   for (let h = 90; h >= 2; h -= 3) add(h);
+  // A backlog: a few hundred older items (up to months old), as when a whole organisation is imported.
+  for (let k = 0; k < (opts.backlog ?? 0); k++) add(100 + k * 7);
 
   return {
     /** A new pull request arrives (the demo "tick"). */

@@ -13,7 +13,9 @@
   import { sources } from '../lib/stores/sources.svelte';
   import { sync } from '../lib/stores/sync.svelte';
   import { ui } from '../lib/stores/ui.svelte';
-  import { ago, pluralize } from '../lib/format';
+  import { ago, formatNumber, pluralize } from '../lib/format';
+  import { suggestStatus } from '../lib/stores/suggestStatus.svelte';
+  import { isSuggestionFilter, SUGGESTION_FILTER_OPTIONS } from '../lib/suggestions';
   import InboxRow from '../components/InboxRow.svelte';
   import ThreadView from '../components/ThreadView.svelte';
   import GithubThread from '../components/GithubThread.svelte';
@@ -55,7 +57,10 @@
   );
   const AUDIENCES = ['outside', 'team', 'contributors', 'bots'] as const;
   const audience = $derived(AUDIENCES.find((a) => a === router.query.who));
+  const suggestion = $derived(isSuggestionFilter(router.query.sug) ? router.query.sug : undefined);
   const source = $derived(sourceId !== undefined ? sources.get(sourceId) : undefined);
+  // The filter is offered once suggestions exist (a key is set), and stays while one is applied so it can be cleared.
+  const showSuggestionFilter = $derived(!!suggestStatus.value?.enabled || suggestion !== undefined);
 
   // URL is the source of truth for view + filters.
   $effect(() => {
@@ -67,6 +72,7 @@
       repo,
       kind,
       audience,
+      suggestion,
       q: q || undefined,
     };
     const c = router.query.c;
@@ -182,7 +188,7 @@
   }
 
   const tile = $derived(phone.value);
-  const filtered = $derived(!!(sourceId || videoId || q));
+  const filtered = $derived(!!(sourceId || videoId || q || suggestion));
   const noSources = $derived(sources.loaded && sources.list.length === 0 && feeds.loaded && feeds.list.length === 0);
   const filterVideoTitle = $derived(
     videoId ? (inbox.items.find((i) => i.video.id === videoId)?.video.title ?? videoId) : null,
@@ -270,35 +276,68 @@
         >{/if}
     </div>
 
-    {#if feeds.list.length > 0 && kind !== 'todo'}
-      <div class="ghfilters" role="group" aria-label="Filter GitHub items" data-testid="gh-filters">
-        {#each [['', 'All'], ['outside', 'Outside'], ['team', 'Team'], ['contributors', 'Contributors'], ['bots', 'Bots']] as [value, text] (value)}
-          <button
-            class="seg"
-            class:on={(audience ?? '') === value}
-            aria-pressed={(audience ?? '') === value}
-            data-testid="who-{value || 'all'}"
-            onclick={() => router.setQuery({ who: value || undefined, c: undefined }, { replace: false })}
-            >{text}</button
-          >
-        {/each}
-        <span class="sep"></span>
-        {#each [['', 'Any'], ['pr', 'PRs'], ['issue', 'Issues']] as [value, text] (value)}
-          <button
-            class="seg"
-            class:on={(kind ?? '') === value}
-            aria-pressed={(kind ?? '') === value}
-            data-testid="kind-{value || 'any'}"
-            onclick={() => router.setQuery({ kind: value || undefined, c: undefined }, { replace: false })}
-            >{text}</button
-          >
-        {/each}
+    {#if (feeds.list.length > 0 && kind !== 'todo') || showSuggestionFilter}
+      <div class="ghfilters" role="group" aria-label="Filter items" data-testid="gh-filters">
+        {#if showSuggestionFilter}
+          <label class="sugfilter" class:on={suggestion !== undefined}>
+            <span class="sr">Filter by suggestion</span>
+            <select
+              value={suggestion ?? ''}
+              data-testid="sug-filter"
+              aria-label="Filter by suggestion"
+              onchange={(e) =>
+                router.setQuery({ sug: e.currentTarget.value || undefined, c: undefined }, { replace: false })}
+            >
+              {#each SUGGESTION_FILTER_OPTIONS as o (o.value)}
+                <option value={o.value}>{o.value === '' ? 'Suggestion: any' : o.label}</option>
+              {/each}
+            </select>
+          </label>
+          {#if feeds.list.length > 0 && kind !== 'todo'}<span class="sep"></span>{/if}
+        {/if}
+        {#if feeds.list.length > 0 && kind !== 'todo'}
+          {#each [['', 'All'], ['outside', 'Outside'], ['team', 'Team'], ['contributors', 'Contributors'], ['bots', 'Bots']] as [value, text] (value)}
+            <button
+              class="seg"
+              class:on={(audience ?? '') === value}
+              aria-pressed={(audience ?? '') === value}
+              data-testid="who-{value || 'all'}"
+              onclick={() => router.setQuery({ who: value || undefined, c: undefined }, { replace: false })}
+              >{text}</button
+            >
+          {/each}
+          <span class="sep"></span>
+          {#each [['', 'Any'], ['pr', 'PRs'], ['issue', 'Issues']] as [value, text] (value)}
+            <button
+              class="seg"
+              class:on={(kind ?? '') === value}
+              aria-pressed={(kind ?? '') === value}
+              data-testid="kind-{value || 'any'}"
+              onclick={() => router.setQuery({ kind: value || undefined, c: undefined }, { replace: false })}
+              >{text}</button
+            >
+          {/each}
+        {/if}
       </div>
     {/if}
 
-    {#if inbox.selectedIds.size > 0}
-      <div class="bulk" role="toolbar" aria-label="Selected comments" data-testid="bulk-bar">
-        <span class="badge accent">{inbox.selectedIds.size} selected</span>
+    {#if inbox.selectedCount > 0}
+      <div
+        class="bulk"
+        role="toolbar"
+        aria-label="Selected items: actions apply to these {inbox.selectedCount} only"
+        data-testid="bulk-bar"
+      >
+        <span class="badge accent" data-testid="bulk-count"
+          >{inbox.selectedCount === inbox.total || inbox.total === 0
+            ? `${formatNumber(inbox.selectedCount)} selected`
+            : `${formatNumber(inbox.selectedCount)} selected of ${formatNumber(inbox.total)}`}</span
+        >
+        {#if inbox.nextCursor && inbox.selectedCount === inbox.items.length}
+          <button class="btn sm" data-testid="bulk-all-matching" onclick={() => void inbox.selectAllMatching()}
+            >Select all {formatNumber(inbox.total)}</button
+          >
+        {/if}
         <ActionButton id="sel.all" label="All" icon="check-all" {tile} testid="bulk-all" />
         <ActionButton id="triage.done" label="Done" icon="check" {tile} testid="bulk-done" />
         <ActionButton id="triage.replied" label="Replied" icon="check-all" {tile} testid="bulk-replied" />
@@ -346,8 +385,10 @@
           <button
             class="btn"
             onclick={() =>
-              router.setQuery({ source: undefined, video: undefined, q: undefined, c: undefined }, { replace: false })}
-            >Clear filters <Kbd label="g" /><Kbd label="c" /></button
+              router.setQuery(
+                { source: undefined, video: undefined, q: undefined, sug: undefined, c: undefined },
+                { replace: false },
+              )}>Clear filters <Kbd label="g" /><Kbd label="c" /></button
           >
         </EmptyState>
       {:else if view === 'snoozed'}
@@ -390,7 +431,7 @@
             now={sync.now}
             selected={item.comment.id === inbox.selectedId}
             checked={inbox.selectedIds.has(item.comment.id)}
-            selecting={inbox.selectedIds.size > 0}
+            selecting={inbox.selectedCount > 0}
             ontoggle={() => inbox.toggleSelect(item.comment.id)}
             showState={view === 'all'}
             snoozedView={view === 'snoozed'}
@@ -529,6 +570,7 @@
   }
   .bulk {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: var(--s1);
     padding: var(--s1) var(--s3);
@@ -720,6 +762,24 @@
   .ghfilters .sep {
     width: var(--s3);
   }
+  .sugfilter {
+    flex: none;
+  }
+  .sugfilter select {
+    font: inherit;
+    font-size: var(--fs-meta);
+    color: var(--text-muted);
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 2px 8px;
+    cursor: pointer;
+  }
+  .sugfilter.on select {
+    background: var(--accent-soft);
+    border-color: transparent;
+    color: var(--accent);
+  }
   .seg {
     border: 1px solid var(--border);
     background: transparent;
@@ -748,6 +808,11 @@
       min-height: 40px;
       padding: 4px 14px;
       white-space: nowrap;
+    }
+    .sugfilter select {
+      font-size: 16px;
+      min-height: 40px;
+      padding: 4px 12px;
     }
   }
 </style>

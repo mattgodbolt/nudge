@@ -1,4 +1,6 @@
-import type { SuggestionDTO } from '../../../shared/types';
+import type { SuggestionDTO, SuggestStatusDTO } from '../../../shared/types';
+import type { SuggestionFilter } from '../../../shared/api';
+import { formatNumber } from './format';
 
 /** The model's reason as a quiet fragment: no trailing full stop, first letter lower-cased ("asks a direct question"). */
 export function softReason(reason: string): string {
@@ -35,4 +37,43 @@ export function describe(s: SuggestionDTO): string {
   if (reason) parts.push(reason);
   const conf = s.confidence === 'high' ? '' : ` (${s.confidence} confidence)`;
   return `Suggestion: ${parts.join(' · ')}${conf}`;
+}
+
+/** The inbox's suggestion filter, in the order of the dropdown. */
+export const SUGGESTION_FILTER_OPTIONS: readonly { value: '' | SuggestionFilter; label: string }[] = [
+  { value: '', label: 'Any suggestion' },
+  { value: 'reply', label: 'Reply' },
+  { value: 'act', label: 'Act' },
+  { value: 'skip', label: 'Skip' },
+  { value: 'matt', label: 'Your turn' },
+  { value: 'them', label: 'Waiting on them' },
+  { value: 'spam', label: 'Spam' },
+  { value: 'suspicious', label: 'Suspicious' },
+  { value: 'none', label: 'No suggestion yet' },
+];
+
+export function isSuggestionFilter(v: unknown): v is SuggestionFilter {
+  return SUGGESTION_FILTER_OPTIONS.some((o) => o.value !== '' && o.value === v);
+}
+
+const utcTime = (iso: string) => `${iso.slice(11, 16)} UTC`;
+
+/**
+ * The quiet progress line ("Suggestions: 412 of 1,870 done, paused until reset"), or null when there is nothing to say:
+ * no key, an empty inbox, or everything done and nothing waiting.
+ */
+export function progressLine(s: SuggestStatusDTO | null): string | null {
+  if (!s || !s.enabled || s.total === 0) return null;
+  const count = `${formatNumber(s.done)} of ${formatNumber(s.total)} done`;
+  if (s.paused) {
+    const why = {
+      cap: `paused until the daily limit resets${s.paused.until ? ` (${utcTime(s.paused.until)})` : ''}`,
+      'rate-limit': `paused until GitHub's rate limit resets${s.paused.until ? ` (${utcTime(s.paused.until)})` : ''}`,
+      backoff: 'retrying shortly',
+      'key-rejected': 'paused: the assistant key was rejected',
+    }[s.paused.reason];
+    return `Suggestions: ${count}, ${why}`;
+  }
+  if (s.done >= s.total) return null;
+  return `Suggestions: ${count}${s.working ? ', working' : ''}`;
 }

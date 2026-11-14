@@ -164,6 +164,9 @@ export function lastPageOf(link: string | null): number | null {
 export function createGithubClient(opts: { fetch?: typeof fetch } = {}): GithubClient {
   const f = opts.fetch ?? fetch;
 
+  /** The latest REST ("core") budget GitHub reported; search responses carry their own, separate one. */
+  let core: GithubRate | null = null;
+
   async function call(path: string, token: string | null): Promise<{ res: Response; body: Json | Json[] | null }> {
     let res: Response;
     try {
@@ -179,6 +182,8 @@ export function createGithubClient(opts: { fetch?: typeof fetch } = {}): GithubC
     } catch (e) {
       throw new GithubError(`Could not reach GitHub: ${e instanceof Error ? e.message : 'network error'}`, 0);
     }
+    const resource = res.headers.get('x-ratelimit-resource');
+    if (resource === null || resource === 'core') core = rateOf(res.headers) ?? core;
     if (res.status === 401) throw new GithubError('GitHub rejected the token (expired or revoked?)', 401);
     if (res.status === 403 || res.status === 429) {
       const rate = rateOf(res.headers);
@@ -222,6 +227,8 @@ export function createGithubClient(opts: { fetch?: typeof fetch } = {}): GithubC
   }
 
   return {
+    coreRate: () => core,
+
     async whoami(token) {
       const { res, body } = await call('/user', token);
       if (!body || Array.isArray(body)) throw new GithubError('Unexpected answer from GitHub', res.status);

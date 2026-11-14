@@ -551,6 +551,133 @@ describe('suggestion worker', () => {
     });
   });
 
+  describe('a large backlog', () => {
+    beforeEach(() => vi.useFakeTimers());
+    afterEach(() => vi.useRealTimers());
+    const many = (from: number, to: number, over: Partial<GithubItemUpsert> = {}) =>
+      Array.from({ length: to - from + 1 }, (_, k) => pr(from + k, over));
+    const settle = async (w: ReturnType<typeof worker>, ms = 100) => {
+      await vi.advanceTimersByTimeAsync(ms);
+      await w.idle();
+    };
+
+    it('keeps going in successive passes until nothing is left, logging once per pass', async () => {
+      repo.upsertGithubItems(feedId, many(3, 450));
+      const w = worker({ passCap: 100, startDelayMs: 10, debounceMs: 10 });
+      w.start();
+      await settle(w);
+      expect(rows()).toHaveLength(450);
+      expect(w.status()).toMatchObject({ enabled: true, total: 450, done: 450, paused: null, waitingForThread: 0 });
+      const progress = logs.filter((l) => /of 450 done after pass/.test(l));
+      expect(progress.length).toBeGreaterThanOrEqual(4);
+      expect(progress.length).toBeLessThan(10);
+      expect(progress.at(-1)).toContain('450 of 450 done');
+      // The browser is told how far along it is, but not once per item.
+      const statuses = bus.of('suggestions.status');
+      expect(statuses.length).toBeGreaterThan(0);
+      expect(statuses.length).toBeLessThan(40);
+      expect(statuses.at(-1)!.status).toMatchObject({ total: 450, done: 450, working: false });
+      w.stop();
+    });
+
+    it('does items with a conversation before the rest, whatever their age', async () => {
+      repo.upsertGithubItems(feedId, [
+        pr(10, { comments: 3, updatedAt: '2026-01-01T00:00:00.000Z' }),
+        pr(11, { updatedAt: '2026-11-11T00:00:00.000Z' }),
+      ]);
+      await worker({ passCap: 1 }).runOnce();
+      expect(seen.map((i) => i.id)).toEqual([id(10)]);
+    });
+
+    it('pauses at the daily cap, reports it, and resumes after UTC midnight', async () => {
+      repo.upsertGithubItems(feedId, many(3, 12));
+      usage = { ...NO_USAGE, inputTokens: 1_000_000 }; // $0.10 each
+      const w = worker({ dailyCapUsd: 0.35, passCap: 4, startDelayMs: 10, debounceMs: 10 });
+      w.start();
+      await settle(w);
+      expect(rows().length).toBeLessThan(12);
+      expect(rows().length).toBeGreaterThanOrEqual(3);
+      const st = w.status();
+      const midnight = new Date(Date.parse(clock.now().toISOString().slice(0, 10)) + 86_400_000).toISOString();
+      expect(st.paused).toEqual({ reason: 'cap', until: midnight });
+      expect(st.done).toBeLessThan(st.total);
+      expect(bus.of('suggestions.status').at(-1)!.status.paused?.reason).toBe('cap');
+
+      // Each new UTC day buys another few; the worker resumes by itself, with no new trigger.
+      for (let day = 0; day < 2; day++) {
+        const wait = Date.parse(w.status().paused!.until!) - clock.now().getTime() + 1000;
+        clock.advance(wait);
+        await settle(w, wait);
+      }
+      expect(rows()).toHaveLength(12);
+      expect(w.status().paused).toBeNull();
+      w.stop();
+    });
+
+    describe('GitHub rate limit', () => {
+      let remaining: number;
+      let resetAt: string;
+      let fetches: number;
+      const client = {
+        async recentComments() {
+          fetches++;
+          remaining--;
+          return [{ author: 'dave', text: 'a comment', at: '2026-11-10T00:00:00.000Z' }];
+        },
+        coreRate: () => ({ limit: 5000, remaining, resetAt }),
+      };
+      beforeEach(() => {
+        fetches = 0;
+        remaining = 1003;
+        resetAt = new Date(clock.now().getTime() + 3_600_000).toISOString();
+        repo.updateSettings({ github: { token: 'gh-token', myAccounts: [] } });
+      });
+
+      it('stops fetching threads at the floor, still classifies items that need none, and resumes after the reset', async () => {
+        repo.upsertGithubItems(feedId, [...many(20, 29, { comments: 2 }), ...many(40, 44)]);
+        const w = worker({ githubClient: client, startDelayMs: 10, debounceMs: 10 });
+        w.start();
+        await settle(w);
+        // 1003 -> 1000 is still at the floor (not below it), then 999 stops it.
+        expect(fetches).toBe(4);
+        // Everything with no thread to fetch is done; the rest is held back, not classified blind.
+        expect(seen.filter((i) => i.github!.comments === 0)).toHaveLength(7);
+        expect(seen.filter((i) => i.github!.comments > 0 && !i.github!.recent)).toHaveLength(0);
+        const st = w.status();
+        expect(st.waitingForThread).toBe(6);
+        expect(st.paused).toEqual({
+          reason: 'rate-limit',
+          until: new Date(Date.parse(resetAt) + 5000).toISOString(),
+        });
+        expect(logs.some((l) => l.includes('6 items wait for GitHub'))).toBe(true);
+
+        // The window resets: budget is back, and the waiting items are done with their threads.
+        clock.advance(61 * 60_000);
+        remaining = 5000;
+        await settle(w, 61 * 60_000);
+        expect(rows()).toHaveLength(2 + 10 + 5);
+        expect(seen.filter((i) => i.github!.comments > 0 && i.github!.recent).length).toBe(10);
+        expect(w.status()).toMatchObject({ waitingForThread: 0, paused: null });
+        w.stop();
+      });
+
+      it('treats a GitHub rate-limit answer as a stop too, and does not classify that item blind', async () => {
+        const { GithubError } = await import('../contracts.js');
+        repo.upsertGithubItems(feedId, [pr(20, { comments: 2 })]);
+        const limited = {
+          async recentComments() {
+            throw new GithubError('rate limit', 403, new Date(clock.now().getTime() + 1_800_000).toISOString());
+          },
+        };
+        const w = worker({ githubClient: limited });
+        const res = await w.runOnce([id(20)]);
+        expect(res).toMatchObject({ saved: 0, attempted: 0 });
+        expect(seen).toHaveLength(0);
+        expect(w.status().waitingForThread).toBe(1);
+      });
+    });
+  });
+
   describe('triggers', () => {
     beforeEach(() => vi.useFakeTimers());
     afterEach(() => vi.useRealTimers());

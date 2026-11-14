@@ -28,6 +28,7 @@
     "demo:e2e:assistant": "vite build && NUDGE_DEMO=1 NUDGE_DB=:memory: NUDGE_PORT=4522 NUDGE_DEMO_CLOCK=fixed tsx server/index.ts",
     "demo:e2e:suggest": "vite build && NUDGE_DEMO=1 NUDGE_DEMO_GITHUB=1 NUDGE_DEMO_SUGGEST=1 NUDGE_DB=:memory: NUDGE_PORT=4523 NUDGE_DEMO_CLOCK=fixed tsx server/index.ts",
     "demo:e2e:notes": "vite build && NUDGE_DEMO=1 NUDGE_DEMO_GITHUB=1 NUDGE_DEMO_SUGGEST=1 NUDGE_DEMO_COMMENTS=1 NUDGE_DB=:memory: NUDGE_PORT=4524 NUDGE_DEMO_CLOCK=fixed tsx server/index.ts",
+    "demo:e2e:backlog": "vite build && NUDGE_DEMO=1 NUDGE_DEMO_GITHUB=1 NUDGE_DEMO_SUGGEST=1 NUDGE_DEMO_COMMENTS=1 NUDGE_DEMO_BACKLOG=300 NUDGE_DEMO_SUGGEST_CAP_AFTER=1100 NUDGE_DB=:memory: NUDGE_PORT=4525 NUDGE_DEMO_CLOCK=fixed tsx server/index.ts",
     "demo:e2e:api": "vite build && NUDGE_DEMO=1 NUDGE_DEMO_POST=api NUDGE_DB=:memory: NUDGE_PORT=4519 NUDGE_DEMO_CLOCK=fixed tsx server/index.ts",
     "test": "vitest run",
     "test:e2e": "playwright test",

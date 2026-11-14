@@ -6,6 +6,7 @@ import { labels } from './stores/labels.svelte';
 import { notes } from './stores/notes.svelte';
 import { settings } from './stores/settings.svelte';
 import { sources } from './stores/sources.svelte';
+import { suggestStatus } from './stores/suggestStatus.svelte';
 import { sync } from './stores/sync.svelte';
 import { theme } from './stores/theme.svelte';
 import { toasts } from './stores/toasts.svelte';
@@ -13,6 +14,7 @@ import { toasts } from './stores/toasts.svelte';
 const TYPES: ServerEvent['type'][] = [
   'inbox.changed',
   'suggestions.changed',
+  'suggestions.status',
   'notes.changed',
   'sync.progress',
   'sync.done',
@@ -32,6 +34,9 @@ export function dispatch(e: ServerEvent) {
       break;
     case 'suggestions.changed':
       inbox.applySuggestions(e.suggestions);
+      break;
+    case 'suggestions.status':
+      suggestStatus.set(e.status);
       break;
     case 'notes.changed':
       notes.set(e.notes);

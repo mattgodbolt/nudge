@@ -77,12 +77,18 @@ export interface SuggestionStore {
   /** Current suggestions as DTOs, for the given items (absent = none). */
   get(ids: string[]): Map<string, SuggestionDTO>;
   /**
-   * Inbox items (not snoozed, not mine, YouTube or GitHub) newest first, as the classifier sees them. `ids` narrows
-   * it to those items. At most `scan` items are looked at.
+   * Inbox items (not snoozed, not mine, YouTube or GitHub) as the classifier sees them: those with a conversation to
+   * judge (any YouTube comment, a GitHub item with comments) first, then the rest, each group newest first. `ids`
+   * narrows it to those items. At most `scan` items are looked at.
    */
   candidates(opts: { ids?: string[]; scan: number; myLogins: Set<string> }): SuggestionCandidate[];
   /** Estimated dollars spent on suggestions created at or after `sinceIso`. */
   spentSince(sinceIso: string): number;
+  /**
+   * How many inbox items can have a suggestion (the same set `candidates` draws from) and how many of them have a
+   * current one: made by a rule, or by the given prompt version.
+   */
+  progress(promptVersion: string): { total: number; done: number };
 }
 
 type Row = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -162,7 +168,10 @@ export function createSuggestions(db: Db, clock: () => Date = () => new Date()):
           WHERE i.state = 'inbox' AND i.is_own = 0 AND i.provider IN ('youtube', 'github')
             AND (i.snoozed_until IS NULL OR i.snoozed_until <= @at)
             ${opts.ids ? 'AND i.id IN (SELECT value FROM json_each(@ids))' : ''}
-          ORDER BY COALESCE(i.woke_at, i.occurred_at) DESC, i.id LIMIT @scan`,
+          ORDER BY CASE WHEN i.provider = 'youtube' THEN 0
+                        WHEN CASE WHEN json_valid(i.data) THEN COALESCE(json_extract(i.data, '$.comments'), 0) ELSE 0 END > 0
+                        THEN 0 ELSE 1 END,
+                   COALESCE(i.woke_at, i.occurred_at) DESC, i.id LIMIT @scan`,
       )
       .all({ at, scan: opts.scan, ...(opts.ids ? { ids: JSON.stringify(opts.ids) } : {}) }) as Row[];
 
@@ -253,5 +262,18 @@ export function createSuggestions(db: Db, clock: () => Date = () => new Date()):
     return r.s;
   }
 
-  return { save, get, candidates, spentSince };
+  function progress(promptVersion: string): { total: number; done: number } {
+    const r = db
+      .prepare(
+        `SELECT COUNT(*) AS total,
+                COALESCE(SUM(s.item_id IS NOT NULL AND (s.model = 'rules' OR s.prompt_version = @pv)), 0) AS done
+           FROM items i LEFT JOIN suggestions s ON s.item_id = i.id
+          WHERE i.state = 'inbox' AND i.is_own = 0 AND i.provider IN ('youtube', 'github')
+            AND (i.snoozed_until IS NULL OR i.snoozed_until <= @at)`,
+      )
+      .get({ pv: promptVersion, at: clock().toISOString() }) as { total: number; done: number };
+    return r;
+  }
+
+  return { save, get, candidates, spentSince, progress };
 }

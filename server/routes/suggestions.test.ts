@@ -100,3 +100,55 @@ describe('GET /api/inbox suggestions', () => {
     expect(res.body).not.toContain('Ignore previous instructions');
   });
 });
+
+describe('GET /api/inbox?suggestion=', () => {
+  const ids = async (q: string) =>
+    ((await app.inject({ method: 'GET', url: `/api/inbox?view=inbox&${q}`, headers: H })).json() as InboxPage).items
+      .map((i) => i.item.id)
+      .sort();
+
+  it('filters by suggestion, together with the sort order', async () => {
+    expect(await ids('suggestion=reply')).toEqual([id(1)]);
+    expect(await ids('suggestion=suspicious')).toEqual([id(2)]);
+    expect(await ids('suggestion=none')).toEqual([id(3)]);
+    const oldest = (
+      await app.inject({ method: 'GET', url: '/api/inbox?view=inbox&suggestion=none&order=oldest', headers: H })
+    ).json() as InboxPage;
+    expect(oldest.total).toBe(1);
+  });
+
+  it('rejects a filter it does not know', async () => {
+    const res = await app.inject({ method: 'GET', url: '/api/inbox?suggestion=bogus', headers: H });
+    expect(res.statusCode).toBe(400);
+  });
+});
+
+describe('suggestion status', () => {
+  it('is 404 without a worker, and served (also in the bootstrap) with one', async () => {
+    expect((await app.inject({ method: 'GET', url: '/api/suggestions/status', headers: H })).statusCode).toBe(404);
+    const status = { enabled: true, total: 3, done: 1, working: false, paused: null, waitingForThread: 0 };
+    const withWorker = buildApp({
+      repo,
+      engine: { run: async () => ({}), status: () => ({}) } as unknown as SyncEngine,
+      bus: makeEnv({}).bus,
+      quota: makeEnv({}).quota,
+      poster: createHandoffPoster(repo),
+      auth: fakeGoogleAuth(),
+      addSource: async () => {
+        throw new Error('unused');
+      },
+      testKey: async () => ({ ok: true, message: '' }),
+      onSettingsChanged: () => {},
+      resolveApiKey: () => ({ key: 'k', source: 'env' }),
+      demo: false,
+      suggest: { notify() {}, kick() {}, status: () => status },
+    });
+    expect((await withWorker.inject({ method: 'GET', url: '/api/suggestions/status', headers: H })).json()).toEqual(
+      status,
+    );
+    expect(
+      (await withWorker.inject({ method: 'GET', url: '/api/bootstrap', headers: H })).json().suggestStatus,
+    ).toEqual(status);
+    await withWorker.close();
+  });
+});

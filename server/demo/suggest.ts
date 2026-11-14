@@ -82,13 +82,30 @@ function demoVerdict(item: EvalItem): Omit<Classification, 'turn' | 'nextStep'> 
   };
 }
 
-export function createDemoClassifier(): Classifier {
+/** Estimated dollars one call "costs" when the demo has a daily cap to hit: see `demoCapUsd`. */
+const DEMO_CALL_USD = 0.01;
+/** Haiku output price, micro-dollars per token, so a call can be given a round cost. */
+const OUTPUT_MICROS_PER_TOKEN = 0.5;
+
+/** The daily cap for a demo server that should run into it after `calls` model calls (the real cap logic is used). */
+export const demoCapUsd = (calls: number): number => (calls - 0.5) * DEMO_CALL_USD;
+
+/**
+ * `priced` makes every call report a cost (under a real model's name, so the worker prices it), which lets a demo
+ * run into the daily cap deterministically. Without it calls are free, as before.
+ */
+export function createDemoClassifier(opts: { priced?: boolean } = {}): Classifier {
   return {
-    model: 'demo',
+    model: opts.priced ? 'claude-haiku-5-5' : 'demo',
     async classify(item, ownerNotes) {
       return {
         result: demoClassify(item, ownerNotes),
-        usage: { inputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, outputTokens: 0 },
+        usage: {
+          inputTokens: 0,
+          cacheReadTokens: 0,
+          cacheWriteTokens: 0,
+          outputTokens: opts.priced ? Math.round((DEMO_CALL_USD * 1e6) / OUTPUT_MICROS_PER_TOKEN) : 0,
+        },
       };
     },
   };

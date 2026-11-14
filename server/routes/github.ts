@@ -6,7 +6,7 @@ import { createDiscussionService } from '../providers/github/discussion.js';
 import { HttpError, asObject, bad, bool, notFound, oneOf, str } from './util.js';
 
 const IMPORT_MODES = ['none', 'recent', 'all'] as const;
-const MUTE_KINDS = ['repo', 'author', 'bots', 'item'] as const;
+const MUTE_KINDS = ['repo', 'owner', 'author', 'bots', 'item'] as const;
 /** A GitHub login: alphanumerics and single hyphens, up to 39 characters (and "[bot]" accounts when matching). */
 export const LOGIN = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})(?:\[bot\])?$/;
 const REPO = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})\/[\w.-]{1,100}$/;
@@ -107,12 +107,13 @@ export function registerGithubRoutes(app: FastifyInstance, deps: AppDeps): void 
     return reply.code(202).send(repo.getFeed(id));
   });
 
-  /** Mute a repo, an author, all bots, or one item. Items already in the inbox are archived (undoable). */
+  /** Mute a repo, a whole owner (user or organisation), an author, all bots, or one item. Items already in the inbox are archived (undoable). */
   app.post('/api/mutes', async (req) => {
     const b = asObject(req.body);
     const kind: MuteKind = oneOf(b.kind, 'kind', MUTE_KINDS);
     const value = kind === 'bots' ? '' : str(b, 'value')!.trim();
     if (kind === 'repo' && !REPO.test(value)) throw bad('"value" must look like owner/repo');
+    if (kind === 'owner' && !LOGIN.test(value)) throw bad('"value" must be a GitHub user or organisation name');
     if (kind === 'author' && !LOGIN.test(value)) throw bad('"value" must be a GitHub login');
     if (kind === 'item' && !value.startsWith('gh:')) throw bad('"value" must be a GitHub item id');
     const { rule, affectedIds } = repo.addMuteRule(kind, value);

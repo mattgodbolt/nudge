@@ -204,6 +204,39 @@ describe('mute rules', () => {
     expect(inbox()).toContain(githubItemId('org', 'app', 3));
   });
 
+  it('an owner rule mutes every repository of that organisation, whatever the case, and nothing else', () => {
+    const other = (n: number, owner: string, name: string) =>
+      fresh(n, { repo: `${owner}/${name}`, id: githubItemId(owner, name, n) });
+    repo.upsertGithubItems(feedId, [
+      other(1, 'org', 'app'),
+      other(2, 'org', 'tools'),
+      other(3, 'org-two', 'app'),
+      other(4, 'orgs', 'app'),
+    ]);
+    const { affectedIds } = repo.addMuteRule('owner', 'ORG');
+    // Existing items are covered at once; "org-two" and "orgs" merely start with the same letters.
+    expect(affectedIds.sort()).toEqual([githubItemId('org', 'app', 1), githubItemId('org', 'tools', 2)].sort());
+    expect(repo.listMuteRules()).toEqual([expect.objectContaining({ kind: 'owner', value: 'ORG' })]);
+    // And new arrivals land archived.
+    repo.upsertGithubItems(feedId, [other(5, 'org', 'brand-new'), other(6, 'orgs', 'app')]);
+    expect(inbox()).toEqual(
+      expect.arrayContaining([githubItemId('org-two', 'app', 3), githubItemId('orgs', 'app', 6)]),
+    );
+    expect(inbox()).not.toContain(githubItemId('org', 'brand-new', 5));
+    // Unmuting brings the flag back down for the items it covered.
+    const rule = repo.listMuteRules()[0]!;
+    expect(repo.deleteMuteRule(rule.id)).toBe(true);
+    repo.upsertGithubItems(feedId, [other(7, 'org', 'app')]);
+    expect(inbox()).toContain(githubItemId('org', 'app', 7));
+  });
+
+  it('existing repo, author and bots rules are unchanged by owner rules', () => {
+    repo.addMuteRule('owner', 'elsewhere');
+    repo.addMuteRule('author', 'dave');
+    repo.upsertGithubItems(feedId, [fresh(1, { author: 'dave' }), fresh(2)]);
+    expect(inbox()).toEqual([githubItemId('org', 'app', 2)]);
+  });
+
   it('adding the same rule twice keeps one', () => {
     repo.addMuteRule('repo', 'org/app');
     repo.addMuteRule('repo', 'org/app');

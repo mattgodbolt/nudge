@@ -296,3 +296,29 @@ describe('discussion', () => {
     });
   });
 });
+
+describe('the REST (core) rate limit', () => {
+  const rateHeaders = (resource: string | null, remaining: number) => ({
+    'x-ratelimit-limit': resource === 'search' ? '30' : '5000',
+    'x-ratelimit-remaining': String(remaining),
+    'x-ratelimit-reset': '1790000000',
+    ...(resource ? { 'x-ratelimit-resource': resource } : {}),
+  });
+
+  it('remembers the latest core budget, and ignores the separate search budget', async () => {
+    const { c } = client((url) =>
+      url.includes('/search/') ? json({ items: [] }, rateHeaders('search', 3)) : json([], rateHeaders('core', 4321)),
+    );
+    expect(c.coreRate!()).toBeNull();
+    await c.recentComments('org/app', 1, 1, 't');
+    expect(c.coreRate!()).toEqual({ limit: 5000, remaining: 4321, resetAt: new Date(1790000000 * 1000).toISOString() });
+    await c.search('q', 1, 't');
+    expect(c.coreRate!()!.remaining).toBe(4321);
+  });
+
+  it('reads the budget off a rate-limited answer too', async () => {
+    const { c } = client(() => json({ message: 'rate' }, rateHeaders('core', 0), 403));
+    await expect(c.recentComments('org/app', 1, 1, 't')).rejects.toBeInstanceOf(GithubError);
+    expect(c.coreRate!()!.remaining).toBe(0);
+  });
+});

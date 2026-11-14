@@ -27,7 +27,8 @@
 
   const ruleText = (m: MuteRuleDTO) =>
     m.kind === 'bots' ? 'All bots' : m.kind === 'item' ? `Item ${m.value.replace(/^gh:/, '')}` : m.value;
-  const kindText = (m: MuteRuleDTO) => ({ repo: 'Repository', author: 'Author', bots: 'Bots', item: 'Item' })[m.kind];
+  const kindText = (m: MuteRuleDTO) =>
+    ({ repo: 'Repository', owner: 'Organisation', author: 'Author', bots: 'Bots', item: 'Item' })[m.kind];
 </script>
 
 <section class="panel gh" data-testid="github-feeds">
@@ -139,8 +140,8 @@
   <h3>Muted</h3>
   {#if feeds.mutes.length === 0}
     <p class="meta muted">
-      Nothing muted. Press <kbd class="mono">Shift+M</kbd> on a pull request or issue to mute its repository, its author,
-      all bots, or just that item.
+      Nothing muted. Press <kbd class="mono">Shift+M</kbd> on a pull request or issue to mute its repository, its whole organisation,
+      its author, all bots, or just that item.
     </p>
   {:else}
     <ul class="mutes" data-testid="mute-rules">

@@ -236,11 +236,11 @@ export interface FeedDTO {
   inboxCount: number;
   itemCount: number;
 }
-export type MuteKind = 'repo' | 'author' | 'bots' | 'item';
+export type MuteKind = 'repo' | 'owner' | 'author' | 'bots' | 'item';
 export interface MuteRuleDTO {
   id: number;
   kind: MuteKind;
-  /** repo: "owner/repo"; author: a login; bots: ""; item: an item id. */
+  /** repo: "owner/repo"; owner: the part before the slash; author: a login; bots: ""; item: an item id. */
   value: string;
   createdAt: string;
 }
@@ -430,6 +430,26 @@ export interface Bootstrap {
   sync: SyncStatus;
   feeds: FeedDTO[];
   mutes: MuteRuleDTO[];
+  /** Absent when the server has no suggestion worker. */
+  suggestStatus?: SuggestStatusDTO;
+}
+/** How far the suggestion worker has got through the inbox, and why it is waiting if it is. */
+export interface SuggestStatusDTO {
+  /** False when there is no assistant key: nothing will be classified. */
+  enabled: boolean;
+  /** Inbox items that can have a suggestion (YouTube and GitHub, awake, not mine). */
+  total: number;
+  /** Of those, how many have a current suggestion. */
+  done: number;
+  /** A pass is running right now. */
+  working: boolean;
+  /**
+   * Why it is not working through the rest: the daily cost cap (until the next UTC midnight), GitHub's rate limit (until
+   * it resets: only items that need a thread fetch wait), a back-off after errors, or a rejected key.
+   */
+  paused: { reason: 'cap' | 'rate-limit' | 'backoff' | 'key-rejected'; until: string | null } | null;
+  /** Items held back (not classified at all yet) because their thread cannot be fetched until GitHub's limit resets. */
+  waitingForThread: number;
 }
 export type ServerEvent =
   | {
@@ -442,6 +462,8 @@ export type ServerEvent =
     }
   /** Suggestions arrived or were replaced; a null value means the item no longer has one. Patch rows in place. */
   | { type: 'suggestions.changed'; suggestions: Record<string, SuggestionDTO | null> }
+  /** Progress of the background suggestion worker (throttled). */
+  | { type: 'suggestions.status'; status: SuggestStatusDTO }
   /** The owner's notes changed (made, edited, switched off or deleted): the full list, newest first. */
   | { type: 'notes.changed'; notes: NoteDTO[] }
   | { type: 'sync.progress'; status: SyncStatus }

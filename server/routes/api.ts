@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify';
+import { SUGGESTION_FILTERS } from '../../shared/api.js';
 import type { InboxQuery, SettingsUpdate, SyncRequest } from '../../shared/api.js';
 import { parseSourceInput } from '../../shared/youtube-urls.js';
 import type { Bootstrap, CommentState, ImportMode, PollTier, SnoozeResult, TriageResult } from '../../shared/types.js';
@@ -105,7 +106,14 @@ export function registerApiRoutes(app: FastifyInstance, deps: AppDeps): void {
     sync: engine.status(),
     feeds: repo.listFeeds(),
     mutes: repo.listMuteRules(),
+    ...(deps.suggest?.status ? { suggestStatus: deps.suggest.status() } : {}),
   }));
+
+  /** How far the background suggestion worker has got (also pushed as a `suggestions.status` event). */
+  app.get('/api/suggestions/status', async () => {
+    if (!deps.suggest?.status) throw notFound('Suggestion worker');
+    return deps.suggest.status();
+  });
 
   app.get('/api/inbox', async (req) => {
     const q = req.query as Record<string, string | undefined>;
@@ -122,6 +130,7 @@ export function registerApiRoutes(app: FastifyInstance, deps: AppDeps): void {
     if (q.audience) {
       query.audience = oneOf(q.audience, 'audience', ['outside', 'team', 'contributors', 'bots', 'people'] as const);
     }
+    if (q.suggestion) query.suggestion = oneOf(q.suggestion, 'suggestion', SUGGESTION_FILTERS);
     if (q.order) query.order = oneOf(q.order, 'order', ['newest', 'oldest', 'arrived', 'source'] as const);
     if (q.q?.trim()) query.q = q.q.trim();
     if (q.cursor) query.cursor = q.cursor;

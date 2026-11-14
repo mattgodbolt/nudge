@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import type { SuggestionDTO } from '../../../shared/types';
-import { chipText, describe as describeSuggestion, softReason } from './suggestions';
+import type { SuggestionDTO, SuggestStatusDTO } from '../../../shared/types';
+import {
+  chipText,
+  describe as describeSuggestion,
+  isSuggestionFilter,
+  progressLine,
+  softReason,
+  SUGGESTION_FILTER_OPTIONS,
+} from './suggestions';
 
 const s = (over: Partial<SuggestionDTO> = {}): SuggestionDTO => ({
   action: 'reply',
@@ -59,5 +66,53 @@ describe('suggestion text', () => {
       expect(chipText(sus)).toBe('suspicious');
       expect(describeSuggestion(sus)).not.toContain('obey');
     });
+  });
+});
+
+describe('the suggestion filter', () => {
+  it('offers every filter the server knows, with "any" first, and recognises only those', () => {
+    expect(SUGGESTION_FILTER_OPTIONS[0]!.value).toBe('');
+    for (const v of ['reply', 'act', 'skip', 'matt', 'them', 'suspicious', 'none'])
+      expect(isSuggestionFilter(v)).toBe(true);
+    expect(isSuggestionFilter('')).toBe(false);
+    expect(isSuggestionFilter('bogus')).toBe(false);
+    expect(isSuggestionFilter(undefined)).toBe(false);
+  });
+});
+
+describe('progressLine', () => {
+  const st = (over: Partial<SuggestStatusDTO> = {}): SuggestStatusDTO => ({
+    enabled: true,
+    total: 1870,
+    done: 412,
+    working: false,
+    paused: null,
+    waitingForThread: 0,
+    ...over,
+  });
+
+  it('says nothing without a key, with an empty inbox, or when everything is done', () => {
+    expect(progressLine(null)).toBeNull();
+    expect(progressLine(st({ enabled: false }))).toBeNull();
+    expect(progressLine(st({ total: 0, done: 0 }))).toBeNull();
+    expect(progressLine(st({ done: 1870 }))).toBeNull();
+  });
+
+  it('reports the count, and that it is working', () => {
+    expect(progressLine(st())).toBe('Suggestions: 412 of 1,870 done');
+    expect(progressLine(st({ working: true }))).toBe('Suggestions: 412 of 1,870 done, working');
+  });
+
+  it('says why it is paused, and until when', () => {
+    expect(progressLine(st({ paused: { reason: 'cap', until: '2026-11-15T00:00:00.000Z' } }))).toBe(
+      'Suggestions: 412 of 1,870 done, paused until the daily limit resets (00:00 UTC)',
+    );
+    expect(progressLine(st({ paused: { reason: 'rate-limit', until: '2026-11-14T13:05:05.000Z' } }))).toBe(
+      "Suggestions: 412 of 1,870 done, paused until GitHub's rate limit resets (13:05 UTC)",
+    );
+    expect(progressLine(st({ paused: { reason: 'backoff', until: null } }))).toContain('retrying shortly');
+    expect(progressLine(st({ paused: { reason: 'key-rejected', until: null } }))).toContain('key was rejected');
+    // Paused with everything done is still worth saying only if there is something to say about progress.
+    expect(progressLine(st({ done: 1870, paused: { reason: 'cap', until: null } }))).toContain('paused');
   });
 });

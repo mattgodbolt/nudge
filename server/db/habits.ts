@@ -5,6 +5,15 @@ import type { Db } from './db.js';
  * Counts and durations only: no item text, titles, authors or ids appear in the output. The one exception is the
  * latest few notes the owner made himself (clipped), which he asked to see.
  */
+export interface SuggestionHit {
+  suggested: string;
+  total: number;
+  hits: number;
+  byAction: Record<string, number>;
+  /** Of those, by whose turn the model said it was (`none` = it did not say). */
+  byTurn: Record<string, number>;
+}
+
 export interface HabitsReport {
   events: number;
   /** User state/snooze/decision counts by provider, item kind and action. */
@@ -26,14 +35,15 @@ export interface HabitsReport {
    * snoozed), what the suggestion was against what he did. `hits` counts the agreeing actions: reply is hit by
    * replied; act by done or snooze; skip and spam by done. Items with no suggestion are not counted.
    */
-  suggestionHits: {
-    suggested: string;
-    total: number;
-    hits: number;
-    byAction: Record<string, number>;
-    /** Of those, by whose turn the model said it was (`none` = it did not say). */
-    byTurn: Record<string, number>;
-  }[];
+  suggestionHits: SuggestionHit[];
+  /**
+   * The same measure for items actioned as part of a bulk action (several items in one go, or a decision event flagged
+   * `bulk`). Kept apart: a "done" on forty old items says nothing about whether the suggestion on each was right, so
+   * it must not move the one-at-a-time rate.
+   */
+  suggestionHitsBulk: SuggestionHit[];
+  /** Totals behind the two lists above: `single` is one-at-a-time decisions, `bulk` the shown-separately ones. */
+  suggestionSummary: { single: { total: number; hits: number }; bulk: { total: number; hits: number } };
   /** What the owner has told the assistant. The text of the latest few is included, clipped (he asked to see them). */
   notes: {
     total: number;
@@ -128,7 +138,14 @@ export function habitsReport(db: Db): HabitsReport {
   };
   const snoozeAt: { item: string; at: number }[] = [];
   const dec: { at: number; meta: Record<string, any> }[] = []; // eslint-disable-line @typescript-eslint/no-explicit-any
-  const judged = new Map<string, { suggested: string; action: string; turn: string }>();
+  const judged = new Map<
+    string,
+    { suggested: string; action: string; turn: string; actionId: number | null; t: number }
+  >();
+  /** How many items each triage/snooze action (meta.actionId) changed: more than one means it was a bulk action. */
+  const actionSize = new Map<number, number>();
+  /** Per item, the decision events the browser sent, to tell a bulk action from a single one when it recorded it. */
+  const decisionsOf = new Map<string, { at: number; bulk: boolean }[]>();
   const dwellByView = new Map<string, { opens: number; dwell: number[] }>();
   const byInput: Record<string, number> = {};
   let rank0 = 0;
@@ -143,6 +160,7 @@ export function habitsReport(db: Db): HabitsReport {
       const action = isSnooze ? (r.to_value ? 'snooze' : 'unsnooze') : (r.to_value ?? 'unknown');
       mix.set(key(action), (mix.get(key(action)) ?? 0) + 1);
       if (!firstAction.has(r.item_id)) firstAction.set(r.item_id, r);
+      if (typeof meta.actionId === 'number') actionSize.set(meta.actionId, (actionSize.get(meta.actionId) ?? 0) + 1);
       if (
         !judged.has(r.item_id) &&
         typeof meta.suggested === 'string' &&
@@ -152,6 +170,8 @@ export function habitsReport(db: Db): HabitsReport {
           suggested: meta.suggested,
           action,
           turn: typeof meta.suggestedTurn === 'string' ? meta.suggestedTurn : 'none',
+          actionId: typeof meta.actionId === 'number' ? meta.actionId : null,
+          t,
         });
       }
       (userActs.get(r.item_id) ?? userActs.set(r.item_id, []).get(r.item_id)!).push(t);
@@ -172,6 +192,10 @@ export function habitsReport(db: Db): HabitsReport {
       (wakes.get(r.item_id) ?? wakes.set(r.item_id, []).get(r.item_id)!).push(t);
     } else if (r.kind === 'decision') {
       dec.push({ at: t, meta });
+      (decisionsOf.get(r.item_id) ?? decisionsOf.set(r.item_id, []).get(r.item_id)!).push({
+        at: t,
+        bulk: meta.bulk === true,
+      });
       if (typeof meta.rank === 'number') meta.rank === 0 ? rank0++ : deeper++;
       const input = typeof meta.input === 'string' ? meta.input : 'unknown';
       byInput[input] = (byInput[input] ?? 0) + 1;
@@ -229,21 +253,30 @@ export function habitsReport(db: Db): HabitsReport {
     skip: ['done'],
     spam: ['done'],
   };
-  const hitsBy = new Map<
-    string,
-    { total: number; hits: number; byAction: Record<string, number>; byTurn: Record<string, number> }
-  >();
-  for (const j of judged.values()) {
-    const h = hitsBy.get(j.suggested) ?? { total: 0, hits: 0, byAction: {}, byTurn: {} };
+  type Acc = { total: number; hits: number; byAction: Record<string, number>; byTurn: Record<string, number> };
+  const hitsBy = { single: new Map<string, Acc>(), bulk: new Map<string, Acc>() };
+  const summary = { single: { total: 0, hits: 0 }, bulk: { total: 0, hits: 0 } };
+  /** The browser's decision event for the same action: close in time to the state change, whichever came first. */
+  const DECISION_WINDOW_MS = 120_000;
+  for (const [itemId, j] of judged) {
+    const bulk =
+      (j.actionId !== null && (actionSize.get(j.actionId) ?? 0) > 1) ||
+      (decisionsOf.get(itemId) ?? []).some((d) => d.bulk && Math.abs(d.at - j.t) <= DECISION_WINDOW_MS);
+    const side = bulk ? 'bulk' : 'single';
+    const h = hitsBy[side].get(j.suggested) ?? { total: 0, hits: 0, byAction: {}, byTurn: {} };
     h.byTurn[j.turn] = (h.byTurn[j.turn] ?? 0) + 1;
     h.total++;
-    if (AGREES[j.suggested]?.includes(j.action)) h.hits++;
+    summary[side].total++;
+    if (AGREES[j.suggested]?.includes(j.action)) (h.hits++, summary[side].hits++);
     h.byAction[j.action] = (h.byAction[j.action] ?? 0) + 1;
-    hitsBy.set(j.suggested, h);
+    hitsBy[side].set(j.suggested, h);
   }
-  const suggestionHits = [...hitsBy]
-    .map(([suggested, h]) => ({ suggested, ...h }))
-    .sort((a, b) => b.total - a.total || a.suggested.localeCompare(b.suggested));
+  const listOf = (m: Map<string, Acc>): SuggestionHit[] =>
+    [...m]
+      .map(([suggested, h]) => ({ suggested, ...h }))
+      .sort((a, b) => b.total - a.total || a.suggested.localeCompare(b.suggested));
+  const suggestionHits = listOf(hitsBy.single);
+  const suggestionHitsBulk = listOf(hitsBy.bulk);
 
   const openDwell = [...dwellByView]
     .map(([view, v]) => ({ view, opens: v.opens, withDwell: v.dwell.length, medianMs: median(v.dwell) }))
@@ -259,6 +292,8 @@ export function habitsReport(db: Db): HabitsReport {
     decisions: { total: dec.length, withRank: rank0 + deeper, rank0, deeper, byInput },
     passedOver: { pairs, laterActioned, left: pairs - laterActioned },
     suggestionHits,
+    suggestionHitsBulk,
+    suggestionSummary: summary,
     openDwell,
   };
 }
@@ -280,6 +315,22 @@ function notesLines(r: HabitsReport): string[] {
     `Notes: ${n.total} (${n.standing} standing, ${n.item} about an item, ${n.notFed} not fed to the model)`,
     ...n.recent.map((x) => `  ${x.at.slice(0, 10)} ${x.scope}${x.enabled ? '' : ' (off)'}: ${x.text}`),
   ];
+}
+
+function hitLines(out: string[], hits: SuggestionHit[]): void {
+  if (hits.length === 0) out.push('    none');
+  for (const h of hits) {
+    const acts = Object.entries(h.byAction)
+      .sort((a, b) => b[1] - a[1])
+      .map(([k, n]) => `${k} ${n}`)
+      .join(', ');
+    out.push(`    suggested ${h.suggested}: ${pct(h.hits, h.total)} agreed (${acts})`);
+    const turns = Object.entries(h.byTurn)
+      .sort((a, b) => b[1] - a[1])
+      .map(([k, n]) => `${k} ${n}`)
+      .join(', ');
+    if (turns && turns !== `none ${h.total}`) out.push(`      whose turn the model said: ${turns}`);
+  }
 }
 
 export function formatHabits(r: HabitsReport): string {
@@ -325,19 +376,14 @@ export function formatHabits(r: HabitsReport): string {
       `left ${pct(r.passedOver.left, r.passedOver.pairs)}`,
     '',
     'Suggestion hit rate (first action on items that had a suggestion):',
+    `  single decisions: ${r.suggestionSummary.single.total}, agreed ${pct(r.suggestionSummary.single.hits, r.suggestionSummary.single.total)}`,
+    `  bulk: ${r.suggestionSummary.bulk.total}, agreed ${pct(r.suggestionSummary.bulk.hits, r.suggestionSummary.bulk.total)} (shown separately; not a per-item judgement)`,
+    '  one at a time:',
   );
-  if (r.suggestionHits.length === 0) out.push('  none');
-  for (const h of r.suggestionHits) {
-    const acts = Object.entries(h.byAction)
-      .sort((a, b) => b[1] - a[1])
-      .map(([k, n]) => `${k} ${n}`)
-      .join(', ');
-    out.push(`  suggested ${h.suggested}: ${pct(h.hits, h.total)} agreed (${acts})`);
-    const turns = Object.entries(h.byTurn)
-      .sort((a, b) => b[1] - a[1])
-      .map(([k, n]) => `${k} ${n}`)
-      .join(', ');
-    if (turns && turns !== `none ${h.total}`) out.push(`    whose turn the model said: ${turns}`);
+  hitLines(out, r.suggestionHits);
+  if (r.suggestionHitsBulk.length > 0) {
+    out.push('  bulk actions:');
+    hitLines(out, r.suggestionHitsBulk);
   }
   out.push(...notesLines(r));
   out.push('', 'Open dwell by view:');

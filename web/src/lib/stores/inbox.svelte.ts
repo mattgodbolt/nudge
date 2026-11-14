@@ -7,7 +7,7 @@ import type {
   ServerEvent,
   SuggestionDTO,
 } from '../../../../shared/types';
-import type { InboxPage } from '../../../../shared/api';
+import type { InboxPage, SuggestionFilter } from '../../../../shared/api';
 import { api } from '../api';
 import { thread } from './thread.svelte';
 import { toasts } from './toasts.svelte';
@@ -22,6 +22,8 @@ export interface InboxFilters {
   repo?: string;
   kind?: 'pr' | 'issue' | 'todo';
   audience?: 'outside' | 'team' | 'contributors' | 'bots' | 'people';
+  /** Only items with this current suggestion (or, 'none', no suggestion yet). */
+  suggestion?: SuggestionFilter;
   q?: string;
 }
 
@@ -202,6 +204,7 @@ export class InboxStore {
       filters.repo === this.filters.repo &&
       filters.kind === this.filters.kind &&
       filters.audience === this.filters.audience &&
+      filters.suggestion === this.filters.suggestion &&
       (filters.q ?? '') === (this.filters.q ?? '');
     if (same) {
       if (selectId && this.items.some((i) => i.comment.id === selectId)) this.selectedId = selectId;
@@ -210,13 +213,14 @@ export class InboxStore {
     const viewChanged = view !== this.view;
     // Counts only: that a search ran or a filter was applied, never what it was.
     if (filters.q && filters.q !== this.filters.q) usage.count('search.run');
-    const filterKeys = ['sourceId', 'videoId', 'labelId', 'feedId', 'repo', 'kind', 'audience'] as const;
+    const filterKeys = ['sourceId', 'videoId', 'labelId', 'feedId', 'repo', 'kind', 'audience', 'suggestion'] as const;
     if (filterKeys.some((k) => filters[k] !== undefined && filters[k] !== this.filters[k])) {
       usage.count('filter.applied');
     }
     this.view = view;
     this.filters = { ...filters };
-    if (viewChanged) this.selectedIds = new Set();
+    // A selection made under another filter would otherwise still be acted on by Done/Snooze, unseen.
+    this.selectedIds = new Set();
     await this.load(selectId);
   }
 
@@ -328,9 +332,35 @@ export class InboxStore {
     this.selectedIds = next;
   }
 
+  /** Select every item of the list on screen (that is, only what the current view, filter and search show). */
   selectAll() {
     if (this.items.length) this.selectedIds = new Set(this.items.map((i) => i.comment.id));
   }
+
+  /**
+   * Every item the list matches, not just the pages loaded so far: loads the rest (up to `max`) and selects all of
+   * it. The selection is always of rows on screen, so acting on it is acting on what the filter shows.
+   */
+  async selectAllMatching(max = 5000): Promise<void> {
+    let stalls = 0;
+    while (this.nextCursor && this.items.length < max && stalls < 50) {
+      const before = this.items.length;
+      await this.loadMore();
+      if (this.items.length === before) {
+        stalls++;
+        await new Promise((r) => setTimeout(r, 50));
+      }
+    }
+    this.selectAll();
+  }
+
+  /** Selected items that are in the list on screen: what a bulk action would really touch. */
+  selectedCount = $derived.by(() => {
+    if (this.selectedIds.size === 0) return 0;
+    let n = 0;
+    for (const i of this.items) if (this.selectedIds.has(i.comment.id)) n++;
+    return n;
+  });
 
   clearSelection() {
     if (this.selectedIds.size) this.selectedIds = new Set();
@@ -349,7 +379,13 @@ export class InboxStore {
 
   /** The ids an action applies to: explicit `only`, else the multi-selection, else the cursor row. */
   targetIds(only?: string[]): string[] {
-    return only ?? (this.selectedIds.size > 0 ? [...this.selectedIds] : this.selectedId ? [this.selectedId] : []);
+    if (only) return only;
+    if (this.selectedIds.size > 0) {
+      // Only rows still on screen: an id left over from another filter or a finished item must not be acted on unseen.
+      const shown = this.items.filter((i) => this.selectedIds.has(i.comment.id)).map((i) => i.comment.id);
+      if (shown.length > 0) return shown;
+    }
+    return this.selectedId ? [this.selectedId] : [];
   }
 
   /** Triage `ids` (e.g. a row's own quick action), defaulting to the multi-selection or the cursor row. */
