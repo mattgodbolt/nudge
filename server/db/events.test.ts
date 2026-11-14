@@ -656,3 +656,62 @@ describe('migration 009 (item_events)', () => {
     expect(d.prepare('SELECT COUNT(*) AS n FROM item_events').get()).toEqual({ n: 0 });
   });
 });
+
+describe('mergeSnoozeMeta', () => {
+  const id1 = githubItemId('org', 'app', 1);
+  beforeEach(() => {
+    repo = createRepo(db, clock);
+    const feedId = repo.addFeed({ owner: 'org', prs: true, issues: true, importMode: 'none' }).id;
+    repo.upsertGithubItems(feedId, [
+      {
+        id: id1,
+        kind: 'pr',
+        repo: 'org/app',
+        number: 1,
+        title: 'Change',
+        author: 'carol',
+        authorAvatarUrl: null,
+        authorType: 'User',
+        association: 'CONTRIBUTOR',
+        bodyPlain: '',
+        url: 'https://github.com/org/app/pull/1',
+        createdAt: new Date(nowMs + HOUR).toISOString(),
+        updatedAt: new Date(nowMs + HOUR).toISOString(),
+        sourceState: 'open',
+        draft: true,
+        comments: 3,
+        labels: [],
+      },
+    ]);
+  });
+
+  it('merges into the snooze event of that action and keeps its other fields', () => {
+    const a = repo.snooze([id1], '2026-12-01T00:00:00.000Z');
+    const before = events(id1)[0]!;
+    expect(repo.mergeSnoozeMeta(id1, a.actionId!, { lastCommenter: 'dave', comments: 3 })).toBe(true);
+    const after = events(id1)[0]!;
+    expect(after.meta).toEqual({ actionId: a.actionId, lastCommenter: 'dave', comments: 3 });
+    expect([after.kind, after.from, after.to, after.source]).toEqual([
+      before.kind,
+      before.from,
+      before.to,
+      before.source,
+    ]);
+    expect(events(id1)).toHaveLength(1);
+  });
+
+  it('only touches the matching action and reports a miss', () => {
+    const a = repo.snooze([id1], '2026-12-01T00:00:00.000Z');
+    const b = repo.snooze([id1], '2026-12-02T00:00:00.000Z');
+    expect(repo.mergeSnoozeMeta(id1, b.actionId!, { x: 1 })).toBe(true);
+    expect(events(id1).map((e) => e.meta)).toEqual([{ actionId: a.actionId }, { actionId: b.actionId, x: 1 }]);
+    expect(repo.mergeSnoozeMeta(id1, 9999, { x: 1 })).toBe(false);
+    expect(repo.mergeSnoozeMeta('nope', a.actionId!, { x: 1 })).toBe(false);
+  });
+
+  it('reads GitHub snooze context and skips other providers', () => {
+    expect(repo.githubSnoozeContext([id1, 'c-whatever'])).toEqual([
+      { id: id1, kind: 'pr', repo: 'org/app', number: 1, comments: 3, createdAt: expect.any(String), draft: true },
+    ]);
+  });
+});

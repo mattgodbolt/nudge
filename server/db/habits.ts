@@ -11,6 +11,12 @@ export interface HabitsReport {
   /** Median ms from first_seen_at to the first user action on the item, by provider. */
   timeToFirstActionMs: { provider: string; items: number; medianMs: number }[];
   snooze: { snoozed: number; woken: number; actionedAfterWake: number };
+  /** Snoozes of GitHub items by the context recorded with them; `unknown` = no context was recorded. */
+  snoozeContext: {
+    byLastCommenter: { mine: number; theirs: number; unknown: number };
+    byComments: { '0': number; '1-3': number; '4+': number; unknown: number };
+    byItemKind: Record<string, number>;
+  };
   decisions: { total: number; withRank: number; rank0: number; deeper: number; byInput: Record<string, number> };
   /** Items that sat above an acted-on item: later actioned by the owner, or still not. */
   passedOver: { pairs: number; laterActioned: number; left: number };
@@ -65,6 +71,11 @@ export function habitsReport(db: Db): HabitsReport {
   const userActs = new Map<string, number[]>();
   const wakes = new Map<string, number[]>();
   let snoozed = 0;
+  const sc: HabitsReport['snoozeContext'] = {
+    byLastCommenter: { mine: 0, theirs: 0, unknown: 0 },
+    byComments: { '0': 0, '1-3': 0, '4+': 0, unknown: 0 },
+    byItemKind: {},
+  };
   const snoozeAt: { item: string; at: number }[] = [];
   const dec: { at: number; meta: Record<string, any> }[] = []; // eslint-disable-line @typescript-eslint/no-explicit-any
   const dwellByView = new Map<string, { opens: number; dwell: number[] }>();
@@ -85,6 +96,15 @@ export function habitsReport(db: Db): HabitsReport {
       if (isSnooze && r.to_value) {
         snoozed++;
         snoozeAt.push({ item: r.item_id, at: t });
+        if (r.provider === 'github') {
+          const known = typeof meta.lastCommenterIsMe === 'boolean' && 'lastCommenter' in meta;
+          const who = !known ? 'unknown' : meta.lastCommenterIsMe ? 'mine' : meta.lastCommenter ? 'theirs' : 'unknown';
+          sc.byLastCommenter[who]++;
+          const c = meta.comments;
+          sc.byComments[typeof c !== 'number' ? 'unknown' : c === 0 ? '0' : c <= 3 ? '1-3' : '4+']++;
+          const k = typeof meta.itemKind === 'string' ? meta.itemKind : (r.ikind ?? 'unknown');
+          sc.byItemKind[k] = (sc.byItemKind[k] ?? 0) + 1;
+        }
       }
     } else if (r.kind === 'snooze' && r.source === 'auto' && !r.to_value) {
       (wakes.get(r.item_id) ?? wakes.set(r.item_id, []).get(r.item_id)!).push(t);
@@ -150,6 +170,7 @@ export function habitsReport(db: Db): HabitsReport {
     actionMix,
     timeToFirstActionMs,
     snooze: { snoozed, woken, actionedAfterWake },
+    snoozeContext: sc,
     decisions: { total: dec.length, withRank: rank0 + deeper, rank0, deeper, byInput },
     passedOver: { pairs, laterActioned, left: pairs - laterActioned },
     openDwell,
@@ -180,6 +201,21 @@ export function formatHabits(r: HabitsReport): string {
     `Snoozes: ${r.snooze.snoozed}; returned (woke) ${pct(r.snooze.woken, r.snooze.snoozed)}; ` +
       `actioned again after waking ${pct(r.snooze.actionedAfterWake, r.snooze.woken)}`,
   );
+  const sc = r.snoozeContext;
+  const scTotal = sc.byLastCommenter.mine + sc.byLastCommenter.theirs + sc.byLastCommenter.unknown;
+  out.push('', `Snooze context (GitHub snoozes: ${scTotal}):`);
+  if (scTotal === 0) out.push('  none');
+  else {
+    const list = (o: Record<string, number>) =>
+      Object.entries(o)
+        .map(([k, n]) => `${k} ${n}`)
+        .join(', ');
+    out.push(
+      `  latest comment: ${list(sc.byLastCommenter)}`,
+      `  comments: ${list(sc.byComments)}`,
+      `  kind: ${list(sc.byItemKind) || 'none'}`,
+    );
+  }
   const d = r.decisions;
   out.push(
     '',

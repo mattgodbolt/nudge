@@ -8,6 +8,7 @@ import { LABEL_COLORS, MAX_LABELS } from '../../shared/types.js';
 import { isValidClientId, parseGoogleClientJson } from '../reply/google-client.js';
 import { setOwnChannelId } from '../sync/own-channels.js';
 import { LOGIN } from './github.js';
+import { recordSnoozeContext } from './snoozeContext.js';
 import { HttpError, asObject, bad, bool, buildSettingsDto, int, notFound, oneOf, str } from './util.js';
 
 const VIEWS = ['inbox', 'done', 'all', 'snoozed'] as const;
@@ -178,6 +179,16 @@ export function registerApiRoutes(app: FastifyInstance, deps: AppDeps): void {
     }
     const result = repo.snooze(ids, until);
     emitSnooze(result);
+    // Fire and forget: the GitHub lookups must never delay or fail the snooze. The helper never rejects.
+    if (until !== null && result.actionId !== null && deps.githubClient) {
+      void recordSnoozeContext(
+        repo,
+        deps.githubClient,
+        result.actionId,
+        result.changes.map((c) => c.commentId),
+        (msg, err) => req.log.warn({ err }, msg),
+      );
+    }
     return result;
   });
 

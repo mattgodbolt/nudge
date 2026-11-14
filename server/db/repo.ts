@@ -24,6 +24,7 @@ import type { DraftDTO, InboxPage, InboxQuery } from '../../shared/api.js';
 import { permalink } from '../../shared/youtube-urls.js';
 import { LabelError } from '../contracts.js';
 import type {
+  GithubSnoozeItem,
   GoogleAccountRow,
   NewSource,
   PushSubscriptionRow,
@@ -37,7 +38,7 @@ import type {
 } from '../contracts.js';
 import { openDb, type Db } from './db.js';
 import { createClientEvents, createEvents } from './events.js';
-import { createFeedsRepo } from './feeds.js';
+import { createFeedsRepo, parseData } from './feeds.js';
 import { createTodosRepo } from './todos.js';
 import { createUsage } from './usage.js';
 import { htmlToPlain } from './text.js';
@@ -1316,6 +1317,28 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
     })();
   }
 
+  function githubSnoozeContext(ids: string[]): GithubSnoozeItem[] {
+    if (ids.length === 0) return [];
+    const rows = db
+      .prepare(
+        `SELECT id, kind, container_key, data FROM items WHERE provider = 'github'
+           AND id IN (SELECT value FROM json_each(?))`,
+      )
+      .all(JSON.stringify(ids)) as { id: string; kind: string; container_key: string | null; data: string | null }[];
+    return rows.map((r) => {
+      const d = parseData(r.data);
+      return {
+        id: r.id,
+        kind: r.kind === 'pr' ? 'pr' : 'issue',
+        repo: r.container_key ?? '',
+        number: typeof d.number === 'number' ? d.number : 0,
+        comments: typeof d.comments === 'number' ? d.comments : 0,
+        createdAt: typeof d.createdAt === 'string' ? d.createdAt : null,
+        draft: d.draft === true,
+      };
+    });
+  }
+
   function undoSnooze(actionId: number): SnoozeResult {
     return db.transaction(() => {
       const a = loadUndoable(actionId, true);
@@ -1758,6 +1781,8 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
     getVapidKeys,
     setVapidKeys,
     getSettings,
+    githubSnoozeContext,
+    mergeSnoozeMeta: ev.mergeSnoozeMeta,
     updateSettings,
     listSources,
     getSourceRow,

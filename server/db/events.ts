@@ -72,6 +72,12 @@ export interface Events {
   ): void;
   /** The id of the earliest state/snooze event that action wrote for the item, to reference from an undo. */
   originalEventId(itemId: string, actionId: number): number | null;
+  /**
+   * Merge extra context into the meta of the snooze event an action wrote for an item, after the fact (the context
+   * comes from a slow lookup that must not hold up the snooze). Existing keys are kept unless the patch names them.
+   * Returns false when there is no such event. Nothing else about the event changes.
+   */
+  mergeSnoozeMeta(itemId: string, actionId: number, patch: Record<string, unknown>): boolean;
 }
 
 export function createEvents(db: Db): Events {
@@ -114,7 +120,26 @@ export function createEvents(db: Db): Events {
     return r?.id ?? null;
   }
 
-  return { record, recordStateMoves, originalEventId };
+  function mergeSnoozeMeta(itemId: string, actionId: number, patch: Record<string, unknown>): boolean {
+    const r = db
+      .prepare(
+        `SELECT id, meta FROM item_events WHERE item_id = ? AND kind = 'snooze' AND source = 'user'
+           AND json_extract(meta, '$.actionId') = ? ORDER BY id LIMIT 1`,
+      )
+      .get(itemId, actionId) as { id: number; meta: string | null } | undefined;
+    if (!r) return false;
+    let cur: Record<string, unknown> = {};
+    try {
+      const v = r.meta ? JSON.parse(r.meta) : {};
+      if (v && typeof v === 'object' && !Array.isArray(v)) cur = v as Record<string, unknown>;
+    } catch {
+      // Unreadable meta: the patch replaces it rather than losing the context.
+    }
+    db.prepare('UPDATE item_events SET meta = ? WHERE id = ?').run(JSON.stringify({ ...cur, ...patch }), r.id);
+    return true;
+  }
+
+  return { record, recordStateMoves, originalEventId, mergeSnoozeMeta };
 }
 
 /** Writes browser-reported events (decision/open). Unlike `Events.record` these are not part of another change. */

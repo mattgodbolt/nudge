@@ -106,3 +106,47 @@ describe('edge cases', () => {
     expect(fmtDuration(90_000)).toBe('1.5m');
   });
 });
+
+describe('snooze context', () => {
+  it('counts GitHub snoozes by latest commenter, comment bucket and kind', () => {
+    const db = openDb(':memory:');
+    const item = (id: string, kind: string) =>
+      db
+        .prepare(
+          `INSERT INTO items (id, provider, kind, title, occurred_at, state, state_source, state_changed_at, first_seen_at)
+           VALUES (?, 'github', ?, 't', ?, 'inbox', 'sync', ?, ?)`,
+        )
+        .run(id, kind, T(0), T(0), T(0));
+    for (const [id, k] of [
+      ['g1', 'pr'],
+      ['g2', 'pr'],
+      ['g3', 'issue'],
+      ['g4', 'issue'],
+      ['g5', 'pr'],
+    ] as const)
+      item(id, k);
+    const r = createEvents(db).record;
+    const snooze = (itemId: string, meta?: Record<string, unknown>) =>
+      r({ itemId, at: T(5), kind: 'snooze', from: null, to: T(100), source: 'user', ...(meta ? { meta } : {}) });
+    snooze('g1', { lastCommenter: 'me', lastCommenterIsMe: true, comments: 2, itemKind: 'pr' });
+    snooze('g2', { lastCommenter: 'bob', lastCommenterIsMe: false, comments: 9, itemKind: 'pr' });
+    snooze('g3', { lastCommenter: null, lastCommenterIsMe: false, comments: 0, itemKind: 'issue' });
+    snooze('g4'); // lookup failed or never ran
+    snooze('g5', { lastCommenter: 'bob', lastCommenterIsMe: false, comments: 1, itemKind: 'pr' });
+    const rep = habitsReport(db);
+    expect(rep.snoozeContext).toEqual({
+      byLastCommenter: { mine: 1, theirs: 2, unknown: 2 },
+      byComments: { '0': 1, '1-3': 2, '4+': 1, unknown: 1 },
+      byItemKind: { pr: 3, issue: 2 },
+    });
+    expect(rep.snooze.snoozed).toBe(5);
+    const text = formatHabits(rep);
+    expect(text).toContain('Snooze context (GitHub snoozes: 5)');
+    expect(text).toContain('latest comment: mine 1, theirs 2, unknown 2');
+    expect(text).not.toContain('bob');
+  });
+
+  it('counts a GitHub snooze with no recorded context as unknown', () => {
+    expect(habitsReport(seed()).snoozeContext.byLastCommenter).toEqual({ mine: 0, theirs: 0, unknown: 1 });
+  });
+});

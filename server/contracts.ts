@@ -169,6 +169,15 @@ export interface FeedPollResult {
   rate?: { limit: number; remaining: number; resetAt: string } | null;
 }
 /** One pull request or issue as the poller hands it to the repo. */
+export interface GithubSnoozeItem {
+  id: string;
+  kind: 'pr' | 'issue';
+  repo: string;
+  number: number;
+  comments: number;
+  createdAt: string | null;
+  draft: boolean;
+}
 export interface GithubItemUpsert {
   id: string;
   kind: 'pr' | 'issue';
@@ -388,6 +397,10 @@ export interface Repo {
    */
   snooze(ids: string[], until: string | null): SnoozeResult;
   undoSnooze(actionId: number): SnoozeResult;
+  /** What the snooze-context lookup needs about GitHub items (other ids are skipped). */
+  githubSnoozeContext(ids: string[]): GithubSnoozeItem[];
+  /** Merge context into the snooze event an action wrote for an item; false if there is none. */
+  mergeSnoozeMeta(itemId: string, actionId: number, patch: Record<string, unknown>): boolean;
   /** Wake every snooze whose time has passed: snoozedUntil -> null, wokeAt = the old snoozedUntil. Returns woken ids. */
   wakeSnoozed(): { woken: string[]; counts: Counts };
   listLabels(): LabelDTO[];
