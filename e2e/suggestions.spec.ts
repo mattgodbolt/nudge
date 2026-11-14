@@ -78,4 +78,37 @@ test.describe('on a phone', () => {
     const quick = (await row.getByRole('group', { name: 'Quick actions' }).boundingBox())!;
     expect(c.y + c.height).toBeLessThanOrEqual(quick.y + 1);
   });
+
+  // The list is virtualised with one fixed row height, so a row that grows (taller badges, a wrapped badge, a chip
+  // line) would have its action tiles cut off at the bottom.
+  test('a GitHub row with a hint chip and labels shows its whole row of action tiles, and nothing runs off the edge', async ({
+    page,
+  }) => {
+    // Comments are classified first (they are newer), so the GitHub items get theirs a little later: reload until one has.
+    // (The demo server lifts the per-pass cap so that one pass reaches them.)
+    const row = rows(page)
+      .filter({ has: page.getByTestId('row-suggestion') })
+      .filter({ has: page.getByTestId('row-kind') });
+    await expect(async () => {
+      await page.goto('/inbox?feed=1');
+      await expect(rows(page).first()).toBeVisible();
+      await expect(row.first()).toBeVisible({ timeout: 1_000 });
+    }).toPass({ timeout: 90_000, intervals: [2_000] });
+    const withLabels = row.filter({ hasText: 'discussion' });
+    const target = (await withLabels.count()) > 0 ? withLabels.first() : row.first();
+    const r = (await target.boundingBox())!;
+    for (const id of ['row-snooze', 'row-label', 'row-done']) {
+      const b = (await target.getByTestId(id).boundingBox())!;
+      expect(b.height).toBeGreaterThanOrEqual(50);
+      expect(b.y).toBeGreaterThanOrEqual(r.y);
+      expect(b.y + b.height).toBeLessThanOrEqual(r.y + r.height);
+      expect(b.x + b.width).toBeLessThanOrEqual(r.x + r.width);
+    }
+    // Every badge stays on one line, and labels stop at the row's right edge.
+    for (const el of await target.locator('.badge, .ghlabel').all()) {
+      const b = (await el.boundingBox())!;
+      expect(b.height).toBeLessThanOrEqual(20);
+      expect(b.x + b.width).toBeLessThanOrEqual(r.x + r.width);
+    }
+  });
 });

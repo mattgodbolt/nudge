@@ -159,7 +159,7 @@
       <span class="author truncate">{todo ? 'Todo' : c.authorName}</span>
       {#if c.isOwn}<span class="badge">You</span>{/if}
       {#each chips as chip (chip.text)}
-        <span class="badge chip {chip.tone}" title={chip.title} data-testid="row-chip">{chip.text}</span>
+        <span class="badge rowchip {chip.tone}" title={chip.title} data-testid="row-chip">{chip.text}</span>
       {/each}
       <span class="time faint">{relativeTime(c.publishedAt, now)}</span>
       {#if item.parent}<span class="reply faint truncate">↳ reply to {item.parent.authorName}</span>{/if}
@@ -380,10 +380,12 @@
     line-height: 14px;
     padding-right: 104px; /* room for the quick actions */
     min-width: 0;
+    overflow: hidden; /* labels that do not fit are cut at the row's edge rather than running off it */
   }
   .vtitle {
     min-width: 0;
-    flex: 0 1 auto;
+    /* Gives way well before the labels beside it do. */
+    flex: 0 8 auto;
   }
   .snz {
     flex: none;
@@ -496,11 +498,16 @@
   .gh-title {
     font-weight: 500;
   }
-  .chip.accent {
+  /* Not the global .chip (a 36px filter pill on phones), which is what made these badges double-height there. */
+  .rowchip {
+    border: 1px solid var(--border);
+    gap: 6px;
+  }
+  .rowchip.accent {
     background: color-mix(in srgb, var(--accent) 16%, transparent);
     color: var(--accent);
   }
-  .chip.muted {
+  .rowchip.muted {
     opacity: 0.75;
   }
   .kind {
@@ -520,5 +527,9 @@
     border-radius: 999px;
     padding: 0 7px;
     white-space: nowrap;
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 </style>

@@ -121,7 +121,7 @@ async function main(): Promise<void> {
     bus,
     getApiKey: config.demo ? () => (demoSuggest ? 'demo' : null) : () => repo.getSettings().llm.apiKey,
     ...(config.demo ? { makeClassifier: () => createDemoClassifier() } : {}),
-    ...(demoSuggest ? { startDelayMs: 500, debounceMs: 200 } : {}),
+    ...(demoSuggest ? { startDelayMs: 500, debounceMs: 200, passCap: 2000 } : {}),
   });
 
   const vapid = ensureVapidKeys(repo);

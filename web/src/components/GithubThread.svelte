@@ -51,7 +51,7 @@
       {#if item.snoozedUntil || item.labels.length > 0 || woke || chips.length > 0 || (ui.showSuggestions && item.suggestion)}
         <div class="tags">
           {#each chips as chip (chip.text)}
-            <span class="badge chip {chip.tone}" title={chip.title}>{chip.text}</span>
+            <span class="badge rowchip {chip.tone}" title={chip.title}>{chip.text}</span>
           {/each}
           {#if item.snoozedUntil}
             <span class="snz" data-testid="thread-snoozed"
@@ -235,11 +235,11 @@
   .hint {
     margin: 0;
   }
-  .chip.accent {
+  .rowchip.accent {
     background: var(--accent-soft);
     color: var(--accent);
   }
-  .chip.muted {
+  .rowchip.muted {
     opacity: 0.75;
   }
   @media (max-width: 899px) {

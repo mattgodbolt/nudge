@@ -97,7 +97,7 @@
         <div class="by">
           <Avatar url={e.avatarUrl} name={e.author} size={20} />
           <strong>{e.author}</strong>
-          {#if chip}<span class="badge chip {chip.tone}" title={chip.title}>{chip.text}</span>{/if}
+          {#if chip}<span class="badge rowchip {chip.tone}" title={chip.title}>{chip.text}</span>{/if}
           {#if review}<span class="badge {review.tone}" data-testid="gh-review-state" title={review.title}
               >{review.text}</span
             >{/if}
@@ -187,11 +187,11 @@
     margin-bottom: var(--s2);
     overflow-wrap: anywhere;
   }
-  .chip.accent {
+  .rowchip.accent {
     background: var(--accent-soft);
     color: var(--accent);
   }
-  .chip.muted,
+  .rowchip.muted,
   .badge.muted {
     opacity: 0.75;
   }

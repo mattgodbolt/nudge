@@ -62,7 +62,8 @@ export function createFakeGithubClient(now: () => number = Date.now) {
       sourceState: 'open',
       draft: false,
       comments: 0,
-      labels: i % 4 === 0 ? ['bug'] : [],
+      // Several, with long names: the inbox row has to cope on a phone.
+      labels: i % 4 === 0 ? ['bug', 'discussion', 'accessibility', 'good first issue'] : [],
       ...over,
     };
     items.push(it);
