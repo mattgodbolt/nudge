@@ -1,4 +1,13 @@
+import { execFileSync } from 'node:child_process';
 import { defineConfig } from '@playwright/test';
+
+// Build the web bundle once, here, rather than in each demo server's start command: eight concurrent `vite build`s into
+// the same dist/web (each emptying it first) could hand a server a half-written bundle. The env flag stops the workers,
+// which load this file again, from rebuilding.
+if (!process.env.NUDGE_E2E_BUILT) {
+  execFileSync('npx', ['vite', 'build'], { stdio: 'inherit' });
+  process.env.NUDGE_E2E_BUILT = '1';
+}
 
 const use = { permissions: ['clipboard-read', 'clipboard-write'] };
 
@@ -12,8 +21,15 @@ export default defineConfig({
   projects: [
     {
       name: 'handoff',
-      testIgnore: /(reply-api|snooze-labels|github|assistant|suggestions|notes|backlog)\.spec\.ts/,
+      testIgnore: /(inbox|reply-api|snooze-labels|github|assistant|suggestions|notes|backlog)\.spec\.ts/,
       use: { ...use, baseURL: 'http://127.0.0.1:4518' },
+    },
+    {
+      // inbox.spec.ts marks items done and snoozes them; on the shared 4518 server that emptied rows out from under the
+      // specs there (a long-pressed row vanishing mid-test, stats totals moving), so it has a server of its own.
+      name: 'triage',
+      testMatch: /inbox\.spec\.ts/,
+      use: { ...use, baseURL: 'http://127.0.0.1:4526' },
     },
     {
       name: 'organise',
@@ -55,6 +71,12 @@ export default defineConfig({
     {
       command: 'npm run demo:e2e',
       url: 'http://127.0.0.1:4518/api/bootstrap',
+      reuseExistingServer: false,
+      timeout: 120000,
+    },
+    {
+      command: 'npm run demo:e2e:triage',
+      url: 'http://127.0.0.1:4526/api/bootstrap',
       reuseExistingServer: false,
       timeout: 120000,
     },

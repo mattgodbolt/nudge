@@ -233,8 +233,11 @@ test('Shift+M offers to mute the repo, the author or just the item; muting hides
   await rows(page).first().click();
   await page.keyboard.press('Shift+M');
   await page.getByTestId('mute-item').click();
+  // Undo is two requests, the last one deleting the rule. Wait for it: leaving the page first can abort it, and the
+  // item's mute rule then survives into the next test (it showed up on Sources beside the organisation rule).
+  const undone = page.waitForResponse((r) => /\/api\/mutes\/\d+$/.test(r.url()) && r.request().method() === 'DELETE');
   await page.getByTestId('toast').filter({ hasText: 'Muted this item' }).getByRole('button', { name: 'Undo' }).click();
-  await expect(page.getByTestId('toast').filter({ hasText: 'Undone' }).or(rows(page).first())).toBeVisible();
+  expect((await undone).ok()).toBe(true);
 
   await page.goto('/sources');
   await page

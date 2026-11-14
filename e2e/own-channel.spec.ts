@@ -1,5 +1,8 @@
 import { expect, test } from '@playwright/test';
 
+// The second test starts from where the first leaves the demo server (one channel marked as mine), so they run in order.
+test.describe.configure({ mode: 'serial' });
+
 test('adding my channel from Settings by @handle shows its title and marks the source as mine', async ({ page }) => {
   await page.goto('/settings');
   const chips = page.getByTestId('own-channel-chip');
@@ -25,7 +28,9 @@ test('adding my channel from Settings by @handle shows its title and marks the s
 
 test('an unknown handle shows an error and adds nothing', async ({ page }) => {
   await page.goto('/settings');
-  const before = await page.getByTestId('own-channel-chip').count();
+  // Settings fills in after the page loads: counting straight away read 0 and then saw the real chip arrive.
+  await expect(page.getByTestId('own-channel-chip')).toHaveCount(1);
+  const before = 1;
   await page.getByTestId('own-channel-input').fill('@nosuchchannelanywhere');
   await page.getByRole('button', { name: 'Add', exact: true }).click();
   await expect(page.getByRole('alert')).toContainText(/not found/i);
