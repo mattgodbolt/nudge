@@ -3,6 +3,7 @@ import { app } from './stores/app.svelte';
 import { feeds } from './stores/feeds.svelte';
 import { inbox } from './stores/inbox.svelte';
 import { labels } from './stores/labels.svelte';
+import { notes } from './stores/notes.svelte';
 import { settings } from './stores/settings.svelte';
 import { sources } from './stores/sources.svelte';
 import { sync } from './stores/sync.svelte';
@@ -12,6 +13,7 @@ import { toasts } from './stores/toasts.svelte';
 const TYPES: ServerEvent['type'][] = [
   'inbox.changed',
   'suggestions.changed',
+  'notes.changed',
   'sync.progress',
   'sync.done',
   'quota.update',
@@ -30,6 +32,9 @@ export function dispatch(e: ServerEvent) {
       break;
     case 'suggestions.changed':
       inbox.applySuggestions(e.suggestions);
+      break;
+    case 'notes.changed':
+      notes.set(e.notes);
       break;
     case 'sync.progress':
       sync.status = e.status;

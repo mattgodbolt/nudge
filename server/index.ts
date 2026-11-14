@@ -104,11 +104,17 @@ async function main(): Promise<void> {
   const snoozeWaker = createSnoozeWaker({ repo, bus });
 
   // GitHub feeds poll on their own schedule, independent of YouTube's key and quota. Demo mode never leaves the box.
-  const fakeGithub = config.demo ? createFakeGithubClient() : null;
+  // NUDGE_DEMO_COMMENTS=1 gives some of the fake items a comment thread, ending on the owner's or on someone else's.
+  const demoComments = config.demo && process.env.NUDGE_DEMO_COMMENTS === '1';
+  const fakeGithub = config.demo ? createFakeGithubClient(Date.now, { comments: demoComments }) : null;
   const githubClient = fakeGithub ? fakeGithub.client : createGithubClient();
   const github = createGithubPoller({ repo, bus, client: githubClient });
   if (fakeGithub && process.env.NUDGE_DEMO_GITHUB === '1' && repo.listFeeds().length === 0) {
     repo.addFeed({ owner: DEMO_GITHUB_OWNER, prs: true, issues: true, importMode: 'all' });
+  }
+
+  if (demoComments && repo.getSettings().github.myAccounts.length === 0) {
+    repo.updateSettings({ github: { ...repo.getSettings().github, myAccounts: ['demo-owner'] } });
   }
 
   const llm = config.demo ? createFakeLlmClient() : createLlmClient();
@@ -119,6 +125,7 @@ async function main(): Promise<void> {
   const suggestWorker = createSuggestWorker({
     repo,
     bus,
+    githubClient,
     getApiKey: config.demo ? () => (demoSuggest ? 'demo' : null) : () => repo.getSettings().llm.apiKey,
     ...(config.demo ? { makeClassifier: () => createDemoClassifier() } : {}),
     ...(demoSuggest ? { startDelayMs: 500, debounceMs: 200, passCap: 2000 } : {}),
@@ -195,6 +202,7 @@ async function main(): Promise<void> {
     github,
     githubClient,
     llm,
+    suggest: suggestWorker,
     resolveApiKey: resolveKey,
     demo: config.demo,
     version: resolveVersion(),

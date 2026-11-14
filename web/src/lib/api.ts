@@ -98,8 +98,8 @@ export const api = {
   triage: (commentIds: string[], to: 'done' | 'replied' | 'inbox') =>
     request<T.TriageResult>('POST', '/api/triage', { commentIds, to }),
   undo: (actionId: number) => request<T.TriageResult>('POST', `/api/triage/${actionId}/undo`),
-  snooze: (commentIds: string[], until: string | null) =>
-    request<T.SnoozeResult>('POST', '/api/snooze', { commentIds, until }),
+  snooze: (commentIds: string[], until: string | null, why?: string) =>
+    request<T.SnoozeResult>('POST', '/api/snooze', { commentIds, until, ...(why ? { why } : {}) }),
   undoSnooze: (actionId: number) => request<T.SnoozeResult>('POST', `/api/snooze/${actionId}/undo`),
   labels: () => request<T.LabelDTO[]>('GET', '/api/labels'),
   createLabel: (name: string, color?: T.LabelColor) => request<T.LabelDTO>('POST', '/api/labels', { name, color }),
@@ -158,8 +158,12 @@ export const api = {
   deleteMute: (id: number) => request<void>('DELETE', `/api/mutes/${id}`),
   testGithub: (token?: string) =>
     request<{ ok: boolean; message: string; login?: string }>('POST', '/api/settings/test-github', { token }),
-  assistant: (body: { text: string; now: string; selectedId: string | null }) =>
+  assistant: (body: { text: string; now: string; selectedId: string | null; via?: 'voice' | 'text' }) =>
     request<T.AssistantResponse>('POST', '/api/assistant', body),
+  notes: () => request<T.NoteDTO[]>('GET', '/api/notes'),
+  patchNote: (id: number, patch: { text?: string; enabled?: boolean; scope?: T.NoteScope }) =>
+    request<T.NoteDTO>('PATCH', `/api/notes/${id}`, patch),
+  deleteNote: (id: number) => request<void>('DELETE', `/api/notes/${id}`),
   deleteTodo: (id: string) => request<void>('DELETE', `/api/todos/${encodeURIComponent(id)}`),
   testLlm: (apiKey?: string) => request<{ ok: boolean; message: string }>('POST', '/api/settings/test-llm', { apiKey }),
   /** keepalive lets the last batch survive the page closing. */

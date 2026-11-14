@@ -277,3 +277,54 @@ describe('migration 011 (suggestions)', () => {
     expect(db.pragma('foreign_key_check')).toEqual([]);
   });
 });
+
+describe('migration 012 (thread-aware suggestions, snooze why, notes)', () => {
+  function v11(): Database.Database {
+    const db = new Database(':memory:');
+    db.pragma('foreign_keys = ON');
+    db.exec(MIGRATIONS.slice(0, 11).join('\n'));
+    db.pragma('user_version = 11');
+    db.prepare(
+      `INSERT INTO items (id, provider, kind, occurred_at, state, state_source, state_changed_at, first_seen_at)
+       VALUES ('i', 'github', 'pr', 't', 'inbox', 'sync', 't', 't')`,
+    ).run();
+    db.prepare(
+      `INSERT INTO suggestions (item_id, state_key, verdict, category, confidence, reason, model, prompt_version, created_at)
+       VALUES ('i', 'k', 'needs_reply', 'other', 'high', 'because', 'm', 'p0-7', 't')`,
+    ).run();
+    return db;
+  }
+
+  it('keeps existing suggestions and items, with the new columns empty', () => {
+    const db = v11();
+    migrate(db);
+    expect(db.pragma('user_version', { simple: true })).toBe(MIGRATIONS.length);
+    expect(db.prepare('SELECT reason, turn, next_step, thread, thread_count FROM suggestions').get()).toEqual({
+      reason: 'because',
+      turn: null,
+      next_step: null,
+      thread: null,
+      thread_count: null,
+    });
+    expect(db.prepare('SELECT snooze_why FROM items').get()).toEqual({ snooze_why: null });
+    expect(db.pragma('foreign_key_check')).toEqual([]);
+  });
+
+  it('adds a notes table that refuses bad scopes and sources and outlives its item', () => {
+    const db = v11();
+    migrate(db);
+    const ins = (scope: string, source = 'text') =>
+      db
+        .prepare(
+          `INSERT INTO notes (created_at, updated_at, text, original_text, scope, source, item_id)
+           VALUES ('t', 't', 'x', 'x', ?, ?, 'i')`,
+        )
+        .run(scope, source);
+    ins('standing');
+    expect(() => ins('global')).toThrow();
+    expect(() => ins('item', 'telepathy')).toThrow();
+    expect(db.prepare('SELECT enabled FROM notes').get()).toEqual({ enabled: 1 });
+    db.prepare("DELETE FROM items WHERE id = 'i'").run();
+    expect(db.prepare('SELECT COUNT(*) AS n FROM notes').get()).toEqual({ n: 1 });
+  });
+});

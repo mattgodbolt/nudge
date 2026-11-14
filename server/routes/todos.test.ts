@@ -101,6 +101,7 @@ describe('POST /api/assistant', () => {
       {
         text: 'ring plumber',
         now: '2026-11-08T13:00:00-06:00',
+        recent: null,
         selected: null,
         key: 'sk-test',
         model: 'claude-haiku-5-5',
@@ -241,6 +242,26 @@ describe('parseCommand', () => {
       now,
     );
     expect(r.actions).toEqual([{ type: 'add_todo', title: 'a', notes: '', due: null }]);
+  });
+  it('reads the why of a snooze and tidies a note, defaulting what it does not know', () => {
+    const r = parseCommand(
+      {
+        content: [
+          tool('snooze', { until: '2026-11-10T09:00:00Z', why: '  review the\nproposed fix ' }),
+          tool('snooze', { until: '2026-11-11T09:00:00Z', why: 7 }),
+          tool('record_note', { text: " I wouldn't have snoozed that ", scope: 'standing', about: 'last_action' }),
+          tool('record_note', { text: 'about this one', scope: 'whatever' }),
+          tool('record_note', { text: '   ' }),
+        ],
+      },
+      now,
+    );
+    expect(r.actions).toEqual([
+      { type: 'snooze', until: '2026-11-10T09:00:00.000Z', why: 'review the proposed fix' },
+      { type: 'snooze', until: '2026-11-11T09:00:00.000Z', why: null },
+      { type: 'note', text: "I wouldn't have snoozed that", scope: 'standing', about: 'last_action' },
+      { type: 'note', text: 'about this one', scope: 'item', about: 'selected' },
+    ]);
   });
   it('caps the number of actions', () => {
     const many = Array.from({ length: 20 }, () => tool('add_todo', { title: 't' }));

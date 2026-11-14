@@ -8,8 +8,10 @@ const addDays = (now: string, days: number): string => {
 };
 
 /**
- * Demo/e2e assistant: no network. Understands "snooze this ...", "done"/"mark this done", and "remind me [in N days]
- * to X" / anything else as a todo ("tomorrow" or "in N days" sets a due time).
+ * Demo/e2e assistant: no network. Understands "snooze this ... [to <why>]", "done"/"mark this done", notes (anything
+ * with "always", "never", "wouldn't" or "suggestion" in it: "always"/"never" make it a standing preference, "wouldn't"
+ * is about what he just did), and "remind me [in N days] to X" / anything else as a todo ("tomorrow" or "in N days"
+ * sets a due time).
  */
 export function createFakeLlmClient(): LlmClient {
   return {
@@ -26,9 +28,23 @@ export function createFakeLlmClient(): LlmClient {
         return selected ? { actions: [{ type: 'done' }], reply: '' } : { actions, reply: 'Nothing is selected.' };
       }
       if (/^\s*snooze\b/i.test(text)) {
+        const why = /\bto (.+?)\s*$/i.exec(text.replace(/\b(tomorrow|in \d+ days?)\b/gi, ''))?.[1] ?? null;
         return selected && when
-          ? { actions: [{ type: 'snooze', until: addDays(now, when) }], reply: '' }
+          ? { actions: [{ type: 'snooze', until: addDays(now, when), why }], reply: '' }
           : { actions, reply: 'Nothing is selected.' };
+      }
+      if (/\b(always|never|wouldn't|suggestion)\b/i.test(text)) {
+        return {
+          actions: [
+            {
+              type: 'note',
+              text: text.trim(),
+              scope: /\b(always|never)\b/i.test(text) ? 'standing' : 'item',
+              about: /wouldn't/i.test(text) ? 'last_action' : 'selected',
+            },
+          ],
+          reply: '',
+        };
       }
       const clean = text
         .replace(/^\s*(um+,?\s*)?(remind me|i need|don't forget)( in \d+ days?)?( to)?\s+/i, '')

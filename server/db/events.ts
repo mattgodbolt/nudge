@@ -32,7 +32,7 @@ import { ACTION_OF } from './suggestions.js';
  *                  dwellMs? } where dwellMs is how long it stayed open (sent on close, dropped under 300 ms).
  *
  * The owner's own actions (source `user`, kinds state/snooze/reply/decision) also carry `suggested` ('reply' | 'act' |
- * 'skip' | 'spam') and `suggestedConfidence` in meta when the item had an LLM suggestion at that moment, so the hit rate
+ * 'skip' | 'spam') and `suggestedConfidence` (and `suggestedTurn`, when the model said whose move it was) in meta when the item had an LLM suggestion at that moment, so the hit rate
  * can be measured later. Items with no suggestion, or one flagged as an injection attempt, get neither key.
  *
  * Not recorded, on purpose: an item's initial state when first seen (a bulk import would write thousands of rows;
@@ -98,14 +98,27 @@ export function createEvents(db: Db): Events {
     if (currentSuggestion === undefined) {
       try {
         currentSuggestion = db.prepare(
-          'SELECT verdict, confidence FROM suggestions WHERE item_id = ? AND injection_attempt = 0',
+          'SELECT verdict, confidence, turn FROM suggestions WHERE item_id = ? AND injection_attempt = 0',
         );
       } catch {
-        currentSuggestion = null; // a database from before migration 11
+        try {
+          currentSuggestion = db.prepare(
+            'SELECT verdict, confidence, NULL AS turn FROM suggestions WHERE item_id = ? AND injection_attempt = 0',
+          ); // a database from before migration 12
+        } catch {
+          currentSuggestion = null; // a database from before migration 11
+        }
       }
     }
-    const r = currentSuggestion?.get(itemId) as { verdict: Verdict; confidence: string } | undefined;
-    return r ? { suggested: ACTION_OF[r.verdict], suggestedConfidence: r.confidence } : {};
+    const r = currentSuggestion?.get(itemId) as
+      { verdict: Verdict; confidence: string; turn: string | null } | undefined;
+    return r
+      ? {
+          suggested: ACTION_OF[r.verdict],
+          suggestedConfidence: r.confidence,
+          ...(r.turn ? { suggestedTurn: r.turn } : {}),
+        }
+      : {};
   }
 
   function record(e: NewItemEvent): void {

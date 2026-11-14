@@ -1,8 +1,10 @@
 import { createHash } from 'node:crypto';
-import type { EventBus, Repo } from '../contracts.js';
+import type { EventBus, GithubClient, Repo } from '../contracts.js';
+import type { RecentComment, SuggestionCandidate } from '../db/suggestions.js';
 import { applyRules, type RuleHit } from '../classify/rules.js';
 import {
   PROMPT_VERSION,
+  RECENT_TEXT,
   ClassifierError,
   costMicros,
   createAnthropicClassifier,
@@ -33,13 +35,18 @@ const RULE_REASONS: Record<string, string> = {
   'spammy-keywords': 'Mentions crypto, messaging apps or investment',
 };
 
+/** Recent comments fetched per GitHub item, and how long a failed fetch is left alone before it is tried again. */
+const RECENT_LIMIT = 4;
+const FETCH_RETRY_MS = 15 * 60_000;
+
 /**
- * Fingerprint of what the model is shown: the prompt version and the rendered item (which carries the text, thread
- * context and GitHub comment count). Any change to either is a reason to ask again; nothing else is.
+ * Fingerprint of what the model is shown: the prompt version, the owner's standing notes (by hash) and the rendered
+ * item (which carries the text, thread context, GitHub comment count, the recent comments, a snooze note and any note
+ * about the item). Any change to any of them is a reason to ask again; nothing else is.
  */
-export function stateKey(item: EvalItem): string {
+export function stateKey(item: EvalItem, notesHash = ''): string {
   return createHash('sha256')
-    .update(`${PROMPT_VERSION}\n${renderItem(item)}`)
+    .update(`${PROMPT_VERSION}\n${notesHash}\n${renderItem(item)}`)
     .digest('hex')
     .slice(0, 32);
 }
@@ -47,6 +54,11 @@ export function stateKey(item: EvalItem): string {
 export interface SuggestWorkerDeps {
   repo: Repo;
   bus: EventBus;
+  /**
+   * Where the last few comments of a GitHub item come from. Without it (or for an item whose comments cannot be
+   * fetched) the suggestion is made from what is already stored, as before.
+   */
+  githubClient?: Pick<GithubClient, 'recentComments'>;
   /** Default: the key in settings. Null means "do nothing at all". */
   getApiKey?: () => string | null;
   /** Default: the real Anthropic classifier. Tests and demo mode pass a fake; nothing here ever reaches the network otherwise. */
@@ -116,6 +128,9 @@ export function createSuggestWorker(deps: SuggestWorkerDeps): SuggestWorker {
   let memSpend = { day: '', usd: 0 };
   /** Items the model answered badly for, by the fingerprint it failed on: not retried until the item changes. */
   const failed = new Map<string, string>();
+  /** Recent comments fetched in this process (also kept in the suggestion row once it is saved). */
+  const threads = new Map<string, { recent: RecentComment[]; count: number }>();
+  const fetchFailed = new Map<string, { count: number; at: number }>();
 
   const dayOf = (d: Date): string => d.toISOString().slice(0, 10);
   const dayStart = (d: Date): string => `${dayOf(d)}T00:00:00.000Z`;
@@ -148,6 +163,8 @@ export function createSuggestWorker(deps: SuggestWorkerDeps): SuggestWorker {
     item: EvalItem,
     key: string,
     rule: RuleHit | null,
+    notes: string[],
+    thread: { recent: RecentComment[]; count: number } | null,
   ): Promise<'saved' | 'model'> {
     const at = now().toISOString();
     if (rule) {
@@ -168,7 +185,7 @@ export function createSuggestWorker(deps: SuggestWorkerDeps): SuggestWorker {
       });
       return 'saved';
     }
-    const { result, usage } = await clf.classify(item);
+    const { result, usage } = await clf.classify(item, notes);
     const costUsd = costMicros(clf.model, usage) / 1e6;
     addSpend(costUsd);
     repo.suggestions.save({
@@ -185,8 +202,60 @@ export function createSuggestWorker(deps: SuggestWorkerDeps): SuggestWorker {
       outputTokens: usage.outputTokens,
       costUsd,
       createdAt: at,
+      turn: result.turn,
+      nextStep: result.nextStep,
+      thread: thread?.recent ?? null,
+      threadCount: thread?.count ?? null,
     });
     return 'model';
+  }
+
+  interface Work {
+    cand: SuggestionCandidate;
+    item: EvalItem;
+    /** Null until the recent comments have been fetched. */
+    key: string | null;
+    rule: RuleHit | null;
+    thread: { recent: RecentComment[]; count: number } | null;
+    fetchIt: boolean;
+  }
+
+  const withRecent = (item: EvalItem, recent: RecentComment[]): EvalItem =>
+    item.github && recent.length > 0 ? { ...item, github: { ...item.github, recent } } : item;
+
+  /** The recent comments already in hand for the item at its current comment count: stored, or fetched this run. */
+  function excerptOf(c: SuggestionCandidate): { recent: RecentComment[]; count: number } | null {
+    const comments = c.item.github?.comments ?? 0;
+    if (!c.target) return null;
+    if (c.storedThread && c.storedThread.count === comments) return c.storedThread;
+    const m = threads.get(c.item.id);
+    return m && m.count === comments ? m : null;
+  }
+
+  const recentlyFailed = (c: SuggestionCandidate): boolean => {
+    const f = fetchFailed.get(c.item.id);
+    return !!f && f.count === (c.item.github?.comments ?? 0) && now().getTime() - f.at < FETCH_RETRY_MS;
+  };
+
+  /** One capped GitHub call for one item. Never throws: on failure the item is classified without its thread. */
+  async function fetchThread(w: Work, mine: Set<string>, token: string | null): Promise<void> {
+    const c = w.cand;
+    const comments = c.item.github?.comments ?? 0;
+    try {
+      if (!deps.githubClient || !c.target) throw new Error('no GitHub client');
+      const got = await deps.githubClient.recentComments(c.target.repo, c.target.number, comments, token, RECENT_LIMIT);
+      const recent = got.slice(-RECENT_LIMIT).map((g) => ({
+        author: g.author,
+        isMatt: mine.has(g.author.toLowerCase()),
+        text: g.text.replace(/\s+/g, ' ').trim().slice(0, RECENT_TEXT),
+      }));
+      w.thread = { recent, count: comments };
+      threads.set(c.item.id, w.thread);
+      w.item = withRecent(c.item, recent);
+    } catch (e) {
+      fetchFailed.set(c.item.id, { count: comments, at: now().getTime() });
+      if (deps.githubClient) log(`could not fetch comments for ${c.item.id}`, e);
+    }
   }
 
   async function pass(ids?: string[]): Promise<PassResult> {
@@ -198,16 +267,22 @@ export function createSuggestWorker(deps: SuggestWorkerDeps): SuggestWorker {
 
     const settings = repo.getSettings();
     const mine = new Set(settings.github.myAccounts.map((l) => l.toLowerCase()));
+    const notes = repo.notes.standing();
     const cands = repo.suggestions.candidates({
       ...(ids ? { ids } : {}),
       scan: ids ? ids.length : SCAN,
       myLogins: mine,
     });
-    const work: { item: EvalItem; key: string }[] = [];
+    const work: Work[] = [];
     for (const c of cands) {
-      const key = stateKey(c.item);
-      if (c.storedKey === key || failed.get(c.item.id) === key) continue;
-      work.push({ item: c.item, key });
+      const rule = applyRules(c.item);
+      const have = rule ? null : excerptOf(c);
+      // Only an item with a thread nobody has read yet needs the GitHub call; its key is made once it is fetched.
+      const fetchIt = !rule && !have && c.target !== undefined && !recentlyFailed(c);
+      const item = have ? withRecent(c.item, have.recent) : c.item;
+      const key = fetchIt ? null : stateKey(item, notes.hash);
+      if (key !== null && (c.storedKey === key || failed.get(c.item.id) === key)) continue;
+      work.push({ cand: c, item, key, rule, thread: have, fetchIt });
       if (work.length >= passCap) break;
     }
     if (work.length === 0) return out;
@@ -219,7 +294,7 @@ export function createSuggestWorker(deps: SuggestWorkerDeps): SuggestWorker {
       while (!halt && !stopped) {
         const w = work[next++];
         if (!w) return;
-        const rule = applyRules(w.item);
+        const rule = w.rule;
         if (!rule && spentToday() >= cap) {
           halt = 'cap';
           const day = dayOf(now());
@@ -232,7 +307,12 @@ export function createSuggestWorker(deps: SuggestWorkerDeps): SuggestWorker {
           return;
         }
         try {
-          const how = await classifyOne(clf, w.item, w.key, rule);
+          if (w.fetchIt) {
+            await fetchThread(w, mine, settings.github.token);
+            w.key = stateKey(w.item, notes.hash);
+            if (w.cand.storedKey === w.key || failed.get(w.item.id) === w.key) continue;
+          }
+          const how = await classifyOne(clf, w.item, w.key!, rule, notes.texts, w.thread);
           out.saved++;
           if (how === 'model') out.modelCalls++;
           backoffStep = 0;
@@ -255,7 +335,7 @@ export function createSuggestWorker(deps: SuggestWorkerDeps): SuggestWorker {
             pause(wait);
           } else {
             // This one item cannot be classified (bad request, off-schema answer): skip it until it changes.
-            failed.set(w.item.id, w.key);
+            failed.set(w.item.id, w.key!);
             log(`could not classify ${w.item.id}`, e);
           }
         }

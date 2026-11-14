@@ -3,6 +3,7 @@ import type { AssistantOutcome } from '../../shared/types.js';
 import type { AssistantAction, AppDeps } from '../contracts.js';
 import { LlmError } from '../contracts.js';
 import { costMicros } from '../classify/anthropic.js';
+import { recordNote } from './notes.js';
 import { HttpError, asObject, bad, notFound, str } from './util.js';
 
 const TEXT_MAX = 4000;
@@ -43,6 +44,17 @@ export function registerTodoRoutes(app: FastifyInstance, deps: AppDeps): void {
     const now = typeof b.now === 'string' && LOCAL_NOW.test(b.now) ? b.now : new Date().toISOString();
     const selectedId = typeof b.selectedId === 'string' && b.selectedId.length < 200 ? b.selectedId : null;
     const selected = selectedId ? repo.getItem(selectedId) : null;
+    const via = b.via === 'voice' ? 'voice' : 'text';
+    const last = repo.notes.recentAction();
+    const lastItem = last ? repo.getItem(last.itemId) : null;
+    const recent =
+      last && lastItem
+        ? {
+            what: last.kind === 'snooze' ? (last.to ? 'snoozed' : 'unsnoozed') : `marked ${last.to ?? 'changed'}`,
+            title: lastItem.item.title,
+            minutesAgo: Math.min(60, Math.max(0, Math.round((Date.now() - Date.parse(last.at)) / 60_000))),
+          }
+        : null;
 
     const { apiKey, model } = repo.getSettings().llm;
     let actions: AssistantAction[] = [];
@@ -54,7 +66,7 @@ export function registerTodoRoutes(app: FastifyInstance, deps: AppDeps): void {
     } else {
       try {
         const r = await deps.llm.command(
-          { text, now, selected: selected ? { title: selected.item.title, kind: selected.item.kind } : null },
+          { text, now, selected: selected ? { title: selected.item.title, kind: selected.item.kind } : null, recent },
           apiKey,
           model,
         );
@@ -89,12 +101,28 @@ export function registerTodoRoutes(app: FastifyInstance, deps: AppDeps): void {
         const id = repo.addTodo({ title: a.title, notes: a.notes, raw: text, dueAt: a.due });
         added.push(id);
         outcomes.push({ type: 'add_todo', id, title: a.title, due: a.due });
+      } else if (a.type === 'note') {
+        // What he said about a suggestion or an item is kept whatever else happens. "That" is the item he is on, or the
+        // one he has just dealt with (the selection has usually moved on by then).
+        const latest = repo.notes.recentAction();
+        const itemId =
+          a.about === 'last_action'
+            ? (latest?.itemId ?? selected?.item.id ?? null)
+            : (selected?.item.id ?? latest?.itemId ?? null);
+        const note = recordNote(deps, { text: a.text, scope: a.scope, source: via, itemId });
+        outcomes.push({ type: 'note', id: note.id, scope: note.scope, text: note.text, itemId: note.itemId });
       } else if (!selected || selected.state !== 'inbox') {
         skipped = true;
       } else if (a.type === 'snooze') {
-        const r = repo.snooze([selected.item.id], a.until);
+        const r = repo.snooze([selected.item.id], a.until, a.why);
         changed.push(selected.item.id);
-        outcomes.push({ type: 'snooze', id: selected.item.id, until: a.until, undoActionId: r.actionId });
+        outcomes.push({
+          type: 'snooze',
+          id: selected.item.id,
+          until: a.until,
+          why: a.why,
+          undoActionId: r.actionId,
+        });
       } else {
         const r = repo.triage([selected.item.id], 'done');
         changed.push(selected.item.id);

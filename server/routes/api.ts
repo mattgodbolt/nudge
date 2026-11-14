@@ -12,6 +12,8 @@ import { recordSnoozeContext } from './snoozeContext.js';
 import { HttpError, asObject, bad, bool, buildSettingsDto, int, notFound, oneOf, str } from './util.js';
 
 const VIEWS = ['inbox', 'done', 'all', 'snoozed'] as const;
+/** Longest "why I snoozed this" kept. */
+export const WHY_MAX = 200;
 const MIN_SNOOZE_MS = 30_000;
 const MAX_SNOOZE_MS = 366 * 24 * 60 * 60 * 1000;
 const LABEL_STATUS = { duplicate_label: 409, too_many_labels: 409, bad_name: 400, not_found: 404 } as const;
@@ -177,7 +179,9 @@ export function registerApiRoutes(app: FastifyInstance, deps: AppDeps): void {
       }
       until = new Date(t).toISOString();
     }
-    const result = repo.snooze(ids, until);
+    // One short line of the owner's own words about why; optional, and one applies to every id.
+    const why = typeof b.why === 'string' ? b.why.replace(/\s+/g, ' ').trim().slice(0, WHY_MAX) : '';
+    const result = repo.snooze(ids, until, until !== null && why ? why : null);
     emitSnooze(result);
     // Fire and forget: the GitHub lookups must never delay or fail the snooze. The helper never rejects.
     if (until !== null && result.actionId !== null && deps.githubClient) {

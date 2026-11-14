@@ -39,6 +39,9 @@
     <div class="vt">
       <span class="title" data-testid="todo-title">{it.title}</span>
       <div class="meta faint">Todo · added {relativeTime(item.comment.publishedAt, now)} ago</div>
+      {#if item.snoozeWhy && item.comment.state === 'inbox'}
+        <div class="why faint" data-testid="thread-why">You snoozed this to: {item.snoozeWhy}</div>
+      {/if}
       {#if item.snoozedUntil || item.labels.length > 0 || woke}
         <div class="tags">
           {#if item.snoozedUntil}
@@ -135,6 +138,12 @@
   }
   .title:hover {
     text-decoration: underline;
+  }
+  /* What he said he would do on return: quiet, but never cut off. */
+  .why {
+    font-size: var(--fs-meta);
+    font-style: italic;
+    overflow-wrap: anywhere;
   }
   .tags {
     display: flex;

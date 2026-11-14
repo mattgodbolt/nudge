@@ -2,7 +2,8 @@ import type { Db } from './db.js';
 
 /**
  * Read-only summary of how the owner triages, computed from item_events (and items for provider/kind/arrival time).
- * Counts and durations only: no item text, titles, authors or ids appear in the output.
+ * Counts and durations only: no item text, titles, authors or ids appear in the output. The one exception is the
+ * latest few notes the owner made himself (clipped), which he asked to see.
  */
 export interface HabitsReport {
   events: number;
@@ -25,7 +26,22 @@ export interface HabitsReport {
    * snoozed), what the suggestion was against what he did. `hits` counts the agreeing actions: reply is hit by
    * replied; act by done or snooze; skip and spam by done. Items with no suggestion are not counted.
    */
-  suggestionHits: { suggested: string; total: number; hits: number; byAction: Record<string, number> }[];
+  suggestionHits: {
+    suggested: string;
+    total: number;
+    hits: number;
+    byAction: Record<string, number>;
+    /** Of those, by whose turn the model said it was (`none` = it did not say). */
+    byTurn: Record<string, number>;
+  }[];
+  /** What the owner has told the assistant. The text of the latest few is included, clipped (he asked to see them). */
+  notes: {
+    total: number;
+    standing: number;
+    item: number;
+    notFed: number;
+    recent: { at: string; scope: string; enabled: boolean; text: string }[];
+  };
   /** Median open dwell in ms by the view it was opened from, plus how many opens had a dwell. */
   openDwell: { view: string; opens: number; withDwell: number; medianMs: number | null }[];
 }
@@ -61,6 +77,34 @@ function parseMeta(s: string | null): Record<string, any> {
   }
 }
 
+/** Counts of the owner's notes plus the latest few. Empty (not an error) for a database from before migration 12. */
+function notesSummary(db: Db): HabitsReport['notes'] {
+  const out: HabitsReport['notes'] = { total: 0, standing: 0, item: 0, notFed: 0, recent: [] };
+  try {
+    const c = db
+      .prepare(
+        `SELECT COUNT(*) AS total, COALESCE(SUM(scope = 'standing'), 0) AS standing,
+                COALESCE(SUM(scope = 'item'), 0) AS item, COALESCE(SUM(enabled = 0), 0) AS not_fed FROM notes`,
+      )
+      .get() as { total: number; standing: number; item: number; not_fed: number };
+    out.total = c.total;
+    out.standing = c.standing;
+    out.item = c.item;
+    out.notFed = c.not_fed;
+    out.recent = (
+      db.prepare('SELECT created_at, scope, enabled, text FROM notes ORDER BY id DESC LIMIT 5').all() as {
+        created_at: string;
+        scope: string;
+        enabled: number;
+        text: string;
+      }[]
+    ).map((r) => ({ at: r.created_at, scope: r.scope, enabled: !!r.enabled, text: r.text.slice(0, 120) }));
+  } catch {
+    // no notes table yet
+  }
+  return out;
+}
+
 /** Throws the SQLite error if item_events does not exist (databases from before migration 9). */
 export function habitsReport(db: Db): HabitsReport {
   const rows = db
@@ -84,7 +128,7 @@ export function habitsReport(db: Db): HabitsReport {
   };
   const snoozeAt: { item: string; at: number }[] = [];
   const dec: { at: number; meta: Record<string, any> }[] = []; // eslint-disable-line @typescript-eslint/no-explicit-any
-  const judged = new Map<string, { suggested: string; action: string }>();
+  const judged = new Map<string, { suggested: string; action: string; turn: string }>();
   const dwellByView = new Map<string, { opens: number; dwell: number[] }>();
   const byInput: Record<string, number> = {};
   let rank0 = 0;
@@ -104,7 +148,11 @@ export function habitsReport(db: Db): HabitsReport {
         typeof meta.suggested === 'string' &&
         (action === 'done' || action === 'replied' || action === 'snooze')
       ) {
-        judged.set(r.item_id, { suggested: meta.suggested, action });
+        judged.set(r.item_id, {
+          suggested: meta.suggested,
+          action,
+          turn: typeof meta.suggestedTurn === 'string' ? meta.suggestedTurn : 'none',
+        });
       }
       (userActs.get(r.item_id) ?? userActs.set(r.item_id, []).get(r.item_id)!).push(t);
       if (isSnooze && r.to_value) {
@@ -181,9 +229,13 @@ export function habitsReport(db: Db): HabitsReport {
     skip: ['done'],
     spam: ['done'],
   };
-  const hitsBy = new Map<string, { total: number; hits: number; byAction: Record<string, number> }>();
+  const hitsBy = new Map<
+    string,
+    { total: number; hits: number; byAction: Record<string, number>; byTurn: Record<string, number> }
+  >();
   for (const j of judged.values()) {
-    const h = hitsBy.get(j.suggested) ?? { total: 0, hits: 0, byAction: {} };
+    const h = hitsBy.get(j.suggested) ?? { total: 0, hits: 0, byAction: {}, byTurn: {} };
+    h.byTurn[j.turn] = (h.byTurn[j.turn] ?? 0) + 1;
     h.total++;
     if (AGREES[j.suggested]?.includes(j.action)) h.hits++;
     h.byAction[j.action] = (h.byAction[j.action] ?? 0) + 1;
@@ -199,6 +251,7 @@ export function habitsReport(db: Db): HabitsReport {
 
   return {
     events: rows.length,
+    notes: notesSummary(db),
     actionMix,
     timeToFirstActionMs,
     snooze: { snoozed, woken, actionedAfterWake },
@@ -220,9 +273,18 @@ export function fmtDuration(ms: number | null): string {
   return `${(ms / 86_400_000).toFixed(1)}d`;
 }
 
+function notesLines(r: HabitsReport): string[] {
+  const n = r.notes;
+  return [
+    '',
+    `Notes: ${n.total} (${n.standing} standing, ${n.item} about an item, ${n.notFed} not fed to the model)`,
+    ...n.recent.map((x) => `  ${x.at.slice(0, 10)} ${x.scope}${x.enabled ? '' : ' (off)'}: ${x.text}`),
+  ];
+}
+
 export function formatHabits(r: HabitsReport): string {
   const out: string[] = [`Events: ${r.events}`];
-  if (r.events === 0) return out.concat('Nothing recorded yet.').join('\n');
+  if (r.events === 0) return out.concat('Nothing recorded yet.', notesLines(r)).join('\n');
   out.push('', 'Action mix (user actions, provider / kind / action):');
   if (r.actionMix.length === 0) out.push('  none');
   for (const a of r.actionMix) out.push(`  ${a.provider} / ${a.kind} / ${a.action}: ${a.count}`);
@@ -271,7 +333,13 @@ export function formatHabits(r: HabitsReport): string {
       .map(([k, n]) => `${k} ${n}`)
       .join(', ');
     out.push(`  suggested ${h.suggested}: ${pct(h.hits, h.total)} agreed (${acts})`);
+    const turns = Object.entries(h.byTurn)
+      .sort((a, b) => b[1] - a[1])
+      .map(([k, n]) => `${k} ${n}`)
+      .join(', ');
+    if (turns && turns !== `none ${h.total}`) out.push(`    whose turn the model said: ${turns}`);
   }
+  out.push(...notesLines(r));
   out.push('', 'Open dwell by view:');
   if (r.openDwell.length === 0) out.push('  none');
   for (const o of r.openDwell)

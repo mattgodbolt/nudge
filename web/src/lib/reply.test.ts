@@ -65,6 +65,7 @@ function item(n: number): InboxItem {
     labels: [],
     snoozedUntil: null,
     wokeAt: null,
+    snoozeWhy: null,
     suggestion: null,
   };
 }

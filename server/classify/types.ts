@@ -43,7 +43,13 @@ export interface EvalItem {
     /** Live suggestions only (absent from the offline eval set): who wrote the newest comment, when the poller knows. */
     lastCommenter?: string;
     lastCommenterIsMe?: boolean;
+    /** Live suggestions only: the last few comments, oldest first, so the model can judge where the thread stands. */
+    recent?: { author: string; isMatt: boolean; text: string }[];
   };
+  /** Live suggestions only: why the owner snoozed this item, in his words (shown to the model as data). */
+  snoozeNote?: string;
+  /** Live suggestions only: notes the owner made about this very item (data, newest first). */
+  ownerNotes?: string[];
 }
 
 /**
@@ -60,6 +66,10 @@ export type Verdict = (typeof VERDICTS)[number];
 export const CATEGORIES = ['question', 'technical', 'bug', 'idea', 'chat', 'support', 'bot', 'other'] as const;
 export type Category = (typeof CATEGORIES)[number];
 
+/** Whose move it is, judged from the current state of the thread rather than from what the item once was. */
+export const TURNS = ['matt', 'them', 'nobody'] as const;
+export type Turn = (typeof TURNS)[number];
+
 export const CONFIDENCES = ['low', 'medium', 'high'] as const;
 export type Confidence = (typeof CONFIDENCES)[number];
 
@@ -71,6 +81,10 @@ export interface Classification {
   reason: string;
   /** The comment tried to instruct the classifier. A strong spam signal in itself. */
   injectionAttempt: boolean;
+  /** Whose turn it is now; null when the model did not say (rules, or answers from before prompt p0-8). */
+  turn: Turn | null;
+  /** One short sentence: what happens next ("review the proposed fix and merge"). Null when not given. */
+  nextStep: string | null;
 }
 
 export interface Usage {

@@ -6,13 +6,13 @@ const use = { permissions: ['clipboard-read', 'clipboard-write'] };
 // hand-off mode (4518, the default), API-posting mode (4519, NUDGE_DEMO_POST=api) for reply-api.spec.ts, and a private
 // one (4520) for snooze-labels.spec.ts, which reorders the inbox, labels comments and moves counts, and one (4521,
 // NUDGE_DEMO_GITHUB=1) with a fake GitHub feed for github.spec.ts, and one (4522) for assistant.spec.ts, which adds todos, and one (4523, NUDGE_DEMO_SUGGEST=1) with the fake suggestion
-// source for suggestions.spec.ts.
+// source for suggestions.spec.ts, and one (4524, as 4523 plus NUDGE_DEMO_COMMENTS=1: GitHub items with comment threads) for notes.spec.ts, which snoozes items, records notes and edits them.
 export default defineConfig({
   testDir: 'e2e',
   projects: [
     {
       name: 'handoff',
-      testIgnore: /(reply-api|snooze-labels|github|assistant|suggestions)\.spec\.ts/,
+      testIgnore: /(reply-api|snooze-labels|github|assistant|suggestions|notes)\.spec\.ts/,
       use: { ...use, baseURL: 'http://127.0.0.1:4518' },
     },
     {
@@ -34,6 +34,11 @@ export default defineConfig({
       name: 'suggestions',
       testMatch: /suggestions\.spec\.ts/,
       use: { ...use, baseURL: 'http://127.0.0.1:4523' },
+    },
+    {
+      name: 'notes',
+      testMatch: /notes\.spec\.ts/,
+      use: { ...use, baseURL: 'http://127.0.0.1:4524' },
     },
     {
       name: 'github',
@@ -69,6 +74,12 @@ export default defineConfig({
     {
       command: 'npm run demo:e2e:suggest',
       url: 'http://127.0.0.1:4523/api/bootstrap',
+      reuseExistingServer: false,
+      timeout: 120000,
+    },
+    {
+      command: 'npm run demo:e2e:notes',
+      url: 'http://127.0.0.1:4524/api/bootstrap',
       reuseExistingServer: false,
       timeout: 120000,
     },

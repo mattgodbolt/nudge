@@ -25,6 +25,9 @@
   let error = $state('');
   let dialog: HTMLDivElement | undefined = $state();
   let customInput: HTMLInputElement | undefined = $state();
+  let whyInput: HTMLInputElement | undefined = $state();
+  /** Optional one line: why, or what to do on return. Shown back when the item wakes. */
+  let why = $state('');
 
   function close() {
     ui.snoozeFor = null;
@@ -38,8 +41,9 @@
       return;
     }
     usage.count(`snooze.${how}`);
+    const reason = why.trim();
     close();
-    await inbox.snooze(at, ids, formatSnoozeTime(at, now));
+    await inbox.snooze(at, ids, formatSnoozeTime(at, now), reason || undefined);
   }
 
   function choose(i: number) {
@@ -72,6 +76,7 @@
     custom = toLocalInputValue(defaultCustomTime(n));
     active = 0;
     error = '';
+    why = '';
     void tick().then(() => dialog?.focus());
     const unscope = keymap.pushScope('modal');
     const bind = (id: string, keys: string[], run: () => void, repeat = false) => ({
@@ -89,6 +94,8 @@
       bind('down', ['ArrowDown', 'j'], () => (active = Math.min(active + 1, CUSTOM)), true),
       bind('up', ['ArrowUp', 'k'], () => (active = Math.max(active - 1, 0)), true),
       bind('enter', ['Enter'], enter),
+      // Skipping the reason costs nothing; Tab is the way in to it from the keyboard.
+      bind('why', ['Tab'], () => whyInput?.focus()),
       ...['1', '2', '3', '4', '5'].map((k, i) => bind(`n${k}`, [k], () => choose(i))),
     ]);
     return () => {
@@ -170,6 +177,27 @@
           </div>
         {/if}
       </div>
+      <div class="why">
+        <input
+          bind:this={whyInput}
+          bind:value={why}
+          type="text"
+          class="input"
+          maxlength="200"
+          placeholder="Why? What to do on return (optional)"
+          aria-label="Why you are snoozing (optional)"
+          autocomplete="off"
+          enterkeyhint="done"
+          data-testid="snooze-why"
+          onkeydown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              enter();
+            }
+          }}
+        />
+        <span class="kbd-hint"><Kbd label="Tab" /></span>
+      </div>
       {#if error}<p class="err meta" role="alert">{error}</p>{/if}
     </div>
   </div>
@@ -230,6 +258,16 @@
   .custom .input {
     flex: 1;
   }
+  .why {
+    display: flex;
+    align-items: center;
+    gap: var(--s2);
+    padding: var(--s1) var(--s3) var(--s2);
+  }
+  .why .input {
+    flex: 1;
+    min-width: 0;
+  }
   .err {
     padding: 0 var(--s3) var(--s2);
     color: var(--danger);
@@ -259,6 +297,16 @@
     }
     .custom {
       padding: var(--s2) var(--s4) var(--s3);
+    }
+    .why {
+      padding: var(--s2) var(--s4) var(--s3);
+    }
+    .why .input {
+      font-size: 16px; /* anything smaller makes iOS zoom the page on focus */
+      min-height: 44px;
+    }
+    .kbd-hint {
+      display: none;
     }
     @keyframes sheet-up {
       from {

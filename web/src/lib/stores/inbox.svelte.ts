@@ -386,12 +386,15 @@ export class InboxStore {
    * Snooze (a Date) or unsnooze (null) `ids`. Only inbox-state comments can be snoozed, so other rows are
    * left alone. The row leaves the list like a triage would, and the action is undoable.
    */
-  snooze(until: Date | null, only?: string[], label?: string): Promise<boolean> {
+  snooze(until: Date | null, only?: string[], label?: string, why?: string): Promise<boolean> {
     const wanted = new Set(this.targetIds(only));
     const iso = until ? until.toISOString() : null;
     const changes: Change[] = this.items
       .filter((i) => wanted.has(i.comment.id) && (iso ? i.comment.state === 'inbox' : i.snoozedUntil !== null))
-      .map((before) => ({ before, after: { ...before, snoozedUntil: iso } }));
+      .map((before) => ({
+        before,
+        after: { ...before, snoozedUntil: iso, ...(iso ? { snoozeWhy: why?.trim() || null } : {}) },
+      }));
     const ids = changes.map((c) => c.before.comment.id);
     this.#decide(iso ? 'snooze' : 'unsnooze', ids);
     const n = ids.length;
@@ -402,7 +405,7 @@ export class InboxStore {
       : n > 1
         ? `${n} items: unsnoozed`
         : 'Unsnoozed';
-    return this.#commit(changes, 'snooze', () => api.snooze(ids, iso), { message });
+    return this.#commit(changes, 'snooze', () => api.snooze(ids, iso, why?.trim() || undefined), { message });
   }
 
   unsnooze(only?: string[]): Promise<boolean> {

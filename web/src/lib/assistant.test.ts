@@ -18,8 +18,20 @@ describe('describeOutcome', () => {
     expect(describeOutcome({ type: 'add_todo', id: 'todo:1', title: 'X', due: '2030-01-02T09:00:00Z' })).toMatch(
       /^Todo: X \(.+\)$/,
     );
-    expect(describeOutcome({ type: 'snooze', id: 'a', until: '2030-01-02T09:00:00Z', undoActionId: 1 })).toMatch(
-      /^Snoozed until /,
+    expect(
+      describeOutcome({ type: 'snooze', id: 'a', until: '2030-01-02T09:00:00Z', why: null, undoActionId: 1 }),
+    ).toMatch(/^Snoozed until /);
+    expect(
+      describeOutcome({
+        type: 'snooze',
+        id: 'a',
+        until: '2030-01-02T09:00:00Z',
+        why: 'review the fix',
+        undoActionId: 1,
+      }),
+    ).toMatch(/: review the fix$/);
+    expect(describeOutcome({ type: 'note', id: 3, scope: 'standing', text: 'Bob matters', itemId: null })).toBe(
+      'Noted as a standing preference: Bob matters',
     );
     expect(describeOutcome({ type: 'done', id: 'a', undoActionId: 1 })).toBe('Marked done');
   });

@@ -2,6 +2,7 @@ import { api } from '../api';
 import { describeOutcome, localNow, speechCtor, type Recognition } from '../assistant';
 import type { AssistantOutcome } from '../../../../shared/types';
 import { inbox } from './inbox.svelte';
+import { notes } from './notes.svelte';
 import { toasts } from './toasts.svelte';
 import { ui } from './ui.svelte';
 import { usage } from '../usage';
@@ -16,6 +17,8 @@ class AssistantStore {
   focusTick = $state(0);
   readonly micSupported = speechCtor() !== null;
   #rec: Recognition | null = null;
+  /** Dictation was used for this text, so a note it produces is recorded as spoken. */
+  #voiced = false;
 
   show() {
     ui.helpOpen = false;
@@ -52,6 +55,7 @@ class AssistantStore {
     };
     this.#rec = rec;
     this.listening = true;
+    this.#voiced = true;
     usage.count('assistant.voice');
     try {
       rec.start();
@@ -74,7 +78,13 @@ class AssistantStore {
     this.stopMic();
     this.busy = true;
     try {
-      const res = await api.assistant({ text, now: localNow(), selectedId: inbox.selectedId });
+      const res = await api.assistant({
+        text,
+        now: localNow(),
+        selectedId: inbox.selectedId,
+        via: this.#voiced ? 'voice' : 'text',
+      });
+      this.#voiced = false;
       this.text = '';
       this.open = false;
       for (const o of res.outcomes) {
@@ -106,6 +116,7 @@ class AssistantStore {
   async undo(o: AssistantOutcome) {
     try {
       if (o.type === 'add_todo') await api.deleteTodo(o.id);
+      else if (o.type === 'note') await notes.remove(o.id);
       else if (o.undoActionId !== null) {
         if (o.type === 'snooze') await api.undoSnooze(o.undoActionId);
         else await api.undo(o.undoActionId);

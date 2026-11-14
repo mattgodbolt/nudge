@@ -131,13 +131,17 @@ describe('recording the suggestion with what the owner did', () => {
 });
 
 describe('habits: suggestion hit rate', () => {
+  const turns: Record<number, { suggestedTurn: string }> = {
+    1: { suggestedTurn: 'them' },
+    2: { suggestedTurn: 'matt' },
+  };
   function act(
     n: number,
     suggested: string | null,
     to: 'done' | 'replied' | 'snooze',
     at = '2026-11-12T10:00:00.000Z',
   ) {
-    const meta = suggested ? { suggested, suggestedConfidence: 'high' } : undefined;
+    const meta = suggested ? { suggested, suggestedConfidence: 'high', ...turns[n] } : undefined;
     const ev = createEvents(db);
     if (to === 'snooze')
       ev.record({
@@ -161,13 +165,35 @@ describe('habits: suggestion hit rate', () => {
     act(4, null, 'done', '2026-11-12T12:00:00.000Z');
     const rep = habitsReport(db);
     expect(rep.suggestionHits).toEqual([
-      { suggested: 'reply', total: 2, hits: 1, byAction: { replied: 1, done: 1 } },
-      { suggested: 'act', total: 1, hits: 1, byAction: { snooze: 1 } },
-      { suggested: 'skip', total: 1, hits: 1, byAction: { done: 1 } },
+      { suggested: 'reply', total: 2, hits: 1, byAction: { replied: 1, done: 1 }, byTurn: { them: 1, matt: 1 } },
+      { suggested: 'act', total: 1, hits: 1, byAction: { snooze: 1 }, byTurn: { none: 1 } },
+      { suggested: 'skip', total: 1, hits: 1, byAction: { done: 1 }, byTurn: { none: 1 } },
     ]);
     const text = formatHabits(rep);
     expect(text).toContain('suggested reply: 50.0% (1/2) agreed (replied 1, done 1)');
     expect(text).toContain('suggested skip: 100.0% (1/1) agreed (done 1)');
+    expect(text).toContain('whose turn the model said: them 1, matt 1');
+  });
+
+  it('records the turn the model gave with the action it was showing', () => {
+    repo.suggestions.save({ ...row(3), turn: 'them', nextStep: 'Wait for a reply' });
+    repo.triage([id(3)], 'done');
+    const meta = db.prepare("SELECT meta FROM item_events WHERE item_id = ? AND kind = 'state'").get(id(3)) as {
+      meta: string;
+    };
+    expect(JSON.parse(meta.meta)).toMatchObject({ suggested: 'reply', suggestedTurn: 'them' });
+  });
+
+  it('reports a notes count and the latest few notes (clipped), and nothing before there are any', () => {
+    expect(habitsReport(db).notes).toEqual({ total: 0, standing: 0, item: 0, notFed: 0, recent: [] });
+    repo.notes.add({ text: 'Bob is always important', scope: 'standing', source: 'voice', itemId: null });
+    const n = repo.notes.add({ text: 'x'.repeat(300), scope: 'item', source: 'text', itemId: id(1) });
+    repo.notes.update(n.id, { enabled: false });
+    const rep = habitsReport(db);
+    expect(rep.notes).toMatchObject({ total: 2, standing: 1, item: 1, notFed: 1 });
+    expect(rep.notes.recent[0]!.text).toHaveLength(120);
+    expect(formatHabits(rep)).toContain('Notes: 2 (1 standing, 1 about an item, 1 not fed to the model)');
+    expect(formatHabits(rep)).toContain('standing: Bob is always important');
   });
 
   it('does not change the action mix or event counts', () => {

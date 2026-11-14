@@ -97,6 +97,8 @@
   const gh = $derived(item.item.provider === 'github' ? item.item : null);
   const todo = $derived(item.item.provider === 'todo' ? item.item : null);
   const chips = $derived(gh ? [reasonChip(gh), authorChip(gh), statusChip(gh)].filter((x) => x !== null) : []);
+  /** Why it was snoozed, in his words: shown while snoozed and once it is back, until he deals with it. */
+  const why = $derived(c.state === 'inbox' ? item.snoozeWhy : null);
   const unread = $derived(c.state === 'inbox' && !item.snoozedUntil);
   const woke = $derived(!item.snoozedUntil && c.state === 'inbox' && recentlyWoken(item.wokeAt, now));
   const stateLabel = $derived(
@@ -179,9 +181,14 @@
     {:else}
       <div class="text">{c.textPlain}</div>
     {/if}
-    <div class="video">
+    <div class="video" class:haswhy={!!why}>
       {#if ui.showSuggestions && item.suggestion}<SuggestionChip suggestion={item.suggestion} />{/if}
-      <span class="vtitle faint truncate"
+      {#if why}
+        <span class="vtitle why truncate" data-testid="row-why" title="You snoozed this to: {why}"
+          >You snoozed this to: {why}</span
+        >
+      {/if}
+      <span class="vtitle faint truncate" class:hide={!!why}
         >{#if todo}{c.textPlain || 'Todo'}{:else if gh}<span class="kind" data-testid="row-kind"
             >{gh.kind === 'pr' ? 'PR' : 'Issue'}</span
           >
@@ -386,6 +393,21 @@
     min-width: 0;
     /* Gives way well before the labels beside it do. */
     flex: 0 8 auto;
+  }
+  /* Takes the container's place on the line while it is there: what to do about it matters more than where it is. */
+  .why {
+    color: var(--text-muted);
+    font-style: italic;
+  }
+  .vtitle.why {
+    flex: 1 1 auto;
+  }
+  /* With his reason on the line, the chip yields room to it. */
+  .haswhy :global(.sug) {
+    max-width: 38%;
+  }
+  .vtitle.hide {
+    display: none;
   }
   .snz {
     flex: none;

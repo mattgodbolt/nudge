@@ -50,6 +50,7 @@ function item(n: number, state: CommentDTO['state'] = 'inbox'): InboxItem {
     labels: [],
     snoozedUntil: null,
     wokeAt: null,
+    snoozeWhy: null,
     suggestion: null,
   };
 }
@@ -276,6 +277,19 @@ describe('InboxStore snooze and labels', () => {
     const toast = toasts.items.at(-1)!;
     expect(toast.message).toBe('Snoozed until Thu 8:00 AM · z to undo');
     expect(toast.action?.label).toBe('Undo');
+  });
+
+  it('sends the why with the snooze, once for every selected item, and sends nothing when there is none', async () => {
+    await load();
+    store.toggleSelect('c1');
+    store.toggleSelect('c3');
+    const until = new Date('2099-01-01T08:00:00.000Z');
+    await store.snooze(until, undefined, 'Thu 8:00 AM', '  review the fix  ');
+    expect(bodies('/api/snooze')).toEqual([
+      { commentIds: expect.any(Array), until: until.toISOString(), why: 'review the fix' },
+    ]);
+    await store.snooze(until, ['c2'], 'Thu 8:00 AM', '   ');
+    expect(bodies('/api/snooze')[1]).toEqual({ commentIds: ['c2'], until: until.toISOString() });
   });
 
   it('snoozes the multi-selection as one action', async () => {

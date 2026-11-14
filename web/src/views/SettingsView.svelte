@@ -15,10 +15,39 @@
   import { anyNeedsReauth, clientSourceLabel, connectedLabel, googleState, googleToast } from '../lib/google';
   import { router } from '../lib/router.svelte';
   import { push } from '../lib/stores/push.svelte';
+  import { notes } from '../lib/stores/notes.svelte';
+  import { chipText } from '../lib/suggestions';
   import { ui } from '../lib/stores/ui.svelte';
   import { onMount, untrack } from 'svelte';
 
-  onMount(() => void push.init());
+  onMount(() => {
+    void push.init();
+    void notes.load();
+  });
+
+  /** One line saying what Nudge had suggested, and what he had just done, when a note was made. */
+  function noteContext(n: (typeof notes.list)[number]): string {
+    const bits: string[] = [];
+    const sg = n.suggestion;
+    if (sg) {
+      bits.push(
+        `Suggestion then: ${chipText({
+          action: sg.action as 'reply' | 'act' | 'skip' | 'spam',
+          reason: sg.reason,
+          confidence: sg.confidence as 'low' | 'medium' | 'high',
+          suspicious: false,
+          turn: sg.turn as 'matt' | 'them' | 'nobody' | null,
+          nextStep: sg.nextStep,
+        })}`,
+      );
+    }
+    const a = n.lastAction;
+    if (a) {
+      const what = a.kind === 'snooze' ? (a.to ? 'snoozed it' : 'unsnoozed it') : `marked it ${a.to}`;
+      bits.push(`You had just ${what}${a.why ? ` to: ${a.why}` : ''}`);
+    }
+    return bits.join(' · ');
+  }
 
   const s = $derived(settings.value);
 
@@ -496,6 +525,62 @@
         </p>{/if}
     </section>
 
+    <section class="panel sec" data-testid="settings-notes">
+      <h2>Notes</h2>
+      <p class="muted meta">
+        What you tell the assistant about a suggestion, an item or how you like things done (press
+        <kbd class="mono">c</kbd> and say it). Every note is kept. A note switched off here stays on record but is no longer
+        shown to the model; “standing” notes apply to every suggestion, the others to one item.
+      </p>
+      <ul class="notes">
+        {#each notes.list as n (n.id)}
+          <li class="note" class:off={!n.enabled} data-testid="note-row">
+            <div class="notehead meta faint">
+              <span>{new Date(n.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>
+              <span class="badge" data-testid="note-scope">{n.scope === 'standing' ? 'Standing' : 'About an item'}</span
+              >
+              {#if n.source === 'voice'}<span class="badge">Voice</span>{/if}
+              {#if n.itemTitle}<span class="truncate notetitle" title={n.itemTitle} data-testid="note-item"
+                  >{n.itemTitle}</span
+                >{/if}
+            </div>
+            <textarea
+              class="input notetext"
+              rows="2"
+              maxlength="1000"
+              aria-label="Note"
+              data-testid="note-text"
+              value={n.text}
+              onchange={(e) => {
+                const text = e.currentTarget.value.trim();
+                if (text && text !== n.text) void notes.patch(n.id, { text });
+                else e.currentTarget.value = n.text;
+              }}></textarea>
+            {#if noteContext(n)}<p class="meta faint">{noteContext(n)}</p>{/if}
+            <div class="noteacts">
+              <label class="check"
+                ><input
+                  type="checkbox"
+                  checked={n.enabled}
+                  data-testid="note-enabled"
+                  onchange={(e) => void notes.patch(n.id, { enabled: e.currentTarget.checked })}
+                />
+                <span>Tell the model</span></label
+              >
+              <button
+                class="btn ghost sm danger"
+                aria-label="Delete note"
+                data-testid="note-delete"
+                onclick={() => void notes.remove(n.id)}><Icon name="trash" size={14} /></button
+              >
+            </div>
+          </li>
+        {:else}
+          <li class="faint meta" data-testid="notes-empty">No notes yet.</li>
+        {/each}
+      </ul>
+    </section>
+
     <section class="panel sec" data-testid="settings-github">
       <h2>GitHub</h2>
       <p class="muted meta">
@@ -792,6 +877,60 @@
   .line {
     display: flex;
     gap: var(--s2);
+  }
+  .notes {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--s3);
+  }
+  .note {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s2);
+    padding-bottom: var(--s3);
+    border-bottom: 1px solid var(--border);
+    min-width: 0;
+  }
+  .note.off .notetext {
+    opacity: 0.6;
+  }
+  .notehead {
+    display: flex;
+    align-items: center;
+    gap: var(--s2);
+    min-width: 0;
+  }
+  .notetitle {
+    min-width: 0;
+    flex: 1;
+  }
+  .notetext {
+    width: 100%;
+    resize: vertical;
+    font: inherit;
+  }
+  .noteacts {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: var(--s3);
+  }
+  .check {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s2);
+    min-height: 32px;
+  }
+  @media (max-width: 899px) {
+    .notetext {
+      font-size: 16px;
+    }
+    .check {
+      min-height: 44px;
+    }
   }
   .grow {
     flex: 1;

@@ -12,10 +12,15 @@
 <!-- Advisory only: plain text, no click target, and nothing in the app reads it to decide anything. -->
 <span
   class:full
-  class="sug {suggestion.suspicious ? 'suspicious' : (suggestion.action ?? '')} conf-{suggestion.confidence}"
+  class="sug {suggestion.suspicious
+    ? 'suspicious'
+    : suggestion.turn === 'them'
+      ? 'them'
+      : (suggestion.action ?? '')} conf-{suggestion.confidence}"
   title={describe(suggestion)}
   data-testid={testid}
   data-action={suggestion.action ?? 'suspicious'}
+  data-turn={suggestion.turn ?? ''}
   data-confidence={suggestion.confidence}>{full ? describe(suggestion) : chipText(suggestion)}</span
 >
 

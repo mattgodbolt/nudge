@@ -33,7 +33,7 @@ const TITLES = [
  * A fake GitHub for demo mode and e2e: a fixed set of pull requests and issues spread over the last few days, plus
  * `tick()` to make a new pull request arrive. Deterministic given the clock.
  */
-export function createFakeGithubClient(now: () => number = Date.now) {
+export function createFakeGithubClient(now: () => number = Date.now, opts: { comments?: boolean } = {}) {
   const base = now();
   const items: GithubItemUpsert[] = [];
   let seq = 0;
@@ -61,7 +61,9 @@ export function createFakeGithubClient(now: () => number = Date.now) {
       updatedAt: created,
       sourceState: 'open',
       draft: false,
-      comments: 0,
+      // With `comments`, every other item has a thread: 2 comments end on the owner's (so it is waiting on someone
+      // else), 3 end on the maintainer's.
+      comments: opts.comments && i % 2 === 1 ? (i % 4 === 1 ? 2 : 3) : 0,
       // Several, with long names: the inbox row has to cope on a phone.
       labels: i % 4 === 0 ? ['bug', 'discussion', 'accessibility', 'good first issue'] : [],
       ...over,
@@ -100,6 +102,20 @@ export function createFakeGithubClient(now: () => number = Date.now) {
       },
       async latestCommenter() {
         return null;
+      },
+      async recentComments(repo, number, commentCount) {
+        // Deterministic: alternating the maintainer and the owner (who is "me" in demo mode), newest last.
+        const it = items.find((i) => i.repo === repo && i.number === number);
+        const t0 = Date.parse(it?.createdAt ?? new Date(base).toISOString());
+        const n = Math.min(commentCount, 4);
+        return Array.from({ length: n }, (_, k) => {
+          const mine = (commentCount - n + k) % 2 === 1;
+          return {
+            author: mine ? 'demo-owner' : 'alice-maintainer',
+            text: mine ? 'I will look at this properly soon.' : `Could you take another look at #${number}?`,
+            at: new Date(t0 + (k + 1) * 600_000).toISOString(),
+          };
+        });
       },
       async discussion(repo, number, kind) {
         const it = items.find((i) => i.repo === repo && i.number === number);

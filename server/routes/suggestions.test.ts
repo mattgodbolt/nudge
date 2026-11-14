@@ -87,6 +87,8 @@ describe('GET /api/inbox suggestions', () => {
       reason: 'Asks a direct question',
       confidence: 'high',
       suspicious: false,
+      turn: null,
+      nextStep: null,
     });
     expect(by.get(id(3))).toBeNull();
   });

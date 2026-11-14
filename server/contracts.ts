@@ -2,6 +2,7 @@
 // Owned by the lead; implementers must conform to these and ask before changing them.
 import type { UsageStore } from './db/usage.js';
 import type { SuggestionStore } from './db/suggestions.js';
+import type { NoteStore } from './db/notes.js';
 import type { ClientEventStore } from './db/events.js';
 import type {
   LabelApplyResult,
@@ -261,6 +262,8 @@ export interface Repo {
   usage: UsageStore;
   /** LLM suggestions (migration 011). */
   suggestions: SuggestionStore;
+  /** What the owner has told the assistant (migration 012). */
+  notes: NoteStore;
   /** Browser-reported decision/open events (POST /api/item-events). */
   clientEvents: ClientEventStore;
   /* --- Web Push (migration 006) --- */
@@ -398,7 +401,7 @@ export interface Repo {
    * Snooze (until = future ISO) or unsnooze (null) the given comments; only state 'inbox' comments are affected.
    * Snoozing clears wokeAt. triage(ids, 'inbox') also clears a snooze.
    */
-  snooze(ids: string[], until: string | null): SnoozeResult;
+  snooze(ids: string[], until: string | null, why?: string | null): SnoozeResult;
   undoSnooze(actionId: number): SnoozeResult;
   /** What the snooze-context lookup needs about GitHub items (other ids are skipped). */
   githubSnoozeContext(ids: string[]): GithubSnoozeItem[];
@@ -588,8 +591,10 @@ export interface GithubSearchPage {
 /** One thing the assistant decided to do. `due`/`until` are ISO 8601 instants (null: none given). */
 export type AssistantAction =
   | { type: 'add_todo'; title: string; notes: string; due: string | null }
-  | { type: 'snooze'; until: string }
-  | { type: 'done' };
+  | { type: 'snooze'; until: string; why: string | null }
+  | { type: 'done' }
+  /** Something the owner said about a suggestion, an item or a preference: stored verbatim, never acted on. */
+  | { type: 'note'; text: string; scope: 'item' | 'standing'; about: 'selected' | 'last_action' };
 export interface AssistantResult {
   actions: AssistantAction[];
   /** What the assistant said back, if anything (e.g. why it did nothing). */
@@ -614,7 +619,13 @@ export interface LlmClient {
    * "in 3 days" resolve in their own time zone. `selected` is the item the user has open, if any: "this" means it.
    */
   command(
-    input: { text: string; now: string; selected: { title: string | null; kind: string } | null },
+    input: {
+      text: string;
+      now: string;
+      selected: { title: string | null; kind: string } | null;
+      /** What the owner did most recently (within the hour), so "that" can mean it. */
+      recent?: { what: string; title: string | null; minutesAgo: number } | null;
+    },
     apiKey: string,
     model: string,
   ): Promise<AssistantResult>;
@@ -627,8 +638,25 @@ export interface GithubClient {
   search(q: string, page: number, token: string | null): Promise<GithubSearchPage>;
   /** Login of the newest comment on an issue or PR (given its comment count), or null. */
   latestCommenter(repo: string, number: number, commentCount: number, token: string | null): Promise<string | null>;
+  /**
+   * The newest few conversation comments of an issue or PR (given its comment count), oldest first, as plain text.
+   * At most two requests; throws GithubError. Empty when the count is zero.
+   */
+  recentComments(
+    repo: string,
+    number: number,
+    commentCount: number,
+    token: string | null,
+    limit?: number,
+  ): Promise<GithubRecentComment[]>;
   /** The conversation on an issue or PR (newest entries only), fetched live. Throws GithubError. */
   discussion(repo: string, number: number, kind: 'pr' | 'issue', token: string | null): Promise<GithubDiscussion>;
+}
+/** One conversation comment as the suggestion worker wants it. */
+export interface GithubRecentComment {
+  author: string;
+  text: string;
+  at: string;
 }
 /** What the client returns; the route adds `fetchedAt`. */
 export type GithubDiscussion = Omit<GithubDiscussionDTO, 'fetchedAt'>;
@@ -661,6 +689,8 @@ export interface AppDeps {
   githubClient?: GithubClient;
   /** The assistant (absent in tests that do not exercise it). */
   llm?: LlmClient;
+  /** The suggestion worker, so a note can ask for items to be looked at again (absent in tests that do not need it). */
+  suggest?: { notify(ids: string[]): void; kick(): void };
   resolveApiKey(): { key: string | null; source: 'env' | 'settings' | 'file' | null };
   demo: boolean;
   /** Short commit SHA of this server, shown in Settings. */

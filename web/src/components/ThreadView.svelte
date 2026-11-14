@@ -83,6 +83,9 @@
         {video?.channelTitle ?? ''}
         {#if video?.commentsDisabled}<span class="badge warn">Comments disabled</span>{/if}
       </div>
+      {#if item.snoozeWhy && item.comment.state === 'inbox'}
+        <div class="why faint" data-testid="thread-why">You snoozed this to: {item.snoozeWhy}</div>
+      {/if}
       {#if item.snoozedUntil || item.labels.length > 0 || woke || (ui.showSuggestions && item.suggestion)}
         <div class="tags">
           {#if item.snoozedUntil}
@@ -229,6 +232,12 @@
     padding: 0;
     background: none;
     margin-top: calc(var(--s1) * -1);
+  }
+  /* What he said he would do on return: quiet, but never cut off. */
+  .why {
+    font-size: var(--fs-meta);
+    font-style: italic;
+    overflow-wrap: anywhere;
   }
   .tags {
     display: flex;

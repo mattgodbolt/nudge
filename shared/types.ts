@@ -146,6 +146,10 @@ export interface SuggestionDTO {
   reason: string;
   confidence: 'low' | 'medium' | 'high';
   suspicious: boolean;
+  /** Whose move it is now, judged from the current thread; null when the model did not say. */
+  turn?: 'matt' | 'them' | 'nobody' | null;
+  /** One short sentence about what happens next ("review the proposed fix and merge"); null when none. */
+  nextStep?: string | null;
 }
 export type InboxOrder = 'newest' | 'oldest' | 'arrived' | 'source';
 export interface InboxItem {
@@ -168,6 +172,8 @@ export interface InboxItem {
   snoozedUntil: string | null;
   /** When the last snooze ended. Inbox ordering uses COALESCE(wokeAt, comment.publishedAt) so woken items resurface. */
   wokeAt: string | null;
+  /** Why the owner snoozed it, in his words: set while it is snoozed and after it wakes (null when he gave none). */
+  snoozeWhy: string | null;
   /** The current LLM suggestion, or null while there is none (no key, not classified yet, or a todo). */
   suggestion: SuggestionDTO | null;
 }
@@ -247,8 +253,44 @@ export interface GithubSettingsDTO {
 /** What the assistant did for one command: enough to describe it and to undo it. */
 export type AssistantOutcome =
   | { type: 'add_todo'; id: string; title: string; due: string | null }
-  | { type: 'snooze'; id: string; until: string; undoActionId: number | null }
+  | { type: 'snooze'; id: string; until: string; why: string | null; undoActionId: number | null }
+  | { type: 'note'; id: number; scope: NoteScope; text: string; itemId: string | null }
   | { type: 'done'; id: string; undoActionId: number | null };
+export type NoteScope = 'item' | 'standing';
+/** One thing the owner told the assistant. Everything but `text` and `enabled` is a snapshot taken at the time. */
+export interface NoteDTO {
+  id: number;
+  createdAt: string;
+  text: string;
+  /** What was first said, when the text has been edited since. */
+  originalText: string;
+  scope: NoteScope;
+  /** False: kept on record but no longer shown to the model. */
+  enabled: boolean;
+  source: 'voice' | 'text';
+  itemId: string | null;
+  itemTitle: string | null;
+  /** The suggestion that was showing for the item when the note was made. */
+  suggestion: {
+    verdict: string;
+    /** The verdict as the chip names it: reply, act, skip or spam. */
+    action: string;
+    turn: string | null;
+    nextStep: string | null;
+    reason: string;
+    confidence: string;
+  } | null;
+  /** The owner's latest action on the item in the hour before: what he did, and the why he gave. */
+  lastAction: { kind: 'state' | 'snooze'; to: string | null; at: string; why: string | null } | null;
+  context: {
+    provider: string;
+    kind: string;
+    container: string | null;
+    author: string | null;
+    comments: number | null;
+    lastCommenter: string | null;
+  } | null;
+}
 export interface AssistantResponse {
   outcomes: AssistantOutcome[];
   /** What the assistant said back (e.g. why it did nothing). */
@@ -400,6 +442,8 @@ export type ServerEvent =
     }
   /** Suggestions arrived or were replaced; a null value means the item no longer has one. Patch rows in place. */
   | { type: 'suggestions.changed'; suggestions: Record<string, SuggestionDTO | null> }
+  /** The owner's notes changed (made, edited, switched off or deleted): the full list, newest first. */
+  | { type: 'notes.changed'; notes: NoteDTO[] }
   | { type: 'sync.progress'; status: SyncStatus }
   | { type: 'sync.done'; summary: SyncRunSummary }
   | { type: 'quota.update'; quota: QuotaDTO }

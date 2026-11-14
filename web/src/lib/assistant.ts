@@ -25,7 +25,9 @@ export function whenLabel(iso: string): string {
 /** One line for the toast. */
 export function describeOutcome(o: AssistantOutcome): string {
   if (o.type === 'add_todo') return o.due ? `Todo: ${o.title} (${whenLabel(o.due)})` : `Todo: ${o.title}`;
-  if (o.type === 'snooze') return `Snoozed until ${whenLabel(o.until)}`;
+  if (o.type === 'snooze') return `Snoozed until ${whenLabel(o.until)}${o.why ? `: ${o.why}` : ''}`;
+  if (o.type === 'note')
+    return o.scope === 'standing' ? `Noted as a standing preference: ${o.text}` : `Noted: ${o.text}`;
   return 'Marked done';
 }
 

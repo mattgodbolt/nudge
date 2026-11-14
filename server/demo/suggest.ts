@@ -6,7 +6,28 @@ import type { Classification, EvalItem } from '../classify/types.js';
  * are stable. A question gets "reply", praise and banter "skip", GitHub pull requests "act" (low confidence for
  * drafts), and text that tries to instruct the classifier is reported as an injection attempt, as the real model does.
  */
-export function demoClassify(item: EvalItem): Classification {
+export function demoClassify(item: EvalItem, standingNotes: string[] = []): Classification {
+  const c: Classification = { ...demoVerdict(item), turn: null, nextStep: null };
+  if (c.injectionAttempt) return c;
+  const author = item.author?.toLowerCase();
+  if (author && standingNotes.some((n) => n.toLowerCase().includes(author))) {
+    return { ...c, confidence: 'high', reason: 'Matches one of your standing notes' };
+  }
+  // Thread state, as the real model is asked to judge it: his own note about the item first, then why he snoozed it,
+  // then who wrote last.
+  const note = item.ownerNotes?.[0];
+  if (note) return { ...c, turn: 'matt', nextStep: `Act on your note: ${note.slice(0, 40)}` };
+  if (item.snoozeNote) return { ...c, turn: 'matt', nextStep: item.snoozeNote };
+  const last = item.github?.recent?.at(-1);
+  if (last) {
+    return last.isMatt
+      ? { ...c, turn: 'them', nextStep: `Wait for ${item.github?.recent?.find((m) => !m.isMatt)?.author ?? 'a reply'}` }
+      : { ...c, turn: 'matt', nextStep: `Answer ${last.author}` };
+  }
+  return c;
+}
+
+function demoVerdict(item: EvalItem): Omit<Classification, 'turn' | 'nextStep'> {
   const t = `${item.title ?? ''} ${item.text}`;
   if (/ignore (all )?(previous|prior) instructions/i.test(t)) {
     return {
@@ -64,9 +85,9 @@ export function demoClassify(item: EvalItem): Classification {
 export function createDemoClassifier(): Classifier {
   return {
     model: 'demo',
-    async classify(item) {
+    async classify(item, ownerNotes) {
       return {
-        result: demoClassify(item),
+        result: demoClassify(item, ownerNotes),
         usage: { inputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, outputTokens: 0 },
       };
     },

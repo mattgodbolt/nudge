@@ -48,6 +48,9 @@
         <a href={it.containerUrl ?? '#'} target="_blank" rel="noopener noreferrer">{refLabel(it)}</a>
         · {it.kind === 'pr' ? 'Pull request' : 'Issue'}
       </div>
+      {#if item.snoozeWhy && item.comment.state === 'inbox'}
+        <div class="why faint" data-testid="thread-why">You snoozed this to: {item.snoozeWhy}</div>
+      {/if}
       {#if item.snoozedUntil || item.labels.length > 0 || woke || chips.length > 0 || (ui.showSuggestions && item.suggestion)}
         <div class="tags">
           {#each chips as chip (chip.text)}
@@ -179,6 +182,12 @@
   }
   .meta a {
     color: inherit;
+  }
+  /* What he said he would do on return: quiet, but never cut off. */
+  .why {
+    font-size: var(--fs-meta);
+    font-style: italic;
+    overflow-wrap: anywhere;
   }
   .tags {
     display: flex;

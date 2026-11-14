@@ -267,6 +267,26 @@ export function createGithubClient(opts: { fetch?: typeof fetch } = {}): GithubC
       return typeof last?.user?.login === 'string' ? last.user.login : null;
     },
 
+    async recentComments(repo, number, commentCount, token, limit = 5) {
+      if (commentCount < 1) return [];
+      const [owner, name] = repo.split('/');
+      const base = `/repos/${encodeURIComponent(owner ?? '')}/${encodeURIComponent(name ?? '')}/issues/${number}/comments`;
+      // Pages of `limit` counted from the oldest: the last page holds the newest comments, but may hold only one or
+      // two, so the page before it is read as well (never more than two requests).
+      const lastPage = Math.ceil(commentCount / limit);
+      const pageOf = async (page: number): Promise<Json[]> => {
+        const { body } = await call(`${base}?per_page=${limit}&page=${page}`, token);
+        return Array.isArray(body) ? body : [];
+      };
+      let raw = await pageOf(lastPage);
+      if (raw.length < Math.min(3, commentCount) && lastPage > 1) raw = [...(await pageOf(lastPage - 1)), ...raw];
+      return raw
+        .slice(-limit)
+        .map((c) => mapIssueComment(c))
+        .filter((e): e is GithubDiscussionEntry => e !== null)
+        .map((e) => ({ author: e.author, text: e.body, at: e.createdAt }));
+    },
+
     async discussion(repo, number, kind, token): Promise<GithubDiscussion> {
       const [owner, name] = repo.split('/');
       const base = `/repos/${encodeURIComponent(owner ?? '')}/${encodeURIComponent(name ?? '')}`;

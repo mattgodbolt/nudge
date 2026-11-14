@@ -153,6 +153,38 @@ describe('the client', () => {
   });
 });
 
+describe('recentComments', () => {
+  const c = (n: number) => ({
+    id: n,
+    user: { login: `u${n}` },
+    created_at: `2026-11-0${n}T00:00:00Z`,
+    body: `text ${n}`,
+  });
+  it('reads the last page of the comments, oldest first, in one request when it is full', async () => {
+    const { c: gh, seen } = client(() => json([c(1), c(2), c(3), c(4)]));
+    expect(await gh.recentComments('org/app', 7, 8, 't', 4)).toEqual([
+      { author: 'u1', text: 'text 1', at: '2026-11-01T00:00:00.000Z' },
+      { author: 'u2', text: 'text 2', at: '2026-11-02T00:00:00.000Z' },
+      { author: 'u3', text: 'text 3', at: '2026-11-03T00:00:00.000Z' },
+      { author: 'u4', text: 'text 4', at: '2026-11-04T00:00:00.000Z' },
+    ]);
+    expect(seen).toHaveLength(1);
+    expect(seen[0]!.url).toBe('https://api.github.com/repos/org/app/issues/7/comments?per_page=4&page=2');
+  });
+  it('reads the page before too when the last one holds only a comment or two, never more than two requests', async () => {
+    const { c: gh, seen } = client((url) => (url.endsWith('page=3') ? json([c(9)]) : json([c(5), c(6), c(7), c(8)])));
+    const got = await gh.recentComments('org/app', 7, 9, 't', 4);
+    expect(got.map((x) => x.author)).toEqual(['u6', 'u7', 'u8', 'u9']);
+    expect(seen.map((s) => s.url.split('?')[1])).toEqual(['per_page=4&page=3', 'per_page=4&page=2']);
+  });
+  it('is empty with no comments, makes no request, and treats a missing issue as empty', async () => {
+    const none = client(() => json([]));
+    expect(await none.c.recentComments('org/app', 7, 0, 't')).toEqual([]);
+    expect(none.seen).toHaveLength(0);
+    expect(await client(() => json({}, {}, 404)).c.recentComments('org/app', 7, 2, 't')).toEqual([]);
+  });
+});
+
 const user = { login: 'erin', avatar_url: 'https://a/e.png', type: 'User' };
 const cmt = (id: number, at: string, over: Record<string, unknown> = {}) => ({
   id,

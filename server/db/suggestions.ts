@@ -1,5 +1,5 @@
 import type { SuggestedAction, SuggestionDTO } from '../../shared/types.js';
-import type { Category, Confidence, EvalItem, Verdict } from '../classify/types.js';
+import type { Category, Confidence, EvalItem, Turn, Verdict } from '../classify/types.js';
 import type { Db } from './db.js';
 
 /** The classifier's verdict as the action the owner sees. Deliberately the only place the two vocabularies meet. */
@@ -25,6 +25,19 @@ export interface SuggestionRow {
   outputTokens: number;
   costUsd: number;
   createdAt: string;
+  /** Whose move it is and what comes next, as judged from the thread; null for rules and for older rows. */
+  turn?: Turn | null;
+  nextStep?: string | null;
+  /** The recent comments the model was shown, and the comment count they were fetched at (GitHub only). */
+  thread?: RecentComment[] | null;
+  threadCount?: number | null;
+}
+
+/** One of the last few comments on a GitHub item, trimmed for the model. */
+export interface RecentComment {
+  author: string;
+  isMatt: boolean;
+  text: string;
 }
 
 /** What the browser may see. A suspected injection attempt gets a warning and nothing else: never an action. */
@@ -33,15 +46,29 @@ export function suggestionDto(r: {
   confidence: Confidence;
   reason: string;
   injection: boolean;
+  turn?: string | null;
+  nextStep?: string | null;
 }): SuggestionDTO {
   if (r.injection) return { action: null, reason: '', confidence: 'low', suspicious: true };
-  return { action: ACTION_OF[r.verdict], reason: r.reason, confidence: r.confidence, suspicious: false };
+  const turn = r.turn === 'matt' || r.turn === 'them' || r.turn === 'nobody' ? r.turn : null;
+  return {
+    action: ACTION_OF[r.verdict],
+    reason: r.reason,
+    confidence: r.confidence,
+    suspicious: false,
+    turn,
+    nextStep: r.nextStep || null,
+  };
 }
 
 /** An inbox item as the worker needs it: the classifier's view of it, and the fingerprint stored for it, if any. */
 export interface SuggestionCandidate {
   item: EvalItem;
   storedKey: string | null;
+  /** GitHub only: where to fetch the recent comments from. */
+  target?: { repo: string; number: number };
+  /** GitHub only: the excerpt stored with the current suggestion, and the comment count it was fetched at. */
+  storedThread?: { count: number; recent: RecentComment[] } | null;
 }
 
 export interface SuggestionStore {
@@ -77,8 +104,8 @@ export function createSuggestions(db: Db, clock: () => Date = () => new Date()):
   function save(r: SuggestionRow): void {
     db.prepare(
       `INSERT OR REPLACE INTO suggestions (item_id, state_key, verdict, category, confidence, reason, injection_attempt,
-         model, prompt_version, input_tokens, output_tokens, cost_usd, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         model, prompt_version, input_tokens, output_tokens, cost_usd, created_at, turn, next_step, thread, thread_count)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
       r.itemId,
       r.stateKey,
@@ -93,6 +120,10 @@ export function createSuggestions(db: Db, clock: () => Date = () => new Date()):
       r.outputTokens,
       r.costUsd,
       r.createdAt,
+      r.turn ?? null,
+      r.nextStep ?? null,
+      r.thread ? JSON.stringify(r.thread) : null,
+      r.threadCount ?? null,
     );
   }
 
@@ -101,11 +132,14 @@ export function createSuggestions(db: Db, clock: () => Date = () => new Date()):
     if (ids.length === 0) return out;
     for (const r of db
       .prepare(
-        `SELECT item_id, verdict, confidence, reason, injection_attempt FROM suggestions
+        `SELECT item_id, verdict, confidence, reason, injection_attempt, turn, next_step FROM suggestions
           WHERE item_id IN (SELECT value FROM json_each(?))`,
       )
       .all(JSON.stringify(ids)) as Row[]) {
-      out.set(r.item_id, suggestionDto({ ...(r as any), injection: !!r.injection_attempt })); // eslint-disable-line @typescript-eslint/no-explicit-any
+      out.set(
+        r.item_id,
+        suggestionDto({ ...(r as any), injection: !!r.injection_attempt, nextStep: r.next_step }), // eslint-disable-line @typescript-eslint/no-explicit-any
+      );
     }
     return out;
   }
@@ -119,7 +153,8 @@ export function createSuggestions(db: Db, clock: () => Date = () => new Date()):
                 c.thread_id, c.parent_id, v.channel_title,
                 EXISTS (SELECT 1 FROM sources s WHERE s.kind = 'channel' AND s.is_own = 1 AND s.yt_id = v.channel_id)
                   AS own_channel,
-                s.state_key AS stored_key
+                s.state_key AS stored_key, s.thread AS stored_thread, s.thread_count AS stored_thread_count,
+                i.snooze_why, i.woke_at
            FROM items i
            LEFT JOIN comments c ON c.id = i.id
            LEFT JOIN videos v ON i.provider = 'youtube' AND v.id = i.container_key
@@ -134,8 +169,17 @@ export function createSuggestions(db: Db, clock: () => Date = () => new Date()):
     const threadStmt = db.prepare(
       'SELECT id, is_own, text_plain FROM comments WHERE thread_id = ? ORDER BY published_at, id',
     );
+    const notesStmt = db.prepare(
+      "SELECT text FROM notes WHERE item_id = ? AND scope = 'item' AND enabled = 1 ORDER BY id DESC LIMIT 3",
+    );
     return rows.map((r): SuggestionCandidate => {
+      const ownerNotes = (notesStmt.all(r.id) as { text: string }[]).map((n) => n.text);
+      // Only an item that came back from a snooze: an old note on one that was never snoozed again is not news.
+      const note =
+        typeof r.snooze_why === 'string' && r.snooze_why && r.woke_at ? { snoozeNote: cap(r.snooze_why, 200) } : {};
+      const extra = { ...note, ...(ownerNotes.length ? { ownerNotes } : {}) };
       const base = {
+        ...extra,
         id: r.id as string,
         kind: r.kind as string,
         container: cap(r.container_title ?? r.container_key, 140),
@@ -163,9 +207,24 @@ export function createSuggestions(db: Db, clock: () => Date = () => new Date()):
         };
       }
       const d = parseData(r.data);
+      const comments = typeof d.comments === 'number' ? d.comments : 0;
+      let stored: unknown = null;
+      try {
+        stored = r.stored_thread ? JSON.parse(r.stored_thread) : null;
+      } catch {
+        // unreadable excerpt: treated as none, so it is fetched again
+      }
+      const storedThread =
+        Array.isArray(stored) && typeof r.stored_thread_count === 'number'
+          ? { count: r.stored_thread_count as number, recent: stored as RecentComment[] }
+          : null;
       const last = typeof d.lastCommenter === 'string' && d.lastCommenter ? d.lastCommenter : null;
       return {
         storedKey: r.stored_key ?? null,
+        storedThread,
+        ...(comments > 0 && typeof d.number === 'number' && r.container_key
+          ? { target: { repo: r.container_key as string, number: d.number } }
+          : {}),
         item: {
           ...base,
           provider: 'github',
@@ -173,7 +232,7 @@ export function createSuggestions(db: Db, clock: () => Date = () => new Date()):
             association: d.association ?? null,
             authorType: d.authorType ?? null,
             labels: Array.isArray(d.labels) ? d.labels : [],
-            comments: typeof d.comments === 'number' ? d.comments : 0,
+            comments,
             draft: !!d.draft,
             sourceState: r.source_state ?? null,
             reason: r.reason ?? null,

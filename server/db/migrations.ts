@@ -351,4 +351,36 @@ CREATE TABLE suggestions (
   created_at TEXT NOT NULL);
 CREATE INDEX idx_suggestions_created ON suggestions(created_at);
 `,
+  /* 012 thread-aware suggestions, snooze "why", and the owner's notes */ `
+-- Suggestions gain whose turn it is, the next step, and the thread excerpt the model saw (with the comment count it was
+-- fetched at, so the GitHub call is made once per change). All nullable: older rows keep working and are asked again
+-- because the prompt version is part of the state key.
+ALTER TABLE suggestions ADD COLUMN turn TEXT;
+ALTER TABLE suggestions ADD COLUMN next_step TEXT;
+ALTER TABLE suggestions ADD COLUMN thread TEXT;
+ALTER TABLE suggestions ADD COLUMN thread_count INTEGER;
+
+-- Why the owner snoozed an item, in his words; shown back when it wakes and given to the suggestion prompt.
+ALTER TABLE items ADD COLUMN snooze_why TEXT;
+
+-- Everything the owner tells the assistant about a suggestion, an item or a preference. Deliberately no foreign key
+-- to items: a note outlives the item it was about. original_text keeps what was said even after the text is edited.
+-- suggestion / last_action / context are JSON snapshots taken when the note was made.
+CREATE TABLE notes (
+  id INTEGER PRIMARY KEY,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  text TEXT NOT NULL,
+  original_text TEXT NOT NULL,
+  scope TEXT NOT NULL CHECK (scope IN ('item','standing')),
+  enabled INTEGER NOT NULL DEFAULT 1,
+  source TEXT NOT NULL CHECK (source IN ('voice','text')),
+  item_id TEXT,
+  item_title TEXT,
+  suggestion TEXT,
+  last_action TEXT,
+  context TEXT);
+CREATE INDEX idx_notes_item ON notes(item_id);
+CREATE INDEX idx_notes_created ON notes(created_at);
+`,
 ];

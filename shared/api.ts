@@ -66,7 +66,8 @@ export const CLIENT_HEADER = 'X-Nudge';
  * GET    /api/threads/:threadId?focus=commentId -> ThreadDetail
  * POST   /api/triage {commentIds, to:'done'|'replied'|'inbox'} -> TriageResult
  * POST   /api/triage/:actionId/undo             -> TriageResult
- * POST   /api/snooze {commentIds, until: ISO|null} -> SnoozeResult. Only comments in state inbox change. `until` must be a
+ * POST   /api/snooze {commentIds, until: ISO|null, why?: string} -> SnoozeResult. `why` (max 200 chars, optional) is the
+ *                                                  owner's one-line reason, kept on the item and on the snooze event. Only comments in state inbox change. `until` must be a
  *                                                  future ISO time within a year (400 bad_until); null unsnoozes.
  * POST   /api/snooze/:actionId/undo             -> SnoozeResult (409 cannot_undo, as triage undo)
  * GET    /api/labels                            -> LabelDTO[]
@@ -100,6 +101,12 @@ export const CLIENT_HEADER = 'X-Nudge';
  *                                                  and tracks it as an isOwn channel source.
  * DELETE /api/settings/own-channels/:channelId  -> SettingsDTO. Un-marks the source isOwn; tracking continues.
  * POST   /api/settings/test-key {apiKey?}       -> {ok, message}
+ * GET    /api/notes                             -> NoteDTO[] (newest first)
+ * PATCH  /api/notes/:id {text?, scope?, enabled?} -> NoteDTO. `enabled: false` keeps the note on record but stops
+ *                                                  feeding it to the suggestion model.
+ * DELETE /api/notes/:id                         -> 204
+ * POST   /api/assistant {text, now, selectedId, via?: 'voice'|'text'} -> AssistantResponse (may record a note)
+ *   Note endpoints emit `notes.changed`.
  * GET    /api/events                            -> SSE; `event: <ServerEvent.type>`, `data: JSON(ServerEvent)`
  * GET    /api/auth/status                       -> GoogleAuthDTO
  * POST   /api/auth/start {}                     -> {url} (400 no_client); browser then navigates to url

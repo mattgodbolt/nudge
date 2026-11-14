@@ -41,6 +41,7 @@ import { createClientEvents, createEvents } from './events.js';
 import { createFeedsRepo, parseData } from './feeds.js';
 import { createTodosRepo } from './todos.js';
 import { createUsage } from './usage.js';
+import { createNotes } from './notes.js';
 import { createSuggestions, suggestionDto } from './suggestions.js';
 import { htmlToPlain } from './text.js';
 import { tierFor, unitsPerDay } from './tiers-lite.js';
@@ -918,7 +919,7 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
       t.total_reply_count AS t_total,
       EXISTS (SELECT 1 FROM drafts d WHERE d.item_id = i.id AND d.status = 'draft') AS has_draft,
       sg.verdict AS sg_verdict, sg.confidence AS sg_confidence, sg.reason AS sg_reason,
-      sg.injection_attempt AS sg_injection
+      sg.injection_attempt AS sg_injection, sg.turn AS sg_turn, sg.next_step AS sg_next_step, i.snooze_why
     FROM items i
     LEFT JOIN suggestions sg ON sg.item_id = i.id
     LEFT JOIN comments c ON c.id = i.id
@@ -970,12 +971,16 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
       labels,
       snoozedUntil: r.snoozed_until && r.snoozed_until > at ? r.snoozed_until : null,
       wokeAt: r.woke_at ?? null,
+      // Shown while snoozed and after it wakes; once the item has never been snoozed there is nothing to show.
+      snoozeWhy: r.snooze_why && (r.woke_at || (r.snoozed_until && r.snoozed_until > at)) ? r.snooze_why : null,
       suggestion: r.sg_verdict
         ? suggestionDto({
             verdict: r.sg_verdict,
             confidence: r.sg_confidence,
             reason: r.sg_reason,
             injection: !!r.sg_injection,
+            turn: r.sg_turn,
+            nextStep: r.sg_next_step,
           })
         : null,
     };
@@ -1290,14 +1295,25 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
   }
 
   /* ---------------- snooze ---------------- */
-  function snooze(ids: string[], until: string | null): SnoozeResult {
+  function snooze(ids: string[], until: string | null, why: string | null = null): SnoozeResult {
     return db.transaction(() => {
       const at = now();
       const target = until === null ? null : iso(until);
-      const get = db.prepare('SELECT state, snoozed_until, woke_at FROM items WHERE id = ?');
-      const set = db.prepare('UPDATE items SET snoozed_until = ?, woke_at = ? WHERE id = ?');
+      const get = db.prepare('SELECT state, snoozed_until, woke_at, snooze_why FROM items WHERE id = ?');
+      // Snoozing again replaces the old reason (or clears it when none is given); unsnoozing leaves it alone.
+      const set =
+        target === null
+          ? db.prepare('UPDATE items SET snoozed_until = ?, woke_at = ? WHERE id = ?')
+          : db.prepare('UPDATE items SET snoozed_until = ?, woke_at = ?, snooze_why = ? WHERE id = ?');
+      const newWhy = why?.trim() ? why.trim() : null;
       const changes: SnoozeResult['changes'] = [];
-      const stored: { commentId: string; from: string | null; fromWoke: string | null; to: string | null }[] = [];
+      const stored: {
+        commentId: string;
+        from: string | null;
+        fromWoke: string | null;
+        to: string | null;
+        fromWhy: string | null;
+      }[] = [];
       for (const id of new Set(ids)) {
         const r = get.get(id) as Row | undefined;
         if (!r || r.state !== 'inbox') continue;
@@ -1305,9 +1321,10 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
         const from: string | null = r.snoozed_until && r.snoozed_until > at ? r.snoozed_until : null;
         const fromWoke: string | null = r.woke_at ?? null;
         if (target === null ? from === null : from === target && fromWoke === null) continue;
-        set.run(target, target === null ? fromWoke : null, id);
+        if (target === null) set.run(target, fromWoke, id);
+        else set.run(target, null, newWhy, id);
         changes.push({ commentId: id, from, to: target });
-        stored.push({ commentId: id, from, fromWoke, to: target });
+        stored.push({ commentId: id, from, fromWoke, to: target, fromWhy: r.snooze_why ?? null });
       }
       if (changes.length === 0) return { actionId: null, changes, counts: counts() };
       const res = db
@@ -1322,7 +1339,7 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
           from: c.from,
           to: c.to,
           source: 'user',
-          meta: { actionId },
+          meta: { actionId, ...(newWhy && c.to !== null ? { why: newWhy } : {}) },
         });
       }
       return { actionId, changes, counts: counts() };
@@ -1359,16 +1376,18 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
         from: string | null;
         fromWoke: string | null;
         to: string | null;
+        fromWhy?: string | null;
       }[];
-      // Only restore comments still in the state this action left them in.
+      // Only restore comments still in the state this action left them in. Undoing a snooze brings back the reason
+      // the item had before it; undoing an unsnooze leaves the reason as it is.
       const restore = db.prepare(
-        `UPDATE items SET snoozed_until = ?, woke_at = ?
+        `UPDATE items SET snoozed_until = ?, woke_at = ?, snooze_why = CASE WHEN ? = 1 THEN ? ELSE snooze_why END
          WHERE id = ? AND state = 'inbox' AND snoozed_until IS ?`,
       );
       const changes: SnoozeResult['changes'] = [];
       const at = now();
       for (const c of stored) {
-        if (restore.run(c.from, c.fromWoke, c.commentId, c.to).changes) {
+        if (restore.run(c.from, c.fromWoke, c.to !== null ? 1 : 0, c.fromWhy ?? null, c.commentId, c.to).changes) {
           changes.push({ commentId: c.commentId, from: c.to, to: c.from });
           ev.record({
             itemId: c.commentId,
@@ -1773,6 +1792,7 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
     close: () => void db.close(),
     usage: createUsage(db, clock),
     suggestions: createSuggestions(db, clock),
+    notes: createNotes(db, clock),
     clientEvents: createClientEvents(db),
     listGoogleAccounts,
     upsertGoogleAccount,
