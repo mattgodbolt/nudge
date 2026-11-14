@@ -20,7 +20,9 @@ export function registerEventRoutes(app: FastifyInstance, deps: AppDeps, pingMs 
 
     const send = (e: ServerEvent) => res.write(`event: ${e.type}\ndata: ${JSON.stringify(e)}\n\n`);
     const unsubscribe = deps.bus.subscribe(send);
-    const ping = setInterval(() => res.write(': ping\n\n'), pingMs);
+    // A comment keeps proxies from closing an idle stream; the named event is what the page's watchdog listens for
+    // (EventSource never shows comments), so a stream that looks open but is dead gets noticed and reopened.
+    const ping = setInterval(() => res.write(': ping\n\nevent: ping\ndata: 1\n\n'), pingMs);
     let cleaned = false;
     const cleanup = () => {
       if (cleaned) return;

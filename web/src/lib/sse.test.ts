@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { dispatch } from './sse';
+import { STREAM_SILENT_MS, dispatch, streamIsSilent } from './sse';
 import { inbox } from './stores/inbox.svelte';
 import { labels } from './stores/labels.svelte';
 import { settings } from './stores/settings.svelte';
@@ -66,5 +66,12 @@ describe('sse dispatch', () => {
     dispatch({ type: 'suggestions.changed', suggestions: { a: null } });
     expect(inbox.items[0]!.suggestion).toBeNull();
     inbox.items = [];
+  });
+});
+
+describe('stream watchdog', () => {
+  it('calls the stream dead only after a long silence', () => {
+    expect(streamIsSilent(1000, 1000 + STREAM_SILENT_MS - 1)).toBe(false);
+    expect(streamIsSilent(1000, 1000 + STREAM_SILENT_MS)).toBe(true);
   });
 });

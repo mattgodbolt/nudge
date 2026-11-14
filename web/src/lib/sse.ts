@@ -75,6 +75,14 @@ export function dispatch(e: ServerEvent) {
 
 let current: { reconnect(): void } | null = null;
 
+/** The server sends a ping every 20s; this long without hearing anything means the stream is dead. */
+export const STREAM_SILENT_MS = 70_000;
+
+/** Pure so the policy is testable: has the stream been silent for too long? */
+export function streamIsSilent(lastHeardAt: number, now: number): boolean {
+  return now - lastHeardAt >= STREAM_SILENT_MS;
+}
+
 /**
  * Drop and reopen the event stream. A phone that has had the tab frozen in the background can hold a connection that
  * looks open but is dead, so no error ever fires; reopening is the only way to know.
@@ -87,10 +95,14 @@ export function reconnectEvents(): void {
 export function connectEvents(): () => void {
   let es: EventSource;
   let wasDown = false;
+  let lastHeardAt = Date.now();
   const open = () => {
     es = new EventSource('/api/events');
+    lastHeardAt = Date.now();
+    es.addEventListener('ping', () => (lastHeardAt = Date.now()));
     for (const type of TYPES) {
       es.addEventListener(type, (ev) => {
+        lastHeardAt = Date.now();
         try {
           dispatch(JSON.parse((ev as MessageEvent).data) as ServerEvent);
         } catch {
@@ -110,6 +122,13 @@ export function connectEvents(): () => void {
     };
   };
   open();
+  // A dead stream on a tab that is still in view never errors and never triggers the return-to-tab resync.
+  const watchdog = setInterval(() => {
+    if (document.hidden || !streamIsSilent(lastHeardAt, Date.now())) return;
+    me.reconnect();
+    void app.boot();
+    void inbox.refreshTop();
+  }, 15_000);
   const me = {
     reconnect() {
       es.close();
@@ -119,6 +138,7 @@ export function connectEvents(): () => void {
   };
   current = me;
   return () => {
+    clearInterval(watchdog);
     es.close();
     if (current === me) current = null;
   };
