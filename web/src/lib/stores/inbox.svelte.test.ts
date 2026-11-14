@@ -268,6 +268,18 @@ describe('InboxStore', () => {
     expect(store.counts.inbox).toBe(5);
     expect(ids()).toEqual(['c1', 'c2', 'c3', 'c4']);
   });
+
+  it('keeps every id once when a refreshed first page repeats one or overlaps the tail', async () => {
+    const dup = item(2);
+    fetchMock.mockImplementation((url: string) =>
+      url.startsWith('/api/inbox')
+        ? json({ items: [item(9), item(1), dup, item(2)], nextCursor: 'x', total: 5 })
+        : json({ error: 'nope', code: 'x' }, 404),
+    );
+    await store.refreshTop();
+    expect(ids().length).toBe(new Set(ids()).size);
+    expect(ids().slice(0, 3)).toEqual(['c9', 'c1', 'c2']);
+  });
 });
 
 describe('InboxStore snooze', () => {

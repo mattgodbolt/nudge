@@ -121,6 +121,27 @@
     };
   });
 
+  // For bug reports about overlapping rows: run `__nudgeDebugList()` in the dev tools console while it is wrong. If the
+  // keys are unique and each slot's recorded offset equals its painted one, the DOM is right and the fault is painting.
+  $effect(() => {
+    const w = window as unknown as { __nudgeDebugList?: () => unknown };
+    w.__nudgeDebugList = () => {
+      const keys = items.map((it, i) => (key ? key(it) : String(i)));
+      const slots = [...(viewport?.querySelectorAll<HTMLElement>('.slot') ?? [])].map((el) => ({
+        transform: el.style.transform,
+        top: Math.round(el.getBoundingClientRect().top),
+        text: (el.textContent ?? '').replace(/\s+/g, ' ').trim().slice(0, 60),
+      }));
+      const dupes = keys.filter((k, i) => keys.indexOf(k) !== i);
+      const out = { count: items.length, scrollTop, height, start, end, dupes, keys: keys.slice(start, end), slots };
+      console.log(JSON.stringify(out, null, 1));
+      return out;
+    };
+    return () => {
+      delete w.__nudgeDebugList;
+    };
+  });
+
   $effect(() => {
     if (onNearEnd && items.length > 0 && end >= items.length - 20) onNearEnd();
   });

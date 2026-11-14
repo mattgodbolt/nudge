@@ -277,7 +277,13 @@ export class InboxStore {
 
   /** Merge a freshly fetched first page into the loaded list without disturbing selection. */
   #mergeFirstPage(page: InboxPage) {
-    const fresh = page.items.filter((i) => !this.#inflight.has(i.comment.id));
+    // A repeated id would give VirtualList two rows with one key, and two slots drawn on top of each other.
+    const seen = new Set<string>();
+    const fresh = page.items.filter((i) => {
+      if (this.#inflight.has(i.comment.id) || seen.has(i.comment.id)) return false;
+      seen.add(i.comment.id);
+      return true;
+    });
     const freshIds = new Set(fresh.map((i) => i.comment.id));
     const last = page.nextCursor ? page.items[page.items.length - 1] : undefined;
     // Items beyond the fetched window are kept; everything inside it is replaced by the server's view.

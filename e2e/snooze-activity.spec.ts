@@ -274,6 +274,58 @@ test('the button is hidden without a key, and for a bucket that is not waiting o
   await expect(page.getByTestId('nudge-draft')).toHaveCount(0);
 });
 
+/** Every row in the list is in a slot of its own: no two slots overlap, and no item is listed twice. */
+async function expectCleanList(page: Page) {
+  const rows = await page.getByTestId('inbox-row').evaluateAll((els) =>
+    els.map((el) => {
+      const r = el.getBoundingClientRect();
+      return { id: el.getAttribute('data-id') ?? el.textContent, top: r.top, bottom: r.bottom };
+    }),
+  );
+  rows.sort((a, b) => a.top - b.top);
+  for (let i = 1; i < rows.length; i++)
+    expect(rows[i]!.top, 'rows overlap').toBeGreaterThanOrEqual(rows[i - 1]!.bottom - 1);
+  const slots = await page
+    .locator('[role=listbox] .slot')
+    .evaluateAll((els) => els.map((e) => (e as HTMLElement).style.transform));
+  expect(new Set(slots).size, 'two slots at the same offset').toBe(slots.length);
+  const dbg = await page.evaluate(() =>
+    (window as unknown as { __nudgeDebugList: () => { dupes: string[] } }).__nudgeDebugList(),
+  );
+  expect(dbg.dupes).toEqual([]);
+}
+
+test('waking a snoozed item while the list is not at the top, then pressing . leaves one clean list', async ({
+  page,
+  request,
+}) => {
+  const woken = take(5);
+  const other = take(6);
+  for (const r of [woken, other]) {
+    await snoozeVia(request, r.comment.id, { untilActivity: true, bucket: 'waiting_on_them', why: 'waiting' });
+  }
+  await page.goto('/inbox');
+  await expect(page.getByTestId('inbox-row').first()).toBeVisible();
+  for (let i = 0; i < 3; i++) await page.keyboard.press('j'); // off the top, so arrivals queue behind the pill
+  await expectCleanList(page);
+  expect((await request.post('/api/demo/advance', { headers: H, data: { days: 8 } })).ok()).toBe(true);
+  await expect(page.getByTestId('new-pill')).toBeVisible();
+  await page.keyboard.press('.');
+  await expect(page.getByTestId('new-pill')).toBeHidden();
+  await expect(page.getByTestId('inbox-row').first()).toBeVisible();
+  await page.waitForTimeout(400);
+  await expectCleanList(page);
+  const ids = await page.getByTestId('inbox-row').evaluateAll((els) => els.map((e) => e.textContent));
+  expect(new Set(ids).size).toBe(ids.length);
+  // The open thread shows only the selected row's title.
+  const sel = await page
+    .locator('[data-testid=inbox-row][aria-selected=true], [data-testid=inbox-row].selected')
+    .first()
+    .textContent();
+  expect(sel).toBeTruthy();
+  await expect(page.getByTestId('thread-view')).toHaveCount(1);
+});
+
 test.describe('on a phone', () => {
   test.use({ viewport: { width: 390, height: 844 }, hasTouch: true });
   const noSideScroll = async (page: Page) =>
