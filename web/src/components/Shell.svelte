@@ -7,11 +7,13 @@
   import { router } from '../lib/router.svelte';
   import { until } from '../lib/format';
   import Sidebar from './Sidebar.svelte';
+  import UpdateBanner from './UpdateBanner.svelte';
   import Toasts from './Toasts.svelte';
   import CommandPalette from './CommandPalette.svelte';
   import HelpOverlay from './HelpOverlay.svelte';
   import SnoozeMenu from './SnoozeMenu.svelte';
   import MuteMenu from './MuteMenu.svelte';
+  import MoreMenu from './MoreMenu.svelte';
   import Assistant from './Assistant.svelte';
   import { assistant } from '../lib/stores/assistant.svelte';
   import LabelPicker from './LabelPicker.svelte';
@@ -52,6 +54,7 @@
         )}.
       </div>
     {/if}
+    <UpdateBanner />
     <div class="content">{@render children()}</div>
   </main>
 </div>
@@ -61,6 +64,7 @@
 <HelpOverlay />
 <SnoozeMenu />
 <MuteMenu />
+<MoreMenu />
 <Assistant />
 {#if !assistant.open}
   <button

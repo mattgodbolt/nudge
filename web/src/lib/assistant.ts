@@ -28,6 +28,7 @@ export function describeOutcome(o: AssistantOutcome): string {
   if (o.type === 'snooze') return `Snoozed until ${whenLabel(o.until)}${o.why ? `: ${o.why}` : ''}`;
   if (o.type === 'note')
     return o.scope === 'standing' ? `Noted as a standing preference: ${o.text}` : `Noted: ${o.text}`;
+  if (o.type === 'dismissed') return 'Marked no action needed';
   return 'Marked done';
 }
 

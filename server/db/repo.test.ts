@@ -314,6 +314,43 @@ describe('triage and undo', () => {
     expect(repo.triage(['a'], 'done').changes).toEqual([]);
     expect(repo.triage(['nope'], 'done').changes).toEqual([]);
   });
+  it('dismisses as done with a reason, and plain done carries none', () => {
+    const r = repo.triage(['a', 'b'], 'done', 'no_action');
+    expect(r.changes).toEqual([
+      { commentId: 'a', from: 'inbox', to: 'done' },
+      { commentId: 'b', from: 'inbox', to: 'done' },
+    ]);
+    expect(r.counts).toMatchObject({ inbox: 1, done: 2 });
+    expect(repo.getComment('a')).toMatchObject({ state: 'done', doneReason: 'no_action' });
+    repo.triage(['c'], 'done');
+    expect(repo.getComment('c')!.doneReason).toBeUndefined();
+    const listed = repo.listInbox({ view: 'done' }).items.map((i) => [i.comment.id, i.comment.doneReason]);
+    expect(listed).toEqual(
+      expect.arrayContaining([
+        ['a', 'no_action'],
+        ['c', undefined],
+      ]),
+    );
+    // Same state, different record: a real change, so the reason can be corrected in place.
+    expect(repo.triage(['a'], 'done', 'no_action').changes).toEqual([]);
+    expect(repo.triage(['a'], 'done').changes).toEqual([{ commentId: 'a', from: 'done', to: 'done' }]);
+    expect(repo.getComment('a')!.doneReason).toBeUndefined();
+  });
+  it('clears the reason when an item leaves done, and undo puts it back', () => {
+    repo.triage(['a'], 'done', 'no_action');
+    const back = repo.triage(['a'], 'inbox');
+    expect(repo.getComment('a')).toMatchObject({ state: 'inbox' });
+    expect(repo.getComment('a')!.doneReason).toBeUndefined();
+    repo.undo(back.actionId);
+    expect(repo.getComment('a')).toMatchObject({ state: 'done', doneReason: 'no_action' });
+  });
+  it('undoing a dismissal leaves no reason behind', () => {
+    const r = repo.triage(['a'], 'done', 'no_action');
+    repo.undo(r.actionId);
+    repo.triage(['a'], 'done');
+    expect(repo.getComment('a')).toMatchObject({ state: 'done' });
+    expect(repo.getComment('a')!.doneReason).toBeUndefined();
+  });
   it('undo restores previous states', () => {
     repo.triage(['a'], 'replied');
     const r = repo.triage(['b', 'c'], 'done');

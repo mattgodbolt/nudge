@@ -15,6 +15,7 @@ const ALL_VIA: readonly UsageVia[] = ['kbd', 'btn', 'touch', 'palette'];
 /** Actions the owner invokes, and the ways each can be invoked. Keys are `<action>.<via>`. */
 export const USAGE_ACTIONS = {
   done: ALL_VIA,
+  dismissed: ALL_VIA, // "no action needed": done, recorded as a dismissal
   replied: ALL_VIA,
   inbox: ALL_VIA, // move back to the inbox / unsnooze
   snooze: ALL_VIA, // opening the snooze menu

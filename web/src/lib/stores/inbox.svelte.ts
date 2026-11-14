@@ -1,11 +1,13 @@
 import type {
   CommentState,
+  DoneReason,
   Counts,
   InboxItem,
   InboxOrder,
   InboxView,
   ServerEvent,
   SuggestionDTO,
+  TriageTarget,
 } from '../../../../shared/types';
 import type { InboxPage, SuggestionFilter } from '../../../../shared/api';
 import { api } from '../api';
@@ -389,10 +391,21 @@ export class InboxStore {
   }
 
   /** Triage `ids` (e.g. a row's own quick action), defaulting to the multi-selection or the cursor row. */
-  triage(to: 'done' | 'replied' | 'inbox', only?: string[]): Promise<boolean> {
+  triage(to: TriageTarget, only?: string[]): Promise<boolean> {
     const ids = this.targetIds(only);
-    const message = to === 'done' ? 'Marked done' : to === 'replied' ? 'Marked replied' : 'Moved back to inbox';
-    return this.applyOptimistic(ids, to, () => api.triage(ids, to), {
+    const message =
+      to === 'done'
+        ? 'Marked done'
+        : to === 'dismissed'
+          ? 'Marked no action needed'
+          : to === 'replied'
+            ? 'Marked replied'
+            : 'Moved back to inbox';
+    // A dismissal is a done item with a reason, everywhere but the wire's `to`.
+    const state: CommentState = to === 'dismissed' ? 'done' : to;
+    return this.applyOptimistic(ids, state, () => api.triage(ids, to), {
+      reason: to === 'dismissed' ? 'no_action' : null,
+      decision: to,
       message: ids.length > 1 ? `${ids.length} items: ${message.toLowerCase()}` : message,
     });
   }
@@ -405,14 +418,32 @@ export class InboxStore {
     ids: string[],
     to: CommentState,
     request: () => Promise<{ actionId: number; counts?: Counts }>,
-    opts: { message?: string | null; onError?: (e: unknown) => void } = {},
+    opts: {
+      message?: string | null;
+      onError?: (e: unknown) => void;
+      /** Why it is done ('no_action' = dismissed); only meaningful when `to` is 'done'. */
+      reason?: DoneReason | null;
+      /** What to record as the decision when it differs from the state ('dismissed'). */
+      decision?: string;
+    } = {},
   ): Promise<boolean> {
     const wanted = new Set(ids);
+    const reason = to === 'done' ? (opts.reason ?? null) : null;
     const changes: Change[] = this.items
-      .filter((i) => wanted.has(i.comment.id) && i.comment.state !== to)
-      .map((before) => ({ before, after: { ...before, comment: { ...before.comment, state: to } } }));
+      .filter(
+        (i) =>
+          wanted.has(i.comment.id) &&
+          (i.comment.state !== to || (to === 'done' && (i.comment.doneReason ?? null) !== reason)),
+      )
+      .map((before) => {
+        const { doneReason: _old, ...rest } = before.comment;
+        return {
+          before,
+          after: { ...before, comment: { ...rest, state: to, ...(reason ? { doneReason: reason } : {}) } },
+        };
+      });
     this.#decide(
-      to,
+      opts.decision ?? to,
       changes.map((c) => c.before.comment.id),
     );
     return this.#commit(changes, 'triage', request, opts);

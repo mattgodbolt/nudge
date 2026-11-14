@@ -2,17 +2,20 @@
   import { untrack } from 'svelte';
   import type { InboxItem } from '../../../shared/types';
   import { usage } from '../lib/usage';
+  import { stateLabel } from '../lib/itemState';
   import { decisions } from '../lib/decisions';
   import { relativeTime } from '../lib/format';
   import { phone } from '../lib/phone.svelte';
   import { formatSnoozeTime, recentlyWoken } from '../lib/snooze';
   import { inbox } from '../lib/stores/inbox.svelte';
   import { ui } from '../lib/stores/ui.svelte';
-  import ActionButton from './ActionButton.svelte';
+  import ItemActions from './ItemActions.svelte';
   import Icon from './Icon.svelte';
   import LabelChips from './LabelChips.svelte';
 
   let { item, now }: { item: InboxItem; now: number } = $props();
+  /** "Done", "Dismissed" ... once the item is dealt with; empty while it is in the inbox. */
+  const stateText = $derived(stateLabel(item.comment));
   // Each thread is mounted once per open (the parent keys on it), so this counts opens, not renders.
   usage.count('view.todo_thread');
   // Opened now, closed when this thread unmounts or another item takes its place; dwell is measured in between.
@@ -24,11 +27,10 @@
   );
 
   const it = $derived(item.item);
-  const tile = $derived(phone.value);
   // Four buttons are small enough to share the title row in a roomy pane; otherwise they take a row of their own
   // rather than squeezing the title into a narrow column.
   let headerWidth = $state(1000);
-  const inline = $derived(headerWidth >= 900);
+  const inline = $derived(headerWidth >= 1500);
   const woke = $derived(!item.snoozedUntil && item.comment.state === 'inbox' && recentlyWoken(item.wokeAt, now));
   const raw = $derived(it.todo?.raw ?? '');
   // Show what was said only when the assistant changed it.
@@ -46,8 +48,9 @@
       {#if item.snoozeWhy && item.comment.state === 'inbox'}
         <div class="why faint" data-testid="thread-why">You snoozed this to: {item.snoozeWhy}</div>
       {/if}
-      {#if item.snoozedUntil || item.labels.length > 0 || woke}
+      {#if item.snoozedUntil || item.labels.length > 0 || woke || stateText}
         <div class="tags">
+          {#if stateText}<span class="badge" data-testid="thread-state">{stateText}</span>{/if}
           {#if item.snoozedUntil}
             <span class="snz" data-testid="thread-snoozed"
               >⏰ Due {formatSnoozeTime(item.snoozedUntil, new Date(now))}</span
@@ -59,62 +62,7 @@
         </div>
       {/if}
     </div>
-    <div class="actions" class:own-row={!inline} role="toolbar" aria-label="Item actions" data-testid="thread-actions">
-      <ActionButton
-        id="triage.done"
-        label="Done"
-        icon="check"
-        showLabel={!tile && headerWidth >= 420}
-        {tile}
-        testid="act-done"
-      />
-      {#if item.snoozedUntil}
-        <ActionButton
-          id="triage.inbox"
-          label="Unsnooze"
-          icon="inbox"
-          showLabel={!tile && headerWidth >= 420}
-          {tile}
-          testid="act-unsnooze"
-        />
-      {:else if item.comment.state !== 'inbox'}
-        <ActionButton
-          id="triage.inbox"
-          label="Move back to inbox"
-          short="Inbox"
-          icon="inbox"
-          showLabel={!tile && headerWidth >= 420}
-          {tile}
-          testid="act-inbox"
-        />
-      {:else}
-        <ActionButton
-          id="snooze.open"
-          label="Snooze"
-          icon="clock"
-          showLabel={!tile && headerWidth >= 420}
-          {tile}
-          testid="act-snooze"
-        />
-      {/if}
-      <ActionButton
-        id="label.open"
-        label="Label"
-        icon="tag"
-        showLabel={!tile && headerWidth >= 420}
-        {tile}
-        testid="act-label"
-      />
-      <ActionButton
-        id="triage.undo"
-        label="Undo"
-        icon="undo"
-        showLabel={!tile && headerWidth >= 420}
-        {tile}
-        disabled={inbox.undoDepth === 0}
-        testid="act-undo"
-      />
-    </div>
+    <ItemActions {item} width={headerWidth} ownRow={!inline} label="Item actions" />
   </header>
 
   <div class="scroll">
@@ -184,16 +132,6 @@
     align-items: center;
     margin-top: 4px;
   }
-  .actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--s1);
-    flex: none;
-    max-width: 100%;
-  }
-  .actions.own-row {
-    flex-basis: 100%;
-  }
   .scroll {
     flex: 1;
     min-height: 0;
@@ -211,11 +149,6 @@
   }
   .hint {
     margin: 0;
-  }
-  @media (max-width: 899px) {
-    .actions {
-      width: 100%;
-    }
   }
   .notes {
     white-space: pre-wrap;

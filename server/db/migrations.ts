@@ -396,4 +396,10 @@ INSERT INTO mute_rules_new (id, kind, value, created_at) SELECT id, kind, value,
 DROP TABLE mute_rules;
 ALTER TABLE mute_rules_new RENAME TO mute_rules;
 `,
+  /* 014 done_reason: "no action needed" is a kind of done */ `
+-- A dismissal ("nothing for me to do") behaves exactly like done everywhere (same state, leaves the inbox, comes back on
+-- new activity), so the state stays 'done' and only this column records why. NULL = done in the ordinary sense, which is
+-- also what every row from before this migration means. Only meaningful while state = 'done'; triage sets and clears it.
+ALTER TABLE items ADD COLUMN done_reason TEXT CHECK (done_reason IS NULL OR done_reason IN ('no_action'));
+`,
 ];

@@ -1,6 +1,7 @@
 import { app } from './stores/app.svelte';
 import { inbox } from './stores/inbox.svelte';
 import { toasts } from './stores/toasts.svelte';
+import { buildChanged, entryScript } from '../../../shared/build';
 import { reconnectEvents } from './sse';
 
 /** A tab hidden for less than this is assumed to have kept up with the event stream. */
@@ -11,15 +12,11 @@ export function shouldResyncOnReturn(hiddenAt: number | null, now: number): bool
   return hiddenAt !== null && now - hiddenAt >= STALE_AFTER_MS;
 }
 
-/** The hashed entry script named in an index.html, e.g. /assets/index-AbC123.js (absent in dev). */
-export function entryScript(html: string): string | null {
-  return /<script[^>]+src="(\/assets\/index-[\w-]+\.js)"/.exec(html)?.[1] ?? null;
-}
+export { entryScript };
 
 /** True when the server is now serving a different build than the one this page loaded. */
 export function newBuildAvailable(serverHtml: string, loadedSrc: string | null): boolean {
-  const served = entryScript(serverHtml);
-  return served !== null && loadedSrc !== null && served !== loadedSrc;
+  return buildChanged(entryScript(serverHtml), loadedSrc);
 }
 
 async function reloadIfOutdated(): Promise<boolean> {

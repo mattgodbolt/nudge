@@ -72,7 +72,8 @@ export const CLIENT_HEADER = 'X-Nudge';
  * GET    /api/bootstrap                         -> Bootstrap
  * GET    /api/inbox?view&sourceId&videoId&q&cursor&limit -> InboxPage
  * GET    /api/threads/:threadId?focus=commentId -> ThreadDetail
- * POST   /api/triage {commentIds, to:'done'|'replied'|'inbox'} -> TriageResult
+ * POST   /api/triage {commentIds, to:'done'|'dismissed'|'replied'|'inbox'} -> TriageResult
+ *          ('dismissed' = "no action needed": state 'done' with doneReason 'no_action')
  * POST   /api/triage/:actionId/undo             -> TriageResult
  * POST   /api/snooze {commentIds, until: ISO|null, why?: string} -> SnoozeResult. `why` (max 200 chars, optional) is the
  *                                                  owner's one-line reason, kept on the item and on the snooze event. Only comments in state inbox change. `until` must be a

@@ -178,6 +178,14 @@ Notes:
 | `g i`, `g d`, `g a`, `g s`, `g t`, `g ,` | go to Inbox, Done, All, Sources, Stats, Settings | `Ctrl+K`    | command palette                      |
 | `g z`                                    | go to Snoozed                                    | `g l`       | go to label… (picker)                |
 | `Shift+O`                                | cycle sort order                                 | `c`         | tell Nudge… (todos, voice commands)  |
+| `n`                                      | no action needed (done, recorded as dismissed)   |             |                                      |
+
+**No action needed** (`n`) is Done for "there is nothing for me here": the item leaves the inbox and returns on new
+activity exactly as Done does, but it is recorded (and shown in All as "Dismissed") apart from the things you did, so
+the habits report can tell whether a "skip" suggestion was right. The open item's toolbar puts the decisions (Done, No
+action, Replied, Snooze) first and the tools (Label, Mute, Undo, Open) in a small icon cluster; the button the current
+suggestion points at wears a faint ring. When a new version has been deployed, a quiet "New version available · Reload"
+bar appears; it never reloads by itself.
 
 Snoozing hides a comment until the time you pick; it returns to the top of the Inbox (a "back from snooze" marker
 shows for a day), and `z` undoes it. In the Snoozed view `Shift+U` unsnoozes. Labels (managed in Settings) are

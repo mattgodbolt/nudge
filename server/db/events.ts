@@ -31,6 +31,10 @@ import { ACTION_OF } from './suggestions.js';
  *  - open:         the owner opened the item's detail. to_value is the view it was opened from; meta: { input,
  *                  dwellMs? } where dwellMs is how long it stayed open (sent on close, dropped under 300 ms).
  *
+ * A user state event to `done` carries `meta.reason`: 'done' (he dealt with it) or 'no_action' ("no action needed", a
+ * dismissal; the stored state is still `done`, with items.done_reason = 'no_action'). A done event with no `reason` was
+ * written before dismissals existed and may have meant either. The decision event's `to` is 'dismissed' for the latter.
+ *
  * The owner's own actions (source `user`, kinds state/snooze/reply/decision) also carry `suggested` ('reply' | 'act' |
  * 'skip' | 'spam') and `suggestedConfidence` (and `suggestedTurn`, when the model said whose move it was) in meta when the item had an LLM suggestion at that moment, so the hit rate
  * can be measured later. Items with no suggestion, or one flagged as an injection attempt, get neither key.

@@ -13,6 +13,7 @@ import type {
   GoogleAuthDTO,
   CommentDTO,
   CommentState,
+  DoneReason,
   Counts,
   ImportMode,
   InboxItem,
@@ -399,7 +400,8 @@ export interface Repo {
   listInbox(q: InboxQuery): InboxPage;
   getThread(threadId: string): ThreadDetail | null;
   getComment(id: string): CommentDTO | null;
-  triage(ids: string[], to: CommentState): TriageResult;
+  /** `reason` only applies to 'done' ('no_action' = dismissed); it is stored and undone with the state. */
+  triage(ids: string[], to: CommentState, reason?: DoneReason | null): TriageResult;
   undo(actionId: number): TriageResult;
   /**
    * Snooze (until = future ISO) or unsnooze (null) the given comments; only state 'inbox' comments are affected.
@@ -597,6 +599,8 @@ export type AssistantAction =
   | { type: 'add_todo'; title: string; notes: string; due: string | null }
   | { type: 'snooze'; until: string; why: string | null }
   | { type: 'done' }
+  /** "No action needed": done, recorded as a dismissal. */
+  | { type: 'dismiss' }
   /** Something the owner said about a suggestion, an item or a preference: stored verbatim, never acted on. */
   | { type: 'note'; text: string; scope: 'item' | 'standing'; about: 'selected' | 'last_action' };
 export interface AssistantResult {
@@ -709,6 +713,8 @@ export interface AppDeps {
   /** Demo mode only: force new comments to appear. */
   demoTick?: () => void;
   staticDir?: string;
+  /** The id of the web build being served (see shared/build.ts); null when there is none. Sent in every ping. */
+  buildId?: () => string | null;
 }
 export type { QuotaDTO, SettingsDTO, InboxItem };
 

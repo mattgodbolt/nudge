@@ -2,6 +2,7 @@
 import type {
   CommentDTO,
   CommentState,
+  DoneReason,
   Counts,
   ImportMode,
   InboxItem,
@@ -84,6 +85,11 @@ function iso(s: string): string {
   return Number.isNaN(d.getTime()) ? s : d.toISOString();
 }
 
+/** A dismissal's marker, only while the item is actually done (the column is cleared on triage, but be safe). */
+function doneReasonOf(r: Row): { doneReason?: DoneReason } {
+  return r.state === 'done' && r.done_reason === 'no_action' ? { doneReason: 'no_action' } : {};
+}
+
 function commentDto(r: Row): CommentDTO {
   return {
     id: r.id,
@@ -101,6 +107,7 @@ function commentDto(r: Row): CommentDTO {
     isOwn: !!r.is_own,
     state: r.state,
     stateSource: r.state_source,
+    ...doneReasonOf(r),
     permalink: permalink(r.video_id, r.id),
     postedByApp: !!r.posted_by_app,
   };
@@ -913,7 +920,7 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
   const INBOX_SELECT = `SELECT c.*, i.id AS item_id, i.provider, i.kind, i.title AS i_title, i.author AS i_author,
       i.author_avatar_url AS i_avatar, i.is_own AS i_own, i.body_plain, i.url AS i_url, i.container_key,
       i.container_title, i.source_state, i.reason, i.muted, i.data, i.occurred_at,
-      i.state, i.state_source, i.state_changed_at, i.snoozed_until, i.woke_at, i.first_seen_at AS arrived_at,
+      i.state, i.state_source, i.done_reason, i.state_changed_at, i.snoozed_until, i.woke_at, i.first_seen_at AS arrived_at,
       v.title AS v_title, v.thumbnail_url AS v_thumb,
       p.id AS p_id, p.author_name AS p_author, p.text_plain AS p_text, p.is_own AS p_own,
       t.total_reply_count AS t_total,
@@ -955,6 +962,7 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
           isOwn: !!r.i_own,
           state: r.state,
           stateSource: r.state_source,
+          ...doneReasonOf(r),
           permalink: r.i_url ?? '',
           postedByApp: false,
         };
@@ -1128,7 +1136,7 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
     const v = db.prepare(`${VIDEO_SELECT} WHERE v.id = ?`).get(t.video_id) as Row;
     const rows = db
       .prepare(
-        `SELECT comments.*, i.state, i.state_source,
+        `SELECT comments.*, i.state, i.state_source, i.done_reason,
            (SELECT 1 FROM reply_posts rp WHERE rp.posted_comment_id = comments.id AND rp.status = 'posted') IS NOT NULL AS posted_by_app
          FROM comments JOIN items i ON i.id = comments.id WHERE thread_id = ?
          ORDER BY (parent_id IS NOT NULL), published_at, comments.id`,
@@ -1146,7 +1154,7 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
   function getComment(id: string): CommentDTO | null {
     const r = db
       .prepare(
-        `SELECT comments.*, i.state, i.state_source,
+        `SELECT comments.*, i.state, i.state_source, i.done_reason,
            (SELECT 1 FROM reply_posts rp WHERE rp.posted_comment_id = comments.id AND rp.status = 'posted') IS NOT NULL AS posted_by_app
          FROM comments JOIN items i ON i.id = comments.id WHERE comments.id = ?`,
       )
@@ -1222,13 +1230,17 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
   }
 
   /* ---------------- triage ---------------- */
-  function triage(ids: string[], to: CommentState): TriageResult {
+  function triage(ids: string[], to: CommentState, reason: DoneReason | null = null): TriageResult {
+    // A reason only qualifies 'done'; any other target clears it.
+    const newReason = to === 'done' ? reason : null;
     return db.transaction(() => {
       const at = now();
-      const get = db.prepare('SELECT state, state_source, snoozed_until FROM items WHERE id = ?');
-      const set = db.prepare("UPDATE items SET state = ?, state_source = 'user', state_changed_at = ? WHERE id = ?");
+      const get = db.prepare('SELECT state, state_source, done_reason, snoozed_until FROM items WHERE id = ?');
+      const set = db.prepare(
+        "UPDATE items SET state = ?, state_source = 'user', state_changed_at = ?, done_reason = ? WHERE id = ?",
+      );
       const changes: { commentId: string; from: CommentState; to: CommentState }[] = [];
-      const stored: { commentId: string; from: CommentState; fromSource: string }[] = [];
+      const stored: { commentId: string; from: CommentState; fromSource: string; fromReason: string | null }[] = [];
       const woken: { id: string; from: string }[] = [];
       // Moving something back to the inbox must show it, so it also loses any snooze (even if already in 'inbox').
       const unsnooze = db.prepare('UPDATE items SET snoozed_until = NULL WHERE id = ? AND snoozed_until IS NOT NULL');
@@ -1236,10 +1248,17 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
         const r = get.get(id) as Row | undefined;
         if (!r || r.state === 'own') continue;
         if (to === 'inbox' && unsnooze.run(id).changes > 0) woken.push({ id, from: r.snoozed_until });
-        if (r.state === to) continue;
-        set.run(to, at, id);
+        // Done to dismissed (or back) is a change even though the state is the same: the record must follow.
+        const current = r.state === 'done' ? (r.done_reason ?? null) : null;
+        if (r.state === to && current === newReason) continue;
+        set.run(to, at, newReason, id);
         changes.push({ commentId: id, from: r.state, to });
-        stored.push({ commentId: id, from: r.state, fromSource: r.state_source });
+        stored.push({
+          commentId: id,
+          from: r.state,
+          fromSource: r.state_source,
+          fromReason: current,
+        });
       }
       const res = db
         .prepare('INSERT INTO triage_actions (created_at, to_state, changes) VALUES (?, ?, ?)')
@@ -1253,7 +1272,9 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
           from: c.from,
           to: c.to,
           source: 'user',
-          meta: { actionId },
+          // Every done the app records from here on names its reason, so a bare done in the log is known to predate
+          // dismissals (the habits report treats those as ambiguous).
+          meta: { actionId, ...(to === 'done' ? { reason: newReason ?? 'done' } : {}) },
         });
       }
       for (const w of woken) {
@@ -1286,13 +1307,18 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
     return db.transaction(() => {
       const a = loadUndoable(actionId, false);
       const at = now();
-      const stored = JSON.parse(a.changes) as { commentId: string; from: CommentState; fromSource?: string }[];
+      const stored = JSON.parse(a.changes) as {
+        commentId: string;
+        from: CommentState;
+        fromSource?: string;
+        fromReason?: string | null;
+      }[];
       const restore = db.prepare(
-        `UPDATE items SET state = ?, state_source = ?, state_changed_at = ? WHERE id = ? AND state = ?`,
+        `UPDATE items SET state = ?, state_source = ?, state_changed_at = ?, done_reason = ? WHERE id = ? AND state = ?`,
       );
       const changes: TriageResult['changes'] = [];
       for (const c of stored) {
-        const res = restore.run(c.from, c.fromSource ?? 'user', at, c.commentId, a.to_state);
+        const res = restore.run(c.from, c.fromSource ?? 'user', at, c.fromReason ?? null, c.commentId, a.to_state);
         if (res.changes) {
           changes.push({ commentId: c.commentId, from: a.to_state, to: c.from });
           ev.record({

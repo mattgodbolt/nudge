@@ -1,6 +1,13 @@
 // Shared domain + DTO types. This file is the contract between server and web.
 // Changes go through the lead only.
 export type CommentState = 'inbox' | 'done' | 'replied' | 'auto_replied' | 'resolved' | 'own' | 'archived';
+/**
+ * Why an item is done. 'no_action' = "no action needed": it behaves exactly like done (same state, leaves the inbox,
+ * returns on new activity) but is recorded as a dismissal. Only set while state is 'done'; absent otherwise.
+ */
+export type DoneReason = 'no_action';
+/** What a triage call moves items to. 'dismissed' is state 'done' with doneReason 'no_action'. */
+export type TriageTarget = 'done' | 'dismissed' | 'replied' | 'inbox';
 /** 'snoozed' = inbox comments hidden until their snoozedUntil; 'inbox' excludes them until they wake. */
 export type InboxView = 'inbox' | 'done' | 'all' | 'snoozed';
 /** Label colours are named tokens (the web maps them to CSS colours for light and dark themes). */
@@ -35,6 +42,8 @@ export interface CommentDTO {
   isOwn: boolean;
   state: CommentState;
   stateSource: 'sync' | 'user' | 'auto';
+  /** Set when state is 'done' and the owner said no action was needed (a dismissal). */
+  doneReason?: DoneReason | null;
   permalink: string;
   /** Own comment that this app posted through the API (so it can be deleted from here). */
   postedByApp?: boolean;
@@ -260,7 +269,8 @@ export type AssistantOutcome =
   | { type: 'add_todo'; id: string; title: string; due: string | null }
   | { type: 'snooze'; id: string; until: string; why: string | null; undoActionId: number | null }
   | { type: 'note'; id: number; scope: NoteScope; text: string; itemId: string | null }
-  | { type: 'done'; id: string; undoActionId: number | null };
+  | { type: 'done'; id: string; undoActionId: number | null }
+  | { type: 'dismissed'; id: string; undoActionId: number | null };
 export type NoteScope = 'item' | 'standing';
 /** One thing the owner told the assistant. Everything but `text` and `enabled` is a snapshot taken at the time. */
 export interface NoteDTO {

@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { SUGGESTION_FILTERS } from '../../shared/api.js';
 import type { InboxQuery, SettingsUpdate, SyncRequest } from '../../shared/api.js';
 import { parseSourceInput } from '../../shared/youtube-urls.js';
-import type { Bootstrap, CommentState, ImportMode, PollTier, SnoozeResult, TriageResult } from '../../shared/types.js';
+import type { Bootstrap, TriageTarget, ImportMode, PollTier, SnoozeResult, TriageResult } from '../../shared/types.js';
 import type { AppDeps, StoredSettings } from '../contracts.js';
 import { LabelError, PostError, YtError } from '../contracts.js';
 import { LABEL_COLORS, MAX_LABELS } from '../../shared/types.js';
@@ -151,8 +151,10 @@ export function registerApiRoutes(app: FastifyInstance, deps: AppDeps): void {
     if (!Array.isArray(ids) || ids.length === 0 || ids.length > 1000 || !ids.every((i) => typeof i === 'string')) {
       throw bad('"commentIds" must be a non-empty array of strings (max 1000)');
     }
-    const to = oneOf(b.to, 'to', ['done', 'replied', 'inbox'] as const) satisfies CommentState;
-    const result = repo.triage(ids as string[], to);
+    const target = oneOf(b.to, 'to', ['done', 'dismissed', 'replied', 'inbox'] as const) satisfies TriageTarget;
+    // A dismissal is state 'done' plus a reason, so every rule that reads 'done' keeps working.
+    const result =
+      target === 'dismissed' ? repo.triage(ids as string[], 'done', 'no_action') : repo.triage(ids as string[], target);
     emitTriage(result);
     return result;
   });

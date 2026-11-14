@@ -32,6 +32,7 @@ import { createQuotaTracker } from './sync/quota.js';
 import { createScheduler } from './sync/scheduler.js';
 import { createAddSource } from './sync/sources.js';
 import { createHttpClient, testKey } from './youtube/client.js';
+import { createBuildId } from './build.js';
 import { resolveVersion } from './version.js';
 
 /** dist/web sits next to server/ (tsx) or three levels up from dist/server/server/ (compiled). */
@@ -214,6 +215,8 @@ async function main(): Promise<void> {
     version: resolveVersion(),
     demoTick,
     staticDir,
+    // A demo server may claim a different build (NUDGE_DEMO_BUILD_ID) so the "new version" prompt can be shown in e2e.
+    buildId: createBuildId(staticDir, config.demo ? process.env.NUDGE_DEMO_BUILD_ID : undefined),
   };
   const app = buildApp(deps, {
     port: config.port || undefined,

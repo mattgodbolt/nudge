@@ -24,6 +24,9 @@ export function createFakeLlmClient(): LlmClient {
       const actions: AssistantAction[] = [];
       const days = /\bin (\d+) days?\b/i.exec(text);
       const when = days ? Number(days[1]) : /\btomorrow\b/i.test(text) ? 1 : null;
+      if (/^\s*(mark (this|it) as )?(no action( needed)?|dismiss(ed)?)\b/i.test(text)) {
+        return selected ? { actions: [{ type: 'dismiss' }], reply: '' } : { actions, reply: 'Nothing is selected.' };
+      }
       if (/^\s*(mark (this|it) )?done\b/i.test(text)) {
         return selected ? { actions: [{ type: 'done' }], reply: '' } : { actions, reply: 'Nothing is selected.' };
       }

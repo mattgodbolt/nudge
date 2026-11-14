@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import type { ServerEvent } from '../../shared/types.js';
+import type { PingPayload } from '../../shared/build.js';
 import type { AppDeps } from '../contracts.js';
 
 const PING_MS = 20_000;
@@ -22,12 +23,20 @@ export function registerEventRoutes(app: FastifyInstance, deps: AppDeps, pingMs 
     const unsubscribe = deps.bus.subscribe(send);
     // A comment keeps proxies from closing an idle stream; the named event is what the page's watchdog listens for
     // (EventSource never shows comments), so a stream that looks open but is dead gets noticed and reopened.
-    const ping = setInterval(() => res.write(': ping\n\nevent: ping\ndata: 1\n\n'), pingMs);
+    // The ping also names the web build being served, so a page that has been open since before a deploy notices.
+    const ping = () => {
+      const payload: PingPayload = { build: deps.buildId?.() ?? null };
+      res.write(`: ping\n\nevent: ping\ndata: ${JSON.stringify(payload)}\n\n`);
+    };
+    // One straight away too: after a deploy the server restarts, the page's stream reconnects, and this is what tells
+    // it so without waiting out a whole interval.
+    ping();
+    const pinger = setInterval(ping, pingMs);
     let cleaned = false;
     const cleanup = () => {
       if (cleaned) return;
       cleaned = true;
-      clearInterval(ping);
+      clearInterval(pinger);
       unsubscribe();
       cleanups.delete(cleanup);
       if (!res.writableEnded) res.end();

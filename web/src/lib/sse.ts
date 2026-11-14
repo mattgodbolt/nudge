@@ -1,3 +1,4 @@
+import { parsePing } from '../../../shared/build';
 import type { ServerEvent } from '../../../shared/types';
 import { app } from './stores/app.svelte';
 import { feeds } from './stores/feeds.svelte';
@@ -9,6 +10,7 @@ import { sources } from './stores/sources.svelte';
 import { suggestStatus } from './stores/suggestStatus.svelte';
 import { sync } from './stores/sync.svelte';
 import { theme } from './stores/theme.svelte';
+import { update } from './stores/update.svelte';
 import { toasts } from './stores/toasts.svelte';
 
 const TYPES: ServerEvent['type'][] = [
@@ -99,7 +101,11 @@ export function connectEvents(): () => void {
   const open = () => {
     es = new EventSource('/api/events');
     lastHeardAt = Date.now();
-    es.addEventListener('ping', () => (lastHeardAt = Date.now()));
+    es.addEventListener('ping', (ev) => {
+      lastHeardAt = Date.now();
+      // Each ping names the web build the server is serving: a page left open across a deploy learns of it here.
+      update.noteServerBuild(parsePing((ev as MessageEvent).data).build);
+    });
     for (const type of TYPES) {
       es.addEventListener(type, (ev) => {
         lastHeardAt = Date.now();

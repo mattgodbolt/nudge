@@ -188,10 +188,13 @@ describe('habits: suggestion hit rate', () => {
   function act(
     n: number,
     suggested: string | null,
-    to: 'done' | 'replied' | 'snooze',
+    to: 'done' | 'dismissed' | 'legacy_done' | 'replied' | 'snooze',
     at = '2026-11-12T10:00:00.000Z',
   ) {
-    const meta = suggested ? { suggested, suggestedConfidence: 'high', ...turns[n] } : undefined;
+    // New done events name their reason; a done with none was recorded before dismissals existed.
+    const reason = to === 'done' ? { reason: 'done' } : to === 'dismissed' ? { reason: 'no_action' } : {};
+    const meta = suggested ? { suggested, suggestedConfidence: 'high', ...reason, ...turns[n] } : { ...reason };
+    const state = to === 'dismissed' || to === 'legacy_done' ? 'done' : to;
     const ev = createEvents(db);
     if (to === 'snooze')
       ev.record({
@@ -201,28 +204,69 @@ describe('habits: suggestion hit rate', () => {
         from: null,
         to: '2026-11-13T00:00:00.000Z',
         source: 'user',
-        ...(meta ? { meta } : {}),
+        meta,
       });
-    else ev.record({ itemId: id(n), at, kind: 'state', from: 'inbox', to, source: 'user', ...(meta ? { meta } : {}) });
+    else ev.record({ itemId: id(n), at, kind: 'state', from: 'inbox', to: state, source: 'user', meta });
   }
 
   it('compares the suggestion with the first thing the owner did, by verdict', () => {
     act(1, 'reply', 'replied');
     act(2, 'reply', 'done');
-    act(3, 'skip', 'done');
+    act(3, 'skip', 'dismissed');
     act(3, 'skip', 'replied', '2026-11-12T11:00:00.000Z'); // later actions do not count
     act(4, 'act', 'snooze');
     act(4, null, 'done', '2026-11-12T12:00:00.000Z');
     const rep = habitsReport(db);
     expect(rep.suggestionHits).toEqual([
-      { suggested: 'reply', total: 2, hits: 1, byAction: { replied: 1, done: 1 }, byTurn: { them: 1, matt: 1 } },
-      { suggested: 'act', total: 1, hits: 1, byAction: { snooze: 1 }, byTurn: { none: 1 } },
-      { suggested: 'skip', total: 1, hits: 1, byAction: { done: 1 }, byTurn: { none: 1 } },
+      {
+        suggested: 'reply',
+        total: 2,
+        hits: 1,
+        ambiguous: 0,
+        byAction: { replied: 1, done: 1 },
+        byTurn: { them: 1, matt: 1 },
+      },
+      { suggested: 'act', total: 1, hits: 1, ambiguous: 0, byAction: { snooze: 1 }, byTurn: { none: 1 } },
+      { suggested: 'skip', total: 1, hits: 1, ambiguous: 0, byAction: { dismissed: 1 }, byTurn: { none: 1 } },
     ]);
     const text = formatHabits(rep);
     expect(text).toContain('suggested reply: 50.0% (1/2) agreed (replied 1, done 1)');
-    expect(text).toContain('suggested skip: 100.0% (1/1) agreed (done 1)');
+    expect(text).toContain('suggested skip: 100.0% (1/1) agreed (dismissed 1)');
     expect(text).toContain('whose turn the model said: them 1, matt 1');
+  });
+
+  it('judges skip against dismissed, act against done, and reports a bare old done as ambiguous', () => {
+    act(1, 'skip', 'done'); // he did it: the suggestion said nothing was needed
+    act(2, 'act', 'done');
+    act(3, 'skip', 'legacy_done'); // from before dismissals existed: could be either
+    act(4, 'act', 'legacy_done');
+    act(5, 'reply', 'legacy_done'); // not a reply whichever he meant: a miss
+    const rep = habitsReport(db);
+    const by = Object.fromEntries(rep.suggestionHits.map((h) => [h.suggested, h]));
+    expect(by.skip).toMatchObject({ total: 1, hits: 0, ambiguous: 1 });
+    expect(by.act).toMatchObject({ total: 1, hits: 1, ambiguous: 1 });
+    expect(by.reply).toMatchObject({ total: 1, hits: 0, ambiguous: 0 });
+    expect(rep.suggestionSummary.single).toEqual({ total: 3, hits: 1, ambiguous: 2 });
+    const text = formatHabits(rep);
+    expect(text).toContain('2 not counted (done (before dismissals existed))');
+    expect(text).toContain('suggested skip: 0.0% (0/1) agreed (done 1, done (before dismissals existed) 1)');
+  });
+
+  it('records the dismissal reason on events the app writes, and counts dismissed apart from done', () => {
+    repo.suggestions.save(row(1, { verdict: 'no_reply_needed' }));
+    repo.suggestions.save(row(2, { verdict: 'no_reply_needed' }));
+    repo.triage([id(1)], 'done', 'no_action');
+    repo.triage([id(2)], 'done');
+    const rep = habitsReport(db);
+    expect(rep.actionMix).toEqual(
+      expect.arrayContaining([
+        { provider: 'github', kind: 'pr', action: 'dismissed', count: 1 },
+        { provider: 'github', kind: 'pr', action: 'done', count: 1 },
+      ]),
+    );
+    expect(rep.suggestionHits).toMatchObject([
+      { suggested: 'skip', total: 2, hits: 1, byAction: { dismissed: 1, done: 1 } },
+    ]);
   });
 
   it('records the turn the model gave with the action it was showing', () => {
@@ -260,11 +304,14 @@ describe('habits: suggestion hit rate', () => {
       repo.suggestions.save(row(2, { verdict: 'no_reply_needed' }));
       repo.suggestions.save(row(3, { verdict: 'needs_reply' }));
       repo.suggestions.save(row(4, { verdict: 'needs_reply' }));
-      repo.triage([id(1), id(2)], 'done'); // one action, two items: bulk
+      repo.triage([id(1), id(2)], 'done', 'no_action'); // one action, two items: bulk
       repo.triage([id(3)], 'replied'); // alone: single, and agreed
       repo.triage([id(4)], 'done'); // alone: single, and disagreed
       const rep = habitsReport(db);
-      expect(rep.suggestionSummary).toEqual({ single: { total: 2, hits: 1 }, bulk: { total: 2, hits: 2 } });
+      expect(rep.suggestionSummary).toEqual({
+        single: { total: 2, hits: 1, ambiguous: 0 },
+        bulk: { total: 2, hits: 2, ambiguous: 0 },
+      });
       expect(rep.suggestionHits.map((h) => [h.suggested, h.total, h.hits])).toEqual([['reply', 2, 1]]);
       expect(rep.suggestionHitsBulk.map((h) => [h.suggested, h.total, h.hits])).toEqual([['skip', 2, 2]]);
       const text = formatHabits(rep);
@@ -280,8 +327,8 @@ describe('habits: suggestion hit rate', () => {
         "INSERT INTO item_events (item_id, at, kind, to_value, source, meta) VALUES (?, ?, 'decision', 'done', 'user', ?)",
       ).run(id(1), new Date().toISOString(), JSON.stringify({ bulk: true, selectionSize: 40 }));
       expect(habitsReport(db).suggestionSummary).toEqual({
-        single: { total: 0, hits: 0 },
-        bulk: { total: 1, hits: 0 },
+        single: { total: 0, hits: 0, ambiguous: 0 },
+        bulk: { total: 1, hits: 0, ambiguous: 0 },
       });
     });
 
@@ -291,7 +338,7 @@ describe('habits: suggestion hit rate', () => {
         "INSERT INTO item_events (item_id, at, kind, to_value, source, meta) VALUES (?, '2020-01-01T00:00:00.000Z', 'decision', 'inbox', 'user', ?)",
       ).run(id(1), JSON.stringify({ bulk: true }));
       repo.triage([id(1)], 'replied');
-      expect(habitsReport(db).suggestionSummary.single).toEqual({ total: 1, hits: 1 });
+      expect(habitsReport(db).suggestionSummary.single).toEqual({ total: 1, hits: 1, ambiguous: 0 });
     });
   });
 

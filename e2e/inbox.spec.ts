@@ -15,6 +15,35 @@ test('e marks done, z undoes, counts follow', async ({ page }) => {
   await expect(count).toHaveText(before.toLocaleString('en-US'));
 });
 
+test('n marks "no action needed", which shows as Dismissed (not Done), and z undoes it', async ({ page }) => {
+  const count = page.getByTestId('sidebar-count-inbox');
+  const before = Number((await count.innerText()).replace(/\D/g, ''));
+  const row = page.getByTestId('inbox-row').first();
+  const id = (await row.getAttribute('data-comment-id'))!;
+  const words = ((await row.locator('.text').innerText()).match(/[A-Za-z]{4,}/g) ?? []).slice(0, 2).join(' ');
+  await page.keyboard.press('n');
+  await expect(page.getByTestId('toast').first()).toContainText('no action needed');
+  await expect(count).toHaveText((before - 1).toLocaleString('en-US'));
+
+  // Both views show it, and All says which kind of finished it is.
+  await page.goto(`/all?q=${encodeURIComponent(words)}`);
+  const found = page.locator(`[data-testid=inbox-row][data-comment-id="${id}"]`);
+  await expect(found.getByTestId('row-state')).toHaveText('Dismissed');
+  await found.hover();
+  await found.getByTestId('row-done').click(); // an item can be re-filed as plain Done
+  await expect(found.getByTestId('row-state')).toHaveText('Done');
+  await found.getByTestId('row-dismiss').click();
+  await expect(found.getByTestId('row-state')).toHaveText('Dismissed');
+
+  await page.goto('/inbox');
+  await page.waitForSelector('[data-testid=inbox-row]');
+  const mid = Number((await count.innerText()).replace(/\D/g, ''));
+  await page.keyboard.press('n');
+  await expect(count).toHaveText((mid - 1).toLocaleString('en-US'));
+  await page.keyboard.press('z');
+  await expect(count).toHaveText(mid.toLocaleString('en-US'));
+});
+
 test('r then Ctrl+Enter copies the reply, opens YouTube and marks replied', async ({ page, context }) => {
   const popup = context.waitForEvent('page');
   await page.keyboard.press('r');
@@ -55,6 +84,21 @@ test('Enter on a focused button activates it instead of the global Enter binding
   await page.keyboard.press('Enter');
   await expect(count).toHaveText((before - 1).toLocaleString('en-US'));
   await expect(page.locator('[data-testid=thread-view].focus')).toHaveCount(0);
+});
+
+test('the No action needed button works like Done, and its tooltip names the key', async ({ page }) => {
+  const count = page.getByTestId('sidebar-count-inbox');
+  const before = Number((await count.innerText()).replace(/\D/g, ''));
+  const button = page.getByTestId('act-dismiss');
+  await button.hover();
+  await expect(page.getByTestId('tooltip')).toContainText('No action needed');
+  await expect(page.getByTestId('tooltip').locator('kbd')).toHaveText('n');
+  await expect(button).toHaveAttribute('aria-keyshortcuts', 'N');
+  await button.click();
+  await expect(page.getByTestId('toast').first()).toContainText('no action needed');
+  await expect(count).toHaveText((before - 1).toLocaleString('en-US'));
+  await page.getByTestId('act-undo').click();
+  await expect(count).toHaveText(before.toLocaleString('en-US'));
 });
 
 test('tooltip hotkey text comes from the binding', async ({ page }) => {
@@ -111,6 +155,18 @@ test('sort order: oldest first reverses the list, Shift+O cycles, and the choice
   await expect(page.getByTestId('sort')).toHaveValue('arrived');
   await page.getByTestId('sort').selectOption('newest');
   await expect(page.getByTestId('inbox-row').first()).toHaveAttribute('data-comment-id', newestId!);
+});
+
+test('ticking rows and pressing No action acts on all of them', async ({ page }) => {
+  const rows = page.getByTestId('inbox-row');
+  await rows.nth(2).hover();
+  await rows.nth(2).getByTestId('row-check').click();
+  await rows.nth(3).hover();
+  await rows.nth(3).getByTestId('row-check').click();
+  await expect(page.getByTestId('bulk-bar')).toContainText('2 selected');
+  await page.getByTestId('bulk-dismiss').click();
+  await expect(page.getByTestId('toast').first()).toContainText('2 items: marked no action needed');
+  await expect(page.getByTestId('bulk-bar')).toHaveCount(0);
 });
 
 test('hovering a row shows a tick; ticking rows and pressing Done acts on all of them', async ({ page }) => {

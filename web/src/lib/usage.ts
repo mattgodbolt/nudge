@@ -13,6 +13,7 @@ import { api } from './api';
 /** Keymap binding ids that are counted as actions. Anything not listed (menu-internal keys, theme, help...) is not. */
 export const BINDING_ACTIONS: Readonly<Record<string, UsageAction>> = {
   'triage.done': 'done',
+  'triage.dismiss': 'dismissed',
   'triage.replied': 'replied',
   'triage.inbox': 'inbox',
   'snooze.open': 'snooze',

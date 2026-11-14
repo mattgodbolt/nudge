@@ -2,6 +2,7 @@
   import type { InboxItem } from '../../../shared/types';
   import { authorChip, reasonChip, refLabel, statusChip } from '../lib/github';
   import { relativeTime } from '../lib/format';
+  import { stateLabel, suggestedButton } from '../lib/itemState';
   import { formatSnoozeTime, recentlyWoken } from '../lib/snooze';
   import { inbox } from '../lib/stores/inbox.svelte';
   import { ui } from '../lib/stores/ui.svelte';
@@ -101,17 +102,11 @@
   const why = $derived(c.state === 'inbox' ? item.snoozeWhy : null);
   const unread = $derived(c.state === 'inbox' && !item.snoozedUntil);
   const woke = $derived(!item.snoozedUntil && c.state === 'inbox' && recentlyWoken(item.wokeAt, now));
-  const stateLabel = $derived(
-    c.state === 'done'
-      ? 'Done'
-      : c.state === 'replied'
-        ? 'Replied'
-        : c.state === 'auto_replied'
-          ? 'Answered'
-          : c.state === 'resolved'
-            ? 'Closed'
-            : '',
-  );
+  const stateText = $derived(stateLabel(c));
+  const suggested = $derived(suggestedButton(item, 'row'));
+  const dismissed = $derived(c.state === 'done' && c.doneReason === 'no_action');
+  const showDone = $derived(c.state !== 'done' || dismissed);
+  const showDismiss = $derived(c.state !== 'done' || !dismissed);
 </script>
 
 <div
@@ -135,7 +130,11 @@
     if (touching) e.preventDefault(); // Android's long-press menu would fight the selection
   }}
 >
-  <span class="dot" class:on={unread} title={unread ? 'Needs attention' : c.state.replace('_', ' ')}></span>
+  <span
+    class="dot"
+    class:on={unread}
+    title={unread ? 'Needs attention' : (stateText || c.state.replace('_', ' ')).toLowerCase()}
+  ></span>
   <span class="lead">
     <Avatar url={c.authorAvatarUrl} name={todo ? 'Todo' : c.authorName} />
     <button
@@ -171,9 +170,9 @@
         >{:else if woke}<span class="snz" data-testid="row-woke">⏰ back from snooze</span>{/if}
       {#if item.hasDraft}<span class="draft" title="Draft saved">Draft</span>{/if}
       {#if c.state === 'auto_replied'}<span class="badge" title="Answered on YouTube">Answered</span
-        >{:else if c.state === 'replied'}<span class="badge">Replied</span>{:else if showState && stateLabel}<span
+        >{:else if c.state === 'replied'}<span class="badge">Replied</span>{:else if showState && stateText}<span
           class="badge"
-          data-testid="row-state">{stateLabel}</span
+          data-testid="row-state">{stateText}</span
         >{/if}
     </div>
     {#if gh || todo}
@@ -207,6 +206,47 @@
   </div>
   <!-- Positioned over the row's bottom-right, so it never changes row height; acts on THIS row. -->
   <div class="quick" role="group" aria-label="Quick actions">
+    <!-- A finished item offers the other kind of finished, so a Done can be re-filed as No action and back. -->
+    {#if showDone}
+      <ActionButton
+        id="triage.done"
+        label="Done"
+        icon="check"
+        showLabel={false}
+        tile={phone.value}
+        suggested={suggested === 'triage.done'}
+        tabindex={selected ? 0 : -1}
+        onclick={() => void inbox.triage('done', [c.id])}
+        testid="row-done"
+      />
+    {/if}
+    {#if showDismiss}
+      <ActionButton
+        id="triage.dismiss"
+        label="No action needed"
+        short="No action"
+        icon="dismiss"
+        showLabel={false}
+        tile={phone.value}
+        suggested={suggested === 'triage.dismiss'}
+        tabindex={selected ? 0 : -1}
+        onclick={() => void inbox.triage('dismissed', [c.id])}
+        testid="row-dismiss"
+      />
+    {/if}
+    {#if c.state === 'inbox' && !phone.value}
+      <ActionButton
+        id="triage.replied"
+        label="Mark replied"
+        short="Replied"
+        icon="check-all"
+        showLabel={false}
+        suggested={suggested === 'triage.replied'}
+        tabindex={selected ? 0 : -1}
+        onclick={() => void inbox.triage('replied', [c.id])}
+        testid="row-replied"
+      />
+    {/if}
     {#if snoozedView}
       <ActionButton
         id="triage.inbox"
@@ -226,44 +266,37 @@
         icon="clock"
         showLabel={false}
         tile={phone.value}
+        suggested={suggested === 'snooze.open'}
         tabindex={selected ? 0 : -1}
         onclick={() => ui.openSnooze([c.id])}
         testid="row-snooze"
       />
     {/if}
-    <ActionButton
-      id="label.open"
-      label="Label"
-      icon="tag"
-      showLabel={false}
-      tile={phone.value}
-      tabindex={selected ? 0 : -1}
-      onclick={() => ui.openLabelPicker([c.id])}
-      testid="row-label"
-    />
-    {#if c.state !== 'done'}
+    <!-- A row on a phone has room for four big tiles, so the rarer actions share the fourth. -->
+    {#if phone.value && c.state === 'inbox'}
       <ActionButton
-        id="triage.done"
-        label="Done"
-        icon="check"
+        id="row.more"
+        label="More actions"
+        short="More"
+        icon="more"
         showLabel={false}
-        tile={phone.value}
+        tile
+        suggested={suggested === 'triage.replied'}
+        pressed={ui.moreFor === c.id}
         tabindex={selected ? 0 : -1}
-        onclick={() => void inbox.triage('done', [c.id])}
-        testid="row-done"
+        onclick={() => ui.openMore(c.id)}
+        testid="row-more"
       />
-    {/if}
-    {#if c.state === 'inbox'}
+    {:else}
       <ActionButton
-        id="triage.replied"
-        label="Mark replied"
-        short="Replied"
-        icon="check-all"
+        id="label.open"
+        label="Label"
+        icon="tag"
         showLabel={false}
         tile={phone.value}
         tabindex={selected ? 0 : -1}
-        onclick={() => void inbox.triage('replied', [c.id])}
-        testid="row-replied"
+        onclick={() => ui.openLabelPicker([c.id])}
+        testid="row-label"
       />
     {/if}
   </div>

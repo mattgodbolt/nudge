@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { InboxItem } from '../../../shared/types';
   import { usage } from '../lib/usage';
+  import { stateLabel } from '../lib/itemState';
   import { decisions } from '../lib/decisions';
   import { inbox } from '../lib/stores/inbox.svelte';
   import { thread } from '../lib/stores/thread.svelte';
@@ -10,13 +11,15 @@
   import { formatSnoozeTime, recentlyWoken } from '../lib/snooze';
   import CommentCard from './CommentCard.svelte';
   import Composer from './Composer.svelte';
-  import ActionButton from './ActionButton.svelte';
+  import ItemActions from './ItemActions.svelte';
   import Icon from './Icon.svelte';
   import LabelChips from './LabelChips.svelte';
   import SuggestionChip from './SuggestionChip.svelte';
   import { tick, untrack } from 'svelte';
 
   let { item, now }: { item: InboxItem; now: number } = $props();
+  /** "Done", "Dismissed" ... once the item is dealt with; empty while it is in the inbox. */
+  const stateText = $derived(stateLabel(item.comment));
   // Each thread is mounted once per open (the parent keys on it), so this counts opens, not renders.
   usage.count('view.thread');
   // Opened now, closed when this thread unmounts or another item takes its place; dwell is measured in between.
@@ -30,10 +33,7 @@
   let headerWidth = $state(1000);
   // Actions share the title row only in a roomy pane; otherwise they take a row of their own,
   // and drop their labels (still tooltipped) when even that row is too narrow.
-  const inline = $derived(headerWidth >= 1000);
-  // Seven labelled buttons need ~700px; below that they collapse to icons (tooltipped), except as phone tiles.
-  const wide = $derived(headerWidth >= 760);
-  const tile = $derived(phone.value);
+  const inline = $derived(headerWidth >= 1500);
   let scroller: HTMLDivElement | undefined = $state();
   const detail = $derived(thread.current && thread.current.threadId === item.comment.threadId ? thread.current : null);
   const notFetched = $derived(detail ? Math.max(0, detail.totalReplyCount - (detail.comments.length - 1)) : 0);
@@ -86,8 +86,9 @@
       {#if item.snoozeWhy && item.comment.state === 'inbox'}
         <div class="why faint" data-testid="thread-why">You snoozed this to: {item.snoozeWhy}</div>
       {/if}
-      {#if item.snoozedUntil || item.labels.length > 0 || woke}
+      {#if item.snoozedUntil || item.labels.length > 0 || woke || stateText}
         <div class="tags">
+          {#if stateText}<span class="badge" data-testid="thread-state">{stateText}</span>{/if}
           {#if item.snoozedUntil}
             <span class="snz" data-testid="thread-snoozed"
               >⏰ Snoozed until {formatSnoozeTime(item.snoozedUntil, new Date(now))}</span
@@ -99,59 +100,7 @@
         </div>
       {/if}
     </div>
-    <div
-      class="actions"
-      class:own-row={!inline}
-      role="toolbar"
-      aria-label="Comment actions"
-      data-testid="thread-actions"
-    >
-      <ActionButton id="reply.open" label="Reply" icon="reply" showLabel={wide} {tile} testid="act-reply" />
-      <ActionButton id="triage.done" label="Done" icon="check" showLabel={wide} {tile} testid="act-done" />
-      <ActionButton
-        id="triage.replied"
-        label="Mark replied"
-        short="Replied"
-        icon="check-all"
-        showLabel={wide}
-        {tile}
-        testid="act-replied"
-      />
-      {#if item.snoozedUntil}
-        <ActionButton id="triage.inbox" label="Unsnooze" icon="inbox" showLabel={wide} {tile} testid="act-unsnooze" />
-      {:else if item.comment.state !== 'inbox'}
-        <ActionButton
-          id="triage.inbox"
-          label="Move back to inbox"
-          short="Inbox"
-          icon="inbox"
-          showLabel={wide}
-          {tile}
-          testid="act-inbox"
-        />
-      {:else}
-        <ActionButton id="snooze.open" label="Snooze" icon="clock" showLabel={wide} {tile} testid="act-snooze" />
-      {/if}
-      <ActionButton id="label.open" label="Label" icon="tag" showLabel={wide} {tile} testid="act-label" />
-      <ActionButton
-        id="triage.undo"
-        label="Undo"
-        icon="undo"
-        showLabel={wide}
-        {tile}
-        disabled={inbox.undoDepth === 0}
-        testid="act-undo"
-      />
-      <ActionButton
-        id="open.comment"
-        label="Open on YouTube"
-        short="Open"
-        icon="external"
-        showLabel={wide}
-        {tile}
-        testid="act-open"
-      />
-    </div>
+    <ItemActions {item} width={headerWidth} ownRow={!inline} label="Comment actions" />
     {#if ui.showSuggestions && item.suggestion}<SuggestionChip
         suggestion={item.suggestion}
         testid="thread-suggestion"
@@ -213,25 +162,6 @@
   .vt {
     min-width: 0;
     flex: 1;
-  }
-  .actions {
-    display: flex;
-    flex: none;
-    max-width: 100%;
-    flex-wrap: wrap;
-    gap: 2px;
-    padding: 2px;
-    border: 1px solid var(--border);
-    border-radius: calc(var(--radius) + 2px);
-    background: var(--bg);
-  }
-  .actions.own-row {
-    flex-basis: 100%;
-    justify-content: flex-start;
-    border: 0;
-    padding: 0;
-    background: none;
-    margin-top: calc(var(--s1) * -1);
   }
   /* What he said he would do on return: quiet, but never cut off. */
   .why {
@@ -310,14 +240,6 @@
       -webkit-box-orient: vertical;
       padding: 12px 0;
       font-size: 16px;
-    }
-    .actions.own-row {
-      gap: var(--s2);
-      margin-top: var(--s1);
-    }
-    .actions.own-row :global(.action) {
-      flex: 1 0 calc(25% - 8px);
-      min-width: 72px;
     }
     .scroll {
       padding: var(--s3) var(--s1);

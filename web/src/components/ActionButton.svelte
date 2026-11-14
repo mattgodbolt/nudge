@@ -23,6 +23,9 @@
     tabindex,
     tile = false,
     short,
+    suggested = false,
+    pressed,
+    compact = false,
   }: {
     id: string;
     label: string;
@@ -37,6 +40,12 @@
     tile?: boolean;
     /** Shorter label for tiles, where space is tight. */
     short?: string;
+    /** The current suggestion points here: a quiet ring, never an action of its own. */
+    suggested?: boolean;
+    /** Set for a button that opens a menu: reflected as aria-haspopup / aria-expanded. */
+    pressed?: boolean;
+    /** Show `short` instead of the full label on a (non-tile) button, when the toolbar is middling wide. */
+    compact?: boolean;
   } = $props();
 
   function click(e: MouseEvent) {
@@ -57,6 +66,10 @@
   class="btn sm ghost action"
   class:icon={!showLabel && !tile}
   class:tile
+  class:suggested
+  data-suggested={suggested ? 'true' : undefined}
+  aria-haspopup={pressed === undefined ? undefined : 'dialog'}
+  aria-expanded={pressed}
   {disabled}
   {tabindex}
   onclick={click}
@@ -64,7 +77,9 @@
   {@attach tip({ id, label })}
 >
   <Icon name={icon} size={tile ? 22 : 14} />
-  {#if tile}<span class="lbl">{short ?? label}</span>{:else if showLabel}<span class="lbl">{label}</span>{/if}
+  {#if tile}<span class="lbl">{short ?? label}</span>{:else if showLabel}<span class="lbl"
+      >{compact ? (short ?? label) : label}</span
+    >{/if}
 </button>
 
 <style>
@@ -91,6 +106,15 @@
   }
   .action.tile:active:not(:disabled) {
     background: var(--bg-hover);
+  }
+  /* The suggested action: an accent ring and a faint wash, quiet enough to ignore and clear enough to follow. */
+  .action.suggested {
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 55%, transparent);
+    background: var(--accent-soft);
+    color: var(--text);
+  }
+  .action.suggested.tile {
+    border-color: var(--accent);
   }
   .action:focus-visible {
     box-shadow: var(--focus-ring);

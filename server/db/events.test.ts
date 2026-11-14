@@ -93,11 +93,33 @@ describe('first sight', () => {
 describe('state events', () => {
   beforeEach(() => repo.upsertThread(thread('c1')));
 
+  it('a dismissal is a done state event whose meta says so', () => {
+    advance(HOUR);
+    const r = repo.triage(['c1'], 'done', 'no_action');
+    expect(events()).toEqual([
+      {
+        itemId: 'c1',
+        kind: 'state',
+        from: 'inbox',
+        to: 'done',
+        source: 'user',
+        meta: { actionId: r.actionId, reason: 'no_action' },
+      },
+    ]);
+  });
+
   it('triage writes a user state event per changed item, with the action id', () => {
     advance(HOUR);
     const r = repo.triage(['c1', 'c1', 'missing'], 'done');
     expect(events()).toEqual([
-      { itemId: 'c1', kind: 'state', from: 'inbox', to: 'done', source: 'user', meta: { actionId: r.actionId } },
+      {
+        itemId: 'c1',
+        kind: 'state',
+        from: 'inbox',
+        to: 'done',
+        source: 'user',
+        meta: { actionId: r.actionId, reason: 'done' },
+      },
     ]);
     expect((db.prepare('SELECT at FROM item_events').get() as { at: string }).at).toBe(new Date(nowMs).toISOString());
   });
@@ -350,7 +372,7 @@ describe('GitHub sync events', () => {
     expect(events(id1).map((e) => [e.kind, e.from, e.to, e.source, e.meta?.reason])).toEqual([
       ['state', 'inbox', 'resolved', 'sync', 'closed_upstream'],
       ['state', 'resolved', 'inbox', 'sync', 'reopened'],
-      ['state', 'inbox', 'done', 'user', undefined],
+      ['state', 'inbox', 'done', 'user', 'done'],
       ['state', 'done', 'inbox', 'sync', 'new_activity'],
     ]);
   });
@@ -620,9 +642,9 @@ describe('migration 009 (item_events)', () => {
     const tables = () =>
       d
         .prepare(
-          // Later migrations add tables (usage_daily, suggestions, notes) and one items column (snooze_why), and rebuild
+          // Later migrations add tables (usage_daily, suggestions, notes) and two items columns (snooze_why, done_reason), and rebuild
           // mute_rules to allow the 'owner' kind (its rows are checked in migrations.test.ts).
-          "SELECT name, replace(sql, ', snooze_why TEXT', '') AS sql FROM sqlite_master WHERE name != 'item_events' AND name != 'mute_rules' AND name NOT LIKE 'idx_item_events%' AND name NOT LIKE '%usage_daily%' AND name NOT LIKE '%suggestions%' AND name NOT LIKE '%notes%' ORDER BY name",
+          "SELECT name, replace(replace(sql, ', snooze_why TEXT', ''), ', done_reason TEXT CHECK (done_reason IS NULL OR done_reason IN (''no_action''))', '') AS sql FROM sqlite_master WHERE name != 'item_events' AND name != 'mute_rules' AND name NOT LIKE 'idx_item_events%' AND name NOT LIKE '%usage_daily%' AND name NOT LIKE '%suggestions%' AND name NOT LIKE '%notes%' ORDER BY name",
         )
         .all();
     const before = tables();

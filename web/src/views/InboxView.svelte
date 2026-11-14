@@ -340,6 +340,14 @@
         {/if}
         <ActionButton id="sel.all" label="All" icon="check-all" {tile} testid="bulk-all" />
         <ActionButton id="triage.done" label="Done" icon="check" {tile} testid="bulk-done" />
+        <ActionButton
+          id="triage.dismiss"
+          label="No action needed"
+          short="No action"
+          icon="dismiss"
+          {tile}
+          testid="bulk-dismiss"
+        />
         <ActionButton id="triage.replied" label="Replied" icon="check-all" {tile} testid="bulk-replied" />
         {#if view === 'snoozed'}
           <ActionButton id="triage.inbox" label="Unsnooze" icon="inbox" {tile} testid="bulk-unsnooze" />

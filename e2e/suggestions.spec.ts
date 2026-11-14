@@ -61,6 +61,28 @@ test('Settings has a toggle that hides the chips, and the choice is remembered',
   await expect(chips(page).first()).toBeVisible();
 });
 
+// The suggestion is carried out by one button, which wears a quiet ring (never acts by itself).
+test('the button the suggestion points at is marked, and only that one', async ({ page }) => {
+  await openInbox(page);
+  const want = { act: 'row-done', skip: 'row-dismiss', spam: 'row-dismiss', reply: 'row-replied' } as const;
+  const seen = new Set<string>();
+  const all = await rows(page).all();
+  for (const row of all.slice(0, 40)) {
+    const chip = row.getByTestId('row-suggestion');
+    if ((await chip.count()) === 0) continue;
+    const action = (await chip.getAttribute('data-action')) as keyof typeof want;
+    const turn = await chip.getAttribute('data-turn');
+    if (!(action in want)) continue;
+    const expected = turn === 'them' ? 'row-snooze' : want[action];
+    seen.add(`${action}/${turn}`);
+    for (const id of ['row-done', 'row-dismiss', 'row-replied', 'row-snooze']) {
+      const mark = await row.getByTestId(id).getAttribute('data-suggested');
+      expect(mark === 'true', `${action}/${turn}: ${id}`).toBe(id === expected);
+    }
+  }
+  expect(seen.size).toBeGreaterThan(1);
+});
+
 test.describe('on a phone', () => {
   test.use({ viewport: { width: 390, height: 844 }, hasTouch: true });
 
@@ -97,13 +119,21 @@ test.describe('on a phone', () => {
     const withLabels = row.filter({ hasText: 'discussion' });
     const target = (await withLabels.count()) > 0 ? withLabels.first() : row.first();
     const r = (await target.boundingBox())!;
-    for (const id of ['row-snooze', 'row-label', 'row-done']) {
+    // Four big tiles: the three decisions made all the time, and More for the rest.
+    for (const id of ['row-done', 'row-dismiss', 'row-snooze', 'row-more']) {
       const b = (await target.getByTestId(id).boundingBox())!;
       expect(b.height).toBeGreaterThanOrEqual(50);
       expect(b.y).toBeGreaterThanOrEqual(r.y);
       expect(b.y + b.height).toBeLessThanOrEqual(r.y + r.height);
       expect(b.x + b.width).toBeLessThanOrEqual(r.x + r.width);
     }
+    // The rest is one tap away, in a sheet that closes again.
+    await target.getByTestId('row-more').tap();
+    await expect(page.getByTestId('more-menu')).toBeVisible();
+    await expect(page.getByTestId('more-replied')).toBeVisible();
+    await expect(page.getByTestId('more-label')).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(page.getByTestId('more-menu')).toBeHidden();
     // Every badge stays on one line, and labels stop at the row's right edge.
     for (const el of await target.locator('.badge, .ghlabel').all()) {
       const b = (await el.boundingBox())!;
@@ -147,7 +177,16 @@ for (const [name, viewport, touch] of [
       });
       expect(lines).toBeLessThanOrEqual(3);
 
-      for (const id of ['act-done', 'act-replied', 'act-snooze', 'act-label', 'act-mute', 'act-undo', 'act-open']) {
+      for (const id of [
+        'act-done',
+        'act-dismiss',
+        'act-replied',
+        'act-snooze',
+        'act-label',
+        'act-mute',
+        'act-undo',
+        'act-open',
+      ]) {
         const button = page.getByTestId(id);
         await expect(button).toBeVisible();
         const b = (await button.boundingBox())!;

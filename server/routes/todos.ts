@@ -123,6 +123,10 @@ export function registerTodoRoutes(app: FastifyInstance, deps: AppDeps): void {
           why: a.why,
           undoActionId: r.actionId,
         });
+      } else if (a.type === 'dismiss') {
+        const r = repo.triage([selected.item.id], 'done', 'no_action');
+        changed.push(selected.item.id);
+        outcomes.push({ type: 'dismissed', id: selected.item.id, undoActionId: r.actionId });
       } else {
         const r = repo.triage([selected.item.id], 'done');
         changed.push(selected.item.id);

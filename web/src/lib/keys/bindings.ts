@@ -247,6 +247,14 @@ export function inboxBindings(): Binding[] {
       run: () => void inbox.triage('done'),
     }),
     list({
+      id: 'triage.dismiss',
+      keys: ['n'],
+      group: 'Triage',
+      description: 'No action needed (nothing for me to do)',
+      when: () => !!inbox.selected,
+      run: () => void inbox.triage('dismissed'),
+    }),
+    list({
       id: 'triage.replied',
       keys: ['m'],
       group: 'Triage',

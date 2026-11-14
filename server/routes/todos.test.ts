@@ -145,6 +145,19 @@ describe('POST /api/assistant', () => {
     expect(inbox()).toHaveLength(1);
   });
 
+  it('dismisses the selected item as "no action needed", recorded apart from done, with an undo', async () => {
+    key();
+    const id = seedComment();
+    command = async () => ({ actions: [{ type: 'dismiss' }], reply: '' });
+    const res = (await post({ text: 'nothing to do for this', selectedId: id })).json();
+    expect(res.outcomes).toMatchObject([{ type: 'dismissed', id }]);
+    const done = env.repo.listInbox({ view: 'done' }).items;
+    expect(done.map((i) => i.item.id)).toEqual([id]);
+    expect(done[0]!.comment).toMatchObject({ state: 'done', doneReason: 'no_action' });
+    env.repo.undo(res.outcomes[0].undoActionId);
+    expect(inbox()).toHaveLength(1);
+  });
+
   it('refuses to act on "this" when nothing is selected, and says so without inventing a todo', async () => {
     key();
     command = async () => ({ actions: [{ type: 'done' }], reply: 'Nothing is selected.' });
@@ -228,6 +241,10 @@ describe('parseCommand', () => {
       actions: [{ type: 'add_todo', title: 'Pay rent', notes: '', due: '2026-11-10T15:00:00.000Z' }, { type: 'done' }],
       reply: 'ok',
     });
+  });
+  it('reads dismiss as its own action, apart from mark_done', () => {
+    const r = parseCommand({ content: [tool('dismiss', {}), tool('mark_done', {})] }, now);
+    expect(r.actions).toEqual([{ type: 'dismiss' }, { type: 'done' }]);
   });
   it('drops past or unparseable times and malformed calls instead of trusting them', () => {
     const r = parseCommand(

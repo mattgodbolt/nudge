@@ -28,10 +28,15 @@
     | 'clock'
     | 'tag'
     | 'mic'
+    | 'dismiss'
+    | 'more'
     | 'chevron-up'
     | 'chevron-down';
   let { name, size = 16 }: { name: Name; size?: number } = $props();
   const paths: Record<Name, string> = {
+    // A circle struck through: "nothing here for me". Deliberately unlike the check marks of Done and Replied.
+    dismiss: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM5.6 5.6l12.8 12.8',
+    more: 'M3.6 12a1.4 1.4 0 1 0 2.8 0 1.4 1.4 0 1 0-2.8 0M10.6 12a1.4 1.4 0 1 0 2.8 0 1.4 1.4 0 1 0-2.8 0M17.6 12a1.4 1.4 0 1 0 2.8 0 1.4 1.4 0 1 0-2.8 0',
     mic: 'M12 15a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zM19 11a7 7 0 0 1-14 0m7 7v3',
     clock: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 7v5l3 2',
     tag: 'M20.6 13.4l-7.2 7.2a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8zM7.5 7.5h.01',

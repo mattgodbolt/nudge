@@ -8,6 +8,7 @@ import { fakeGoogleAuth } from '../reply/test-helpers.js';
 import type {
   CommentDTO,
   CommentState,
+  DoneReason,
   Counts,
   ServerEvent,
   SourceDTO,
@@ -38,6 +39,8 @@ function comment(id: string, state: CommentState = 'inbox'): CommentDTO {
     permalink: `https://www.youtube.com/watch?v=vid&lc=${id}`,
   };
 }
+
+const triageCalls: { ids: string[]; to: CommentState; reason: string | null }[] = [];
 
 /** Minimal in-memory Repo: only what the routes touch. */
 function stubRepo() {
@@ -111,7 +114,10 @@ function stubRepo() {
     listInbox: (q: { view: string }) => ({ items: [], nextCursor: null, total: q.view === 'inbox' ? 2 : 0 }),
     getThread: (id: string) => (id === 't1' ? { threadId: 't1', comments: [...comments.values()] } : null),
     getComment: (id: string) => comments.get(id) ?? null,
-    triage: (ids: string[], to: CommentState) => move(ids, to),
+    triage: (ids: string[], to: CommentState, reason?: DoneReason | null) => {
+      triageCalls.push({ ids, to, reason: reason ?? null });
+      return move(ids, to);
+    },
     undo(id: number) {
       const a = actions[id - 1];
       if (!a) throw new Error('No such action');
@@ -255,6 +261,16 @@ describe('triage and undo', () => {
     const undo = await send('POST', `/api/triage/${res.json().actionId}/undo`);
     expect(undo.json().counts.inbox).toBe(2);
     expect((await send('POST', '/api/triage/99/undo')).statusCode).toBe(409);
+  });
+  it('"dismissed" is done with the no_action reason, in bulk, and undoes like any triage', async () => {
+    triageCalls.length = 0;
+    const res = await send('POST', '/api/triage', { commentIds: ['c1', 'c2'], to: 'dismissed' });
+    expect(res.statusCode).toBe(200);
+    expect(triageCalls).toEqual([{ ids: ['c1', 'c2'], to: 'done', reason: 'no_action' }]);
+    expect(events).toContainEqual(expect.objectContaining({ type: 'inbox.changed', changedIds: ['c1', 'c2'] }));
+    await send('POST', '/api/triage', { commentIds: ['c1'], to: 'done' });
+    expect(triageCalls.at(-1)).toEqual({ ids: ['c1'], to: 'done', reason: null });
+    expect((await send('POST', `/api/triage/${res.json().actionId}/undo`)).statusCode).toBe(200);
   });
   it('rejects bad bodies', async () => {
     expect((await send('POST', '/api/triage', { commentIds: [], to: 'done' })).statusCode).toBe(400);
@@ -436,6 +452,47 @@ describe('SSE', () => {
     await readUntil(': ping');
     expect(text).toContain(': ping');
     ac.abort();
+  });
+});
+
+describe('SSE ping and the web build', () => {
+  it('names the served build in the first ping and in every later one, so a stale page can notice a deploy', async () => {
+    let build: string | null = '/assets/index-one.js';
+    const s = buildApp({ ...deps, buildId: () => build }, { pingMs: 30 });
+    await s.listen({ host: '127.0.0.1', port: 0 });
+    const port = (s.server.address() as { port: number }).port;
+    const ac = new AbortController();
+    const res = await fetch(`http://127.0.0.1:${port}/api/events`, { signal: ac.signal });
+    const reader = res.body!.getReader();
+    const dec = new TextDecoder();
+    let text = '';
+    const readUntil = async (needle: RegExp) => {
+      while (!needle.test(text)) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        text += dec.decode(value);
+      }
+    };
+    await readUntil(/event: ping\ndata: \{"build":"\/assets\/index-one\.js"\}/);
+    expect(text).toMatch(/event: ping\ndata: \{"build":"\/assets\/index-one\.js"\}/);
+    build = '/assets/index-two.js';
+    await readUntil(/index-two\.js/);
+    expect(text).toContain('"build":"/assets/index-two.js"');
+    ac.abort();
+    await s.close();
+  });
+  it('sends a null build when there is no built UI', async () => {
+    const s = buildApp(deps, { pingMs: 30 });
+    await s.listen({ host: '127.0.0.1', port: 0 });
+    const port = (s.server.address() as { port: number }).port;
+    const ac = new AbortController();
+    const res = await fetch(`http://127.0.0.1:${port}/api/events`, { signal: ac.signal });
+    const reader = res.body!.getReader();
+    let text = '';
+    while (!text.includes('event: ping')) text += new TextDecoder().decode((await reader.read()).value);
+    expect(text).toContain('data: {"build":null}');
+    ac.abort();
+    await s.close();
   });
 });
 

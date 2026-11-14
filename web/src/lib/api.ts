@@ -95,7 +95,7 @@ export const api = {
     request<T.ThreadDetail>('GET', `/api/threads/${encodeURIComponent(id)}${qs({ focus })}`),
   githubDiscussion: (itemId: string) =>
     request<T.GithubDiscussionDTO>('GET', `/api/items/${encodeURIComponent(itemId)}/discussion`),
-  triage: (commentIds: string[], to: 'done' | 'replied' | 'inbox') =>
+  triage: (commentIds: string[], to: T.TriageTarget) =>
     request<T.TriageResult>('POST', '/api/triage', { commentIds, to }),
   undo: (actionId: number) => request<T.TriageResult>('POST', `/api/triage/${actionId}/undo`),
   snooze: (commentIds: string[], until: string | null, why?: string) =>

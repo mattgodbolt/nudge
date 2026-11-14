@@ -21,7 +21,7 @@ export default defineConfig({
   projects: [
     {
       name: 'handoff',
-      testIgnore: /(inbox|reply-api|snooze-labels|github|assistant|suggestions|notes|backlog)\.spec\.ts/,
+      testIgnore: /(inbox|reply-api|snooze-labels|github|assistant|suggestions|notes|backlog|update)\.spec\.ts/,
       use: { ...use, baseURL: 'http://127.0.0.1:4518' },
     },
     {
@@ -60,6 +60,12 @@ export default defineConfig({
       name: 'backlog',
       testMatch: /backlog\.spec\.ts/,
       use: { ...use, baseURL: 'http://127.0.0.1:4525' },
+    },
+    {
+      // A server that claims a newer web build than the page loaded, to show the "New version available" prompt.
+      name: 'update',
+      testMatch: /update\.spec\.ts/,
+      use: { ...use, baseURL: 'http://127.0.0.1:4527' },
     },
     {
       name: 'github',
@@ -113,6 +119,12 @@ export default defineConfig({
     {
       command: 'npm run demo:e2e:backlog',
       url: 'http://127.0.0.1:4525/api/bootstrap',
+      reuseExistingServer: false,
+      timeout: 120000,
+    },
+    {
+      command: 'npm run demo:e2e:update',
+      url: 'http://127.0.0.1:4527/api/bootstrap',
       reuseExistingServer: false,
       timeout: 120000,
     },

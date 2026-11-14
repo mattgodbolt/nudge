@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest';
-import { STREAM_SILENT_MS, dispatch, streamIsSilent } from './sse';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { STREAM_SILENT_MS, connectEvents, dispatch, streamIsSilent } from './sse';
+import { update } from './stores/update.svelte';
 import { inbox } from './stores/inbox.svelte';
 import { labels } from './stores/labels.svelte';
 import { settings } from './stores/settings.svelte';
@@ -73,5 +74,36 @@ describe('stream watchdog', () => {
   it('calls the stream dead only after a long silence', () => {
     expect(streamIsSilent(1000, 1000 + STREAM_SILENT_MS - 1)).toBe(false);
     expect(streamIsSilent(1000, 1000 + STREAM_SILENT_MS)).toBe(true);
+  });
+});
+
+describe('the ping', () => {
+  type Listener = (e: { data: string }) => void;
+  const listeners = new Map<string, Listener>();
+  class FakeEventSource {
+    onopen: (() => void) | null = null;
+    onerror: (() => void) | null = null;
+    addEventListener(type: string, fn: Listener) {
+      listeners.set(type, fn);
+    }
+    close() {}
+  }
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    update.reset();
+    listeners.clear();
+  });
+
+  it('tells the update prompt which build the server is serving', () => {
+    vi.stubGlobal('EventSource', FakeEventSource);
+    update.reset('/assets/index-old.js');
+    const stop = connectEvents();
+    listeners.get('ping')!({ data: '{"build":"/assets/index-old.js"}' });
+    expect(update.visible).toBe(false);
+    listeners.get('ping')!({ data: '{"build":"/assets/index-new.js"}' });
+    expect(update.visible).toBe(true);
+    listeners.get('ping')!({ data: '1' }); // an older server's ping says nothing about the build
+    expect(update.visible).toBe(false);
+    stop();
   });
 });

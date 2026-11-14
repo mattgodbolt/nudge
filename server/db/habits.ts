@@ -5,10 +5,19 @@ import type { Db } from './db.js';
  * Counts and durations only: no item text, titles, authors or ids appear in the output. The one exception is the
  * latest few notes the owner made himself (clipped), which he asked to see.
  */
+/**
+ * What a user state event to 'done' was. Events written since dismissals existed carry meta.reason ('done' or
+ * 'no_action'); a bare done from before that could have meant either, so it is kept apart rather than guessed at.
+ */
+export const LEGACY_DONE = 'done (before dismissals existed)';
+
 export interface SuggestionHit {
   suggested: string;
+  /** Items judged: those whose first action says whether the suggestion was right. Excludes `ambiguous`. */
   total: number;
   hits: number;
+  /** First action was a bare done from before dismissals existed: it cannot be said to agree or disagree. */
+  ambiguous: number;
   byAction: Record<string, number>;
   /** Of those, by whose turn the model said it was (`none` = it did not say). */
   byTurn: Record<string, number>;
@@ -33,7 +42,9 @@ export interface HabitsReport {
   /**
    * Suggestion hit rate: for each item that had a suggestion when the owner first dealt with it (done, replied or
    * snoozed), what the suggestion was against what he did. `hits` counts the agreeing actions: reply is hit by
-   * replied; act by done or snooze; skip and spam by done. Items with no suggestion are not counted.
+   * replied; act by done or snooze; skip and spam by dismissed ("no action needed"). Items with no suggestion are not
+   * counted. A done from before dismissals existed does not say whether he meant "I did it" or "nothing needed", so
+   * for act, skip and spam it is reported as `ambiguous` and left out of total and hits.
    */
   suggestionHits: SuggestionHit[];
   /**
@@ -43,7 +54,10 @@ export interface HabitsReport {
    */
   suggestionHitsBulk: SuggestionHit[];
   /** Totals behind the two lists above: `single` is one-at-a-time decisions, `bulk` the shown-separately ones. */
-  suggestionSummary: { single: { total: number; hits: number }; bulk: { total: number; hits: number } };
+  suggestionSummary: {
+    single: { total: number; hits: number; ambiguous: number };
+    bulk: { total: number; hits: number; ambiguous: number };
+  };
   /** What the owner has told the assistant. The text of the latest few is included, clipped (he asked to see them). */
   notes: {
     total: number;
@@ -157,18 +171,25 @@ export function habitsReport(db: Db): HabitsReport {
     const key = (action: string) => `${r.provider ?? 'unknown'}\t${r.ikind ?? 'unknown'}\t${action}`;
     if ((r.kind === 'state' || r.kind === 'snooze') && r.source === 'user') {
       const isSnooze = r.kind === 'snooze';
-      const action = isSnooze ? (r.to_value ? 'snooze' : 'unsnooze') : (r.to_value ?? 'unknown');
+      const action = isSnooze
+        ? r.to_value
+          ? 'snooze'
+          : 'unsnooze'
+        : r.to_value === 'done' && meta.reason === 'no_action'
+          ? 'dismissed'
+          : (r.to_value ?? 'unknown');
       mix.set(key(action), (mix.get(key(action)) ?? 0) + 1);
       if (!firstAction.has(r.item_id)) firstAction.set(r.item_id, r);
       if (typeof meta.actionId === 'number') actionSize.set(meta.actionId, (actionSize.get(meta.actionId) ?? 0) + 1);
       if (
         !judged.has(r.item_id) &&
         typeof meta.suggested === 'string' &&
-        (action === 'done' || action === 'replied' || action === 'snooze')
+        (action === 'done' || action === 'dismissed' || action === 'replied' || action === 'snooze')
       ) {
         judged.set(r.item_id, {
           suggested: meta.suggested,
-          action,
+          // A done with no reason on it was written before dismissals existed.
+          action: action === 'done' && meta.reason === undefined ? LEGACY_DONE : action,
           turn: typeof meta.suggestedTurn === 'string' ? meta.suggestedTurn : 'none',
           actionId: typeof meta.actionId === 'number' ? meta.actionId : null,
           t,
@@ -250,12 +271,18 @@ export function habitsReport(db: Db): HabitsReport {
   const AGREES: Record<string, string[]> = {
     reply: ['replied'],
     act: ['done', 'snooze'],
-    skip: ['done'],
-    spam: ['done'],
+    skip: ['dismissed'],
+    spam: ['dismissed'],
   };
-  type Acc = { total: number; hits: number; byAction: Record<string, number>; byTurn: Record<string, number> };
+  type Acc = {
+    total: number;
+    hits: number;
+    ambiguous: number;
+    byAction: Record<string, number>;
+    byTurn: Record<string, number>;
+  };
   const hitsBy = { single: new Map<string, Acc>(), bulk: new Map<string, Acc>() };
-  const summary = { single: { total: 0, hits: 0 }, bulk: { total: 0, hits: 0 } };
+  const summary = { single: { total: 0, hits: 0, ambiguous: 0 }, bulk: { total: 0, hits: 0, ambiguous: 0 } };
   /** The browser's decision event for the same action: close in time to the state change, whichever came first. */
   const DECISION_WINDOW_MS = 120_000;
   for (const [itemId, j] of judged) {
@@ -263,13 +290,19 @@ export function habitsReport(db: Db): HabitsReport {
       (j.actionId !== null && (actionSize.get(j.actionId) ?? 0) > 1) ||
       (decisionsOf.get(itemId) ?? []).some((d) => d.bulk && Math.abs(d.at - j.t) <= DECISION_WINDOW_MS);
     const side = bulk ? 'bulk' : 'single';
-    const h = hitsBy[side].get(j.suggested) ?? { total: 0, hits: 0, byAction: {}, byTurn: {} };
+    const h = hitsBy[side].get(j.suggested) ?? { total: 0, hits: 0, ambiguous: 0, byAction: {}, byTurn: {} };
     h.byTurn[j.turn] = (h.byTurn[j.turn] ?? 0) + 1;
+    h.byAction[j.action] = (h.byAction[j.action] ?? 0) + 1;
+    hitsBy[side].set(j.suggested, h);
+    // Only a reply suggestion is certainly missed by a bare done (he did not reply); the rest could have been right.
+    if (j.action === LEGACY_DONE && j.suggested !== 'reply') {
+      h.ambiguous++;
+      summary[side].ambiguous++;
+      continue;
+    }
     h.total++;
     summary[side].total++;
     if (AGREES[j.suggested]?.includes(j.action)) (h.hits++, summary[side].hits++);
-    h.byAction[j.action] = (h.byAction[j.action] ?? 0) + 1;
-    hitsBy[side].set(j.suggested, h);
   }
   const listOf = (m: Map<string, Acc>): SuggestionHit[] =>
     [...m]
@@ -317,6 +350,8 @@ function notesLines(r: HabitsReport): string[] {
   ];
 }
 
+const ambiguousNote = (n: number) => (n > 0 ? `; ${n} not counted (${LEGACY_DONE})` : '');
+
 function hitLines(out: string[], hits: SuggestionHit[]): void {
   if (hits.length === 0) out.push('    none');
   for (const h of hits) {
@@ -325,6 +360,11 @@ function hitLines(out: string[], hits: SuggestionHit[]): void {
       .map(([k, n]) => `${k} ${n}`)
       .join(', ');
     out.push(`    suggested ${h.suggested}: ${pct(h.hits, h.total)} agreed (${acts})`);
+    if (h.ambiguous > 0) {
+      out.push(
+        `      ${h.ambiguous} more not counted: ${LEGACY_DONE}, so not known whether he meant done or no action`,
+      );
+    }
     const turns = Object.entries(h.byTurn)
       .sort((a, b) => b[1] - a[1])
       .map(([k, n]) => `${k} ${n}`)
@@ -376,8 +416,10 @@ export function formatHabits(r: HabitsReport): string {
       `left ${pct(r.passedOver.left, r.passedOver.pairs)}`,
     '',
     'Suggestion hit rate (first action on items that had a suggestion):',
-    `  single decisions: ${r.suggestionSummary.single.total}, agreed ${pct(r.suggestionSummary.single.hits, r.suggestionSummary.single.total)}`,
-    `  bulk: ${r.suggestionSummary.bulk.total}, agreed ${pct(r.suggestionSummary.bulk.hits, r.suggestionSummary.bulk.total)} (shown separately; not a per-item judgement)`,
+    `  single decisions: ${r.suggestionSummary.single.total}, agreed ${pct(r.suggestionSummary.single.hits, r.suggestionSummary.single.total)}` +
+      ambiguousNote(r.suggestionSummary.single.ambiguous),
+    `  bulk: ${r.suggestionSummary.bulk.total}, agreed ${pct(r.suggestionSummary.bulk.hits, r.suggestionSummary.bulk.total)} (shown separately; not a per-item judgement)` +
+      ambiguousNote(r.suggestionSummary.bulk.ambiguous),
     '  one at a time:',
   );
   hitLines(out, r.suggestionHits);

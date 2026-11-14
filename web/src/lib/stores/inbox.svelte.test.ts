@@ -113,6 +113,20 @@ describe('InboxStore', () => {
     decide.mockRestore();
   });
 
+  it('dismisses with the dismissed target, records it as that decision, and undo brings the row back', async () => {
+    const decide = vi.spyOn(decisions, 'decide');
+    store.move(1); // c2
+    await store.triage('dismissed');
+    const call = fetchMock.mock.calls.find(([u]) => u === '/api/triage')!;
+    expect(JSON.parse((call[1] as RequestInit).body as string)).toEqual({ commentIds: ['c2'], to: 'dismissed' });
+    expect(decide.mock.calls[0]![0]).toMatchObject({ action: 'dismissed', targets: ['c2'] });
+    expect(ids()).not.toContain('c2');
+    expect(toasts.items.at(-1)?.message).toContain('Marked no action needed');
+    await store.undo();
+    expect(ids()).toContain('c2');
+    decide.mockRestore();
+  });
+
   it('moves selection and clamps', () => {
     store.move(1);
     store.move(1);
