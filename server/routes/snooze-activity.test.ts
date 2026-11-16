@@ -379,4 +379,15 @@ describe('POST /api/items/:id/nudge-draft', () => {
     const res = await send('POST', `/api/items/${encodeURIComponent(id(1))}/nudge-draft`);
     expect([res.statusCode, res.json().code]).toEqual([424, 'llm_failed']);
   });
+
+  it('charges a draft the model billed for but left empty, and counts it as a failure', async () => {
+    await park(1);
+    nudgeAnswer = async () => {
+      throw new LlmError('The model returned nothing', null, { ...tokens, inputTokens: 1_000_000 });
+    };
+    const res = await send('POST', `/api/items/${encodeURIComponent(id(1))}/nudge-draft`);
+    expect(res.statusCode).toBe(424);
+    expect(env.repo.spend.todayUsd()).toBeGreaterThan(0.09);
+    expect(env.repo.usage.today('snooze_ai.fail')).toBe(1);
+  });
 });

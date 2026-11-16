@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { GithubClient, GithubItemUpsert, Repo } from '../contracts.js';
 import type { Classifier } from '../classify/anthropic.js';
-import { createAnthropicClassifier, PROMPT_VERSION } from '../classify/anthropic.js';
+import { ClassifierError, createAnthropicClassifier, PROMPT_VERSION } from '../classify/anthropic.js';
 import type { Classification, EvalItem, Usage } from '../classify/types.js';
 import { githubItemId } from '../db/feeds.js';
 import { openDb, type Db } from '../db/db.js';
@@ -418,6 +418,23 @@ describe('suggestion worker', () => {
       expect(await w.runOnce()).toMatchObject({ modelCalls: 0, stopped: 'backoff' });
       clock.advance(24 * 3_600_000);
       expect(await w.runOnce()).toMatchObject({ modelCalls: 2 });
+    });
+
+    it('charges a call whose verdict could not be used, so bad answers cannot run past the cap', async () => {
+      const w = worker({
+        makeClassifier: () => ({
+          model: 'claude-haiku-5-5',
+          async classify() {
+            throw new ClassifierError('model returned an invalid verdict', false, undefined, {
+              ...NO_USAGE,
+              inputTokens: 1_000_000,
+            });
+          },
+        }),
+      });
+      await w.runOnce();
+      expect(rows()).toEqual([]);
+      expect(repo.spend.todayUsd()).toBeCloseTo(0.2); // two items, $0.10 each
     });
 
     it('counts what was spent before a restart, from the table', async () => {

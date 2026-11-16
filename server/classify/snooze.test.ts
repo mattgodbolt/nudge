@@ -120,6 +120,13 @@ describe('drafting a nudge', () => {
     await expect(empty.ai.nudge(input, 'k', 'm')).rejects.toBeInstanceOf(LlmError);
   });
 
+  it('says what an empty draft cost, since the call was billed', async () => {
+    const { ai } = make([text('  ')]);
+    await expect(ai.nudge(input, 'k', 'm')).rejects.toMatchObject({
+      tokens: { inputTokens: 40, cacheReadTokens: 3, cacheWriteTokens: 0, outputTokens: 7 },
+    });
+  });
+
   it('strips links from the draft, so a thread cannot get one into a comment posted as Matt', async () => {
     const { ai } = make([
       text('Could you rebase? Details at https://evil.example/x?y=1 and www.evil.example.\n\nThanks for the patch.'),

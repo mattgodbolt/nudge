@@ -145,7 +145,7 @@ export function createSnoozeAi(opts: { fetchImpl?: typeof fetch } = {}): SnoozeA
         .trim();
       const onThread = [...(input.author ? [input.author] : []), ...input.comments.map((c) => c.author)];
       text = cleanNudge(text, onThread).slice(0, NUDGE_MAX);
-      if (!text) throw new LlmError('The model returned nothing');
+      if (!text) throw new LlmError('The model returned nothing', null, tokensOf(json));
       return { text, tokens: tokensOf(json) };
     },
   };

@@ -9,14 +9,15 @@ import { HttpError, logBackground, notFound } from './util.js';
 /** Most items one snooze action will have bucketed by the model (a bulk snooze must not become a bulk bill). */
 export const MAX_BUCKET_CALLS = 10;
 
-function count(deps: AppDeps, model: string, tokens: LlmTokens | null): void {
+/** Charge one call. A failed call is charged too when the model answered: a billed but unusable answer is not free. */
+function count(deps: AppDeps, model: string, tokens: LlmTokens | null, failed = tokens === null): void {
   const micros = tokens ? costMicros(model, tokens) : 0;
   // The cap's ledger first and on its own: an analytics failure must not make a call free.
   deps.repo.spend.add('snooze_ai', micros);
   try {
     deps.repo.usage.add({
       'snooze_ai.call': 1,
-      ...(tokens ? {} : { 'snooze_ai.fail': 1 }),
+      ...(failed ? { 'snooze_ai.fail': 1 } : {}),
       ...(micros > 0 ? { 'snooze_ai.cost_micros': micros } : {}),
     });
   } catch (e) {
@@ -49,7 +50,7 @@ export async function bucketInBackground(
         count(deps, model, r.tokens);
         if (r.bucket && deps.repo.assignSnoozeBucket(id, actionId, r.bucket)) changed.push(id);
       } catch (e) {
-        count(deps, model, null);
+        count(deps, model, e instanceof LlmError ? e.tokens : null, true);
         log('snooze bucketing failed', e);
       }
     }
@@ -125,7 +126,7 @@ export function registerSnoozeAiRoutes(app: FastifyInstance, deps: AppDeps): voi
       count(deps, model, r.tokens);
       return { text: r.text, bucket: BUCKETS[bucket].label };
     } catch (e) {
-      count(deps, model, null);
+      count(deps, model, e instanceof LlmError ? e.tokens : null, true);
       throw new HttpError(424, e instanceof LlmError ? e.message : 'Could not draft a nudge', 'llm_failed');
     }
   });

@@ -442,6 +442,8 @@ export function createSuggestWorker(deps: SuggestWorkerDeps): SuggestWorker {
           bus.emit({ type: 'suggestions.changed', suggestions: { [w.item.id]: dto } });
           emitStatus();
         } catch (e) {
+          // An answer that could not be used was still billed: the cap must see it, or bad answers would be free.
+          if (e instanceof ClassifierError && e.usage) repo.spend.add('suggest', costMicros(clf.model, e.usage));
           const status = e instanceof ClassifierError ? e.status : undefined;
           if (status === 401 || status === 403) {
             rejectedKey = apiKey;

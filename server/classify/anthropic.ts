@@ -179,6 +179,8 @@ export class ClassifierError extends Error {
     readonly fatal = false,
     /** The HTTP status that caused it, when there was one (a network failure or a bad verdict has none). */
     readonly status?: number,
+    /** What the call cost when it was answered (and billed) but the answer was unusable, so it still counts. */
+    readonly usage?: Usage,
   ) {
     super(message);
   }
@@ -240,18 +242,16 @@ export function createAnthropicClassifier(opts: {
             content?: { type: string; input?: unknown }[];
             usage?: Record<string, number>;
           };
-          const result = parseClassification(json.content?.find((c) => c.type === 'tool_use')?.input);
-          if (!result) throw new ClassifierError('model returned an invalid verdict');
           const u = json.usage ?? {};
-          return {
-            result,
-            usage: {
-              inputTokens: u.input_tokens ?? 0,
-              cacheReadTokens: u.cache_read_input_tokens ?? 0,
-              cacheWriteTokens: u.cache_creation_input_tokens ?? 0,
-              outputTokens: u.output_tokens ?? 0,
-            },
+          const usage: Usage = {
+            inputTokens: u.input_tokens ?? 0,
+            cacheReadTokens: u.cache_read_input_tokens ?? 0,
+            cacheWriteTokens: u.cache_creation_input_tokens ?? 0,
+            outputTokens: u.output_tokens ?? 0,
           };
+          const result = parseClassification(json.content?.find((c) => c.type === 'tool_use')?.input);
+          if (!result) throw new ClassifierError('model returned an invalid verdict', false, undefined, usage);
+          return { result, usage };
         }
         if (res) {
           if (res.status === 401 || res.status === 403) throw new ClassifierError('API key rejected', true, res.status);

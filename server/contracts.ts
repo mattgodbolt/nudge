@@ -663,6 +663,8 @@ export class LlmError extends Error {
   constructor(
     message: string,
     public status: number | null = null,
+    /** What the call cost when the model answered (and was billed) but the answer was unusable. */
+    public tokens: LlmTokens | null = null,
   ) {
     super(message);
     this.name = 'LlmError';

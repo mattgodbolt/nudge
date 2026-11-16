@@ -302,4 +302,15 @@ describe('createAnthropicClassifier', () => {
     const { c } = make([reply(200, { content: [{ type: 'tool_use', input: { verdict: 'maybe' } }] })]);
     await expect(c.classify(item('hi'))).rejects.toBeInstanceOf(ClassifierError);
   });
+  it('still reports what an invalid verdict cost, since the call was billed', async () => {
+    const { c } = make([
+      reply(200, {
+        content: [{ type: 'tool_use', input: { verdict: 'maybe' } }],
+        usage: { input_tokens: 900, cache_read_input_tokens: 50, output_tokens: 40 },
+      }),
+    ]);
+    await expect(c.classify(item('hi'))).rejects.toMatchObject({
+      usage: { inputTokens: 900, cacheReadTokens: 50, cacheWriteTokens: 0, outputTokens: 40 },
+    });
+  });
 });
