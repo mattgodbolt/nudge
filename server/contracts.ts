@@ -1,6 +1,7 @@
 // Server-internal interfaces shared by the db / sync / http chunks.
 // Owned by the lead; implementers must conform to these and ask before changing them.
 import type { UsageStore } from './db/usage.js';
+import type { Insights, InsightsRange } from '../shared/insights.js';
 import type { SuggestionStore } from './db/suggestions.js';
 import type { NoteStore } from './db/notes.js';
 import type { ClientEventStore } from './db/events.js';
@@ -157,6 +158,11 @@ export interface RpgStored {
   /** The browser's time zone at the last claim, and the one before it when it changed (for lenient campfire days). */
   tz: string | null;
   prevTz: string | null;
+}
+/** Insights' view of the history (docs/INSIGHTS.md). Reads only (see server/db/insights.ts). */
+export interface InsightsReaderLike {
+  /** Throws RangeError for a time zone the runtime does not know. */
+  report(range: InsightsRange, tz: string): Insights;
 }
 /** Adventure mode's view of the history. Reads only (see server/db/rpg.ts). */
 export interface RpgReader {
@@ -791,6 +797,8 @@ export interface AppDeps {
   buildId?: () => string | null;
   /** Adventure mode's reader (absent in tests that do not exercise it: /api/rpg then answers 404). */
   rpg?: RpgReader;
+  /** Insights' reader (absent in tests that do not exercise it: /api/insights then answers 404). */
+  insights?: InsightsReaderLike;
 }
 export type { QuotaDTO, SettingsDTO, InboxItem };
 

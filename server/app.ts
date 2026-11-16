@@ -15,6 +15,7 @@ import { registerTodoRoutes } from './routes/todos.js';
 import { registerUsageRoutes } from './routes/usage.js';
 import { registerItemEventRoutes } from './routes/itemEvents.js';
 import { registerRpgRoutes } from './routes/rpg.js';
+import { registerInsightsRoutes } from './routes/insights.js';
 import { HttpError } from './routes/util.js';
 import { registerSecurity, type SecurityOptions } from './security.js';
 
@@ -63,6 +64,7 @@ export function buildApp(deps: AppDeps, opts: BuildAppOptions = {}): FastifyInst
   registerUsageRoutes(app, deps);
   registerItemEventRoutes(app, deps);
   registerRpgRoutes(app, deps);
+  registerInsightsRoutes(app, deps);
   registerEventRoutes(app, deps, opts.pingMs);
 
   const staticDir = deps.staticDir && existsSync(join(deps.staticDir, 'index.html')) ? deps.staticDir : null;

@@ -31,7 +31,7 @@ export default defineConfig({
     {
       name: 'handoff',
       testIgnore:
-        /(inbox|reply-api|snooze|snooze-activity|github|assistant|suggestions|notes|backlog|update|adventure)\.spec\.ts/,
+        /(inbox|reply-api|snooze|snooze-activity|github|assistant|suggestions|notes|backlog|update|adventure|insights)\.spec\.ts/,
       use: { ...use, baseURL: `${base(4518)}` },
     },
     {
@@ -88,6 +88,12 @@ export default defineConfig({
       name: 'adventure',
       testMatch: /adventure\.spec\.ts/,
       use: { ...use, baseURL: `${base(4529)}` },
+    },
+    {
+      // Insights on Stats: a demo with weeks of made-up history (NUDGE_DEMO_HISTORY=1) plus the fake GitHub feed.
+      name: 'insights',
+      testMatch: /insights\.spec\.ts/,
+      use: { ...use, baseURL: `${base(4530)}` },
     },
     {
       name: 'github',
@@ -159,6 +165,12 @@ export default defineConfig({
     {
       command: 'npm run demo:e2e:adventure',
       url: `${base(4529)}/api/bootstrap`,
+      reuseExistingServer: false,
+      timeout: 120000,
+    },
+    {
+      command: 'npm run demo:e2e:insights',
+      url: `${base(4530)}/api/bootstrap`,
       reuseExistingServer: false,
       timeout: 120000,
     },

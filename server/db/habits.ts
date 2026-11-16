@@ -1,16 +1,13 @@
 import type { Db } from './db.js';
+import { AGREES, DECISION_WINDOW_MS, LEGACY_DONE, median, parseMeta } from './history.js';
+
+export { LEGACY_DONE };
 
 /**
  * Read-only summary of how the owner triages, computed from item_events (and items for provider/kind/arrival time).
  * Counts and durations only: no item text, titles, authors or ids appear in the output. The one exception is the
  * latest few notes the owner made himself (clipped), which he asked to see.
  */
-/**
- * What a user state event to 'done' was. Events written since dismissals existed carry meta.reason ('done' or
- * 'no_action'); a bare done from before that could have meant either, so it is kept apart rather than guessed at.
- */
-export const LEGACY_DONE = 'done (before dismissals existed)';
-
 export interface SuggestionHit {
   suggested: string;
   /** Items judged: those whose first action says whether the suggestion was right. Excludes `ambiguous`. */
@@ -93,24 +90,6 @@ interface Row {
   provider: string | null;
   ikind: string | null;
   first_seen_at: string | null;
-}
-
-const median = (xs: number[]): number | null => {
-  if (xs.length === 0) return null;
-  const s = [...xs].sort((a, b) => a - b);
-  const m = s.length >> 1;
-  return s.length % 2 ? s[m]! : (s[m - 1]! + s[m]!) / 2;
-};
-
-function parseMeta(s: string | null): Record<string, any> {
-  // eslint-disable-line @typescript-eslint/no-explicit-any
-  if (!s) return {};
-  try {
-    const v = JSON.parse(s);
-    return v && typeof v === 'object' && !Array.isArray(v) ? v : {};
-  } catch {
-    return {};
-  }
 }
 
 /** Counts of the owner's notes plus the latest few. Empty (not an error) for a database from before migration 12. */
@@ -327,12 +306,6 @@ export function habitsReport(db: Db): HabitsReport {
     }
   }
 
-  const AGREES: Record<string, string[]> = {
-    reply: ['replied'],
-    act: ['done', 'snooze'],
-    skip: ['dismissed'],
-    spam: ['dismissed'],
-  };
   type Acc = {
     total: number;
     hits: number;
@@ -342,8 +315,6 @@ export function habitsReport(db: Db): HabitsReport {
   };
   const hitsBy = { single: new Map<string, Acc>(), bulk: new Map<string, Acc>() };
   const summary = { single: { total: 0, hits: 0, ambiguous: 0 }, bulk: { total: 0, hits: 0, ambiguous: 0 } };
-  /** The browser's decision event for the same action: close in time to the state change, whichever came first. */
-  const DECISION_WINDOW_MS = 120_000;
   for (const [itemId, j] of judged) {
     const bulk =
       (j.actionId !== null && (actionSize.get(j.actionId) ?? 0) > 1) ||

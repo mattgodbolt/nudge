@@ -47,7 +47,12 @@ import { ACTION_OF } from './suggestions.js';
  *
  * The owner's own actions (source `user`, kinds state/snooze/reply/decision) also carry `suggested` ('reply' | 'act' |
  * 'skip' | 'spam') and `suggestedConfidence` (and `suggestedTurn`, when the model said whose move it was) in meta when the item had an LLM suggestion at that moment, so the hit rate
- * can be measured later. Items with no suggestion, or one flagged as an injection attempt, get neither key.
+ * can be measured later, plus `suggestedCategory` and `suggestedPrompt` (the suggestion's category and prompt_version;
+ * written since 2026-11-16, absent before). Items with no suggestion, or one flagged as an injection attempt, get none
+ * of these keys.
+ *
+ * The owner's state and reply events also carry `threadSize` (since 2026-11-16): the conversation's size when he acted
+ * (a GitHub item's `data.comments`, a YouTube thread's total_reply_count; absent for todos and unknown items).
  *
  * Bulk actions: items changed by one triage/snooze action share `meta.actionId` on their state/snooze rows, and the
  * browser's decision rows carry `bulk` and `selectionSize`. The habits report uses either to keep bulk-actioned items
@@ -105,23 +110,27 @@ export interface Events {
 }
 
 const SUGGESTION_KINDS: ReadonlySet<EventKind> = new Set(['state', 'snooze', 'reply', 'decision']);
+const THREAD_SIZE_KINDS: ReadonlySet<EventKind> = new Set(['state', 'reply']);
 
 export function createEvents(db: Db): Events {
   // Prepared lazily: tests (and migrations) build repos around databases that are not at the latest version yet.
   let insert: Statement | undefined;
   let currentSuggestion: Statement | null | undefined;
+  let threadSizeStmt: Statement | null | undefined;
 
   /** The suggestion in force for the item, as meta keys; nothing when there is none (or the table is not there yet). */
   function suggestionMeta(itemId: string): Record<string, unknown> {
     if (currentSuggestion === undefined) {
       try {
         currentSuggestion = db.prepare(
-          'SELECT verdict, confidence, turn FROM suggestions WHERE item_id = ? AND injection_attempt = 0',
+          `SELECT verdict, confidence, turn, category, prompt_version FROM suggestions
+            WHERE item_id = ? AND injection_attempt = 0`,
         );
       } catch {
         try {
           currentSuggestion = db.prepare(
-            'SELECT verdict, confidence, NULL AS turn FROM suggestions WHERE item_id = ? AND injection_attempt = 0',
+            `SELECT verdict, confidence, NULL AS turn, category, prompt_version FROM suggestions
+              WHERE item_id = ? AND injection_attempt = 0`,
           ); // a database from before migration 12
         } catch {
           currentSuggestion = null; // a database from before migration 11
@@ -129,24 +138,62 @@ export function createEvents(db: Db): Events {
       }
     }
     const r = currentSuggestion?.get(itemId) as
-      { verdict: Verdict; confidence: string; turn: string | null } | undefined;
+      | { verdict: Verdict; confidence: string; turn: string | null; category: string; prompt_version: string }
+      | undefined;
     return r
       ? {
           suggested: ACTION_OF[r.verdict],
           suggestedConfidence: r.confidence,
           ...(r.turn ? { suggestedTurn: r.turn } : {}),
+          // The suggestions table keeps only the current row per item, so what the model called it, and which prompt
+          // asked, are kept here or lost (the insights "overridden categories" card reads them).
+          ...(r.category ? { suggestedCategory: r.category } : {}),
+          ...(r.prompt_version ? { suggestedPrompt: r.prompt_version } : {}),
         }
       : {};
+  }
+
+  /**
+   * How big the item's conversation was at the moment he acted: a GitHub item's comment count, or a YouTube thread's
+   * reply count. Only "current size" is stored anywhere else, which drifts after the fact. Todos have no thread.
+   */
+  function threadSizeMeta(itemId: string): Record<string, unknown> {
+    if (threadSizeStmt === undefined) {
+      try {
+        threadSizeStmt = db.prepare(
+          `SELECT i.provider, i.data,
+                  (SELECT t.total_reply_count FROM comments c JOIN threads t ON t.id = c.thread_id WHERE c.id = i.id)
+                    AS replies
+             FROM items i WHERE i.id = ?`,
+        );
+      } catch {
+        threadSizeStmt = null; // a database from before the items table
+      }
+    }
+    const r = threadSizeStmt?.get(itemId) as
+      { provider: string; data: string | null; replies: number | null } | undefined;
+    if (!r) return {};
+    if (r.provider === 'youtube') return typeof r.replies === 'number' ? { threadSize: r.replies } : {};
+    if (r.provider === 'github' && r.data) {
+      try {
+        const d = JSON.parse(r.data) as { comments?: unknown };
+        if (typeof d?.comments === 'number') return { threadSize: d.comments };
+      } catch {
+        // Unreadable data: no size rather than a wrong one.
+      }
+    }
+    return {};
   }
 
   function record(e: NewItemEvent): void {
     insert ??= db.prepare(
       'INSERT INTO item_events (item_id, at, kind, from_value, to_value, source, meta) VALUES (?, ?, ?, ?, ?, ?, ?)',
     );
-    const extra =
-      e.source === 'user' && SUGGESTION_KINDS.has(e.kind) && !(e.meta && 'suggested' in e.meta)
-        ? suggestionMeta(e.itemId)
-        : {};
+    const mine = e.source === 'user';
+    const extra = {
+      ...(mine && SUGGESTION_KINDS.has(e.kind) && !(e.meta && 'suggested' in e.meta) ? suggestionMeta(e.itemId) : {}),
+      ...(mine && THREAD_SIZE_KINDS.has(e.kind) && !(e.meta && 'threadSize' in e.meta) ? threadSizeMeta(e.itemId) : {}),
+    };
     const meta = Object.keys(extra).length > 0 ? { ...e.meta, ...extra } : e.meta;
     insert.run(e.itemId, e.at, e.kind, e.from ?? null, e.to ?? null, e.source, meta ? JSON.stringify(meta) : null);
   }

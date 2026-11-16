@@ -3,6 +3,7 @@ import type { DraftDTO, InboxPage, InboxQuery, SettingsUpdate, SyncRequest } fro
 import { CLIENT_HEADER } from '../../../shared/api';
 import type { ItemEventPost, ItemEventsPostResult } from '../../../shared/api';
 import type { UsageDTO, UsagePostResult } from '../../../shared/usage';
+import type { Insights, InsightsRange } from '../../../shared/insights';
 
 export class ApiRequestError extends Error {
   constructor(
@@ -182,6 +183,7 @@ export const api = {
   postItemEvents: (events: ItemEventPost[]) =>
     request<ItemEventsPostResult>('POST', '/api/item-events', { events }, { keepalive: true }),
   usage: (days: number) => request<UsageDTO>('GET', `/api/usage?days=${days}`),
+  insights: (range: InsightsRange, tz: string) => request<Insights>('GET', `/api/insights${qs({ range, tz })}`),
   resetUsage: () => request<void>('DELETE', '/api/usage'),
   testKey: (apiKey?: string) => request<{ ok: boolean; message: string }>('POST', '/api/settings/test-key', { apiKey }),
 };

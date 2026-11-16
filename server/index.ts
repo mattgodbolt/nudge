@@ -10,6 +10,7 @@ import { loadConfig, migrateLegacyDb, resolveApiKey, resolveGoogleClient } from 
 import { openDb } from './db/db.js';
 import { createRepo } from './db/repo.js';
 import { createRpgReader } from './db/rpg.js';
+import { createInsightsReader } from './db/insights.js';
 import { createFakeClient } from './demo/fake-client.js';
 import { createFakeGithubClient, DEMO_GITHUB_OWNER } from './demo/github.js';
 import { createFakeLlmClient, createFakeSnoozeAi } from './demo/llm.js';
@@ -18,6 +19,7 @@ import { createDemoClassifier, demoCapUsd } from './demo/suggest.js';
 import { createSuggestWorker } from './suggest/worker.js';
 import { createLlmClient } from './providers/anthropic/client.js';
 import { decorateDemo, nonDemoSources, seedDemo } from './demo/seed.js';
+import { seedDemoHistory } from './demo/history.js';
 import { createDemoPosting } from './demo/post.js';
 import { createWorld } from './demo/world.js';
 import { createEventBus } from './events/bus.js';
@@ -66,6 +68,7 @@ async function main(): Promise<void> {
   const db = openDb(config.dbPath);
   const repo = createRepo(db, config.demo ? () => new Date(Date.now() + demoSkewMs) : undefined);
   const rpg = createRpgReader(db, () => new Date(Date.now() + demoSkewMs + rpgSkewMs));
+  const insights = createInsightsReader(db, () => new Date(Date.now() + demoSkewMs));
   if (config.demo) {
     const foreign = nonDemoSources(repo);
     if (foreign.length) {
@@ -168,6 +171,18 @@ async function main(): Promise<void> {
         stop();
         bus.emit({ type: 'inbox.changed', counts: repo.counts(), addedIds: [], changedIds: [] });
       });
+      // NUDGE_DEMO_HISTORY=1: weeks of made-up history for the Insights section, once the decoration above is in
+      // and (with the fake GitHub feed) its items have arrived too.
+      if (process.env.NUDGE_DEMO_HISTORY === '1') {
+        const stopHistory = bus.subscribe((e) => {
+          if (e.type !== 'sync.done' && e.type !== 'inbox.changed') return;
+          if (repo.counts().snoozed === 0) return;
+          if (repo.listFeeds().length > 0 && Object.keys(repo.counts().byRepo).length === 0) return;
+          if (!seedDemoHistory(db)) return;
+          stopHistory();
+          bus.emit({ type: 'inbox.changed', counts: repo.counts(), addedIds: [], changedIds: [] });
+        });
+      }
     }
   }
 
@@ -255,6 +270,7 @@ async function main(): Promise<void> {
           }
         : undefined,
     rpg,
+    insights,
     staticDir,
     // A demo server may claim a different build (NUDGE_DEMO_BUILD_ID) so the "new version" prompt can be shown in e2e.
     buildId: createBuildId(staticDir, config.demo ? process.env.NUDGE_DEMO_BUILD_ID : undefined),

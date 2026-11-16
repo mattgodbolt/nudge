@@ -148,7 +148,80 @@ describe('recording the suggestion with what the owner did', () => {
 
     repo.suggestions.save(row(2, { verdict: 'needs_action' }));
     const r = repo.snooze([id(2)], new Date(Date.now() + 3_600_000).toISOString());
-    expect(metaOf(id(2), 'snooze')).toEqual({ actionId: r.actionId, suggested: 'act', suggestedConfidence: 'medium' });
+    expect(metaOf(id(2), 'snooze')).toEqual({
+      actionId: r.actionId,
+      suggested: 'act',
+      suggestedConfidence: 'medium',
+      suggestedCategory: 'question',
+      suggestedPrompt: 'p0-7',
+    });
+  });
+
+  it('keeps the category and prompt version the suggestion had when he acted, even after it is replaced', () => {
+    repo.suggestions.save(row(1, { verdict: 'no_reply_needed', category: 'thanks', promptVersion: 'p1-2' }));
+    repo.triage([id(1)], 'done', 'no_action');
+    repo.suggestions.save(row(1, { category: 'question', promptVersion: 'p1-3' })); // a later run replaces the row
+    expect(metaOf(id(1), 'state')).toMatchObject({
+      suggested: 'skip',
+      suggestedCategory: 'thanks',
+      suggestedPrompt: 'p1-2',
+    });
+  });
+
+  it('records no category or prompt for an injection attempt, nor without a suggestion', () => {
+    repo.suggestions.save(row(1, { injectionAttempt: true, category: 'sneaky' }));
+    repo.triage([id(1), id(2)], 'done');
+    for (const n of [1, 2]) {
+      const m = metaOf(id(n), 'state');
+      expect(m).not.toHaveProperty('suggestedCategory');
+      expect(m).not.toHaveProperty('suggestedPrompt');
+      expect(m).not.toHaveProperty('suggested');
+    }
+  });
+
+  it('tags decision and reply events with the category too, but leaves a caller-given suggestion alone', () => {
+    repo.suggestions.save(row(1, { category: 'bug-report' }));
+    const ev = createEvents(db);
+    ev.record({ itemId: id(1), at: '2026-11-12T10:00:00.000Z', kind: 'decision', to: 'done', source: 'user' });
+    expect(metaOf(id(1), 'decision')).toMatchObject({ suggestedCategory: 'bug-report', suggestedPrompt: 'p0-7' });
+    ev.record({
+      itemId: id(1),
+      at: '2026-11-12T10:00:00.000Z',
+      kind: 'reply',
+      source: 'user',
+      meta: { suggested: 'skip' },
+    });
+    expect(metaOf(id(1), 'reply')).not.toHaveProperty('suggestedCategory');
+  });
+
+  it('works on a database from before migration 12 (no turn column), still with category and prompt', () => {
+    const old = openDb(':memory:');
+    // openDb migrates fully; rebuild the table without the 012 columns to get the older shape.
+    old.exec(`CREATE TABLE s2 AS SELECT item_id, state_key, verdict, category, confidence, reason, injection_attempt,
+                model, prompt_version, input_tokens, output_tokens, cost_usd, created_at FROM suggestions`);
+    old.exec('DROP TABLE suggestions');
+    old.exec('ALTER TABLE s2 RENAME TO suggestions');
+    old
+      .prepare(
+        `INSERT INTO suggestions (item_id, state_key, verdict, category, confidence, reason, injection_attempt, model,
+         prompt_version, input_tokens, output_tokens, cost_usd, created_at)
+       VALUES ('x', 'k', 'needs_reply', 'question', 'high', 'r', 0, 'm', 'p0-1', 0, 0, 0, '2026-01-01')`,
+      )
+      .run();
+    createEvents(old).record({
+      itemId: 'x',
+      at: '2026-11-12T10:00:00.000Z',
+      kind: 'state',
+      to: 'done',
+      source: 'user',
+    });
+    const m = JSON.parse((old.prepare('SELECT meta FROM item_events').get() as { meta: string }).meta);
+    expect(m).toEqual({
+      suggested: 'reply',
+      suggestedConfidence: 'high',
+      suggestedCategory: 'question',
+      suggestedPrompt: 'p0-1',
+    });
   });
 
   it('leaves existing event shapes alone when there is no suggestion', () => {

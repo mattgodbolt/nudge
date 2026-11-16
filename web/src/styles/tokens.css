@@ -41,6 +41,29 @@
   --shadow-pop: 0 8px 30px rgba(0, 0, 0, 0.12), 0 0 0 1px rgba(0, 0, 0, 0.05);
   --scrim: rgba(24, 24, 27, 0.35);
   --own-bg: rgba(220, 38, 38, 0.05);
+  /* Insights charts (docs/INSIGHTS.md §4): one blue sequential ramp (never the red accent, which reads as alarm),
+     a single-series blue, and the four outcome hues validated with the dataviz script against --bg-elev. */
+  --viz-seq-1: #cde2fb;
+  --viz-seq-2: #9ec5f4;
+  --viz-seq-3: #6da7ec;
+  --viz-seq-4: #3987e5;
+  --viz-seq-5: #256abf;
+  --viz-seq-6: #184f95;
+  --viz-seq-7: #104281;
+  --viz-empty: #f1f1f3;
+  --viz-series: #2a78d6;
+  --viz-track: #e3eefc;
+  --viz-replied: #2a78d6;
+  --viz-done: #eb6834;
+  --viz-dismissed: #1baf7a;
+  --viz-snoozed: #eda100;
+  --viz-legacy: #b4b3ad;
+  --viz-upstream: #898781;
+  --viz-cat-5: #e87ba4;
+  --viz-cat-6: #008300;
+  --viz-on-dark: #ffffff;
+  --viz-on-light: #0b0b0b;
+  --viz-grid: #e4e4e7;
   color-scheme: light;
 }
 
@@ -66,5 +89,27 @@
   --shadow-pop: 0 12px 40px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.06);
   --scrim: rgba(0, 0, 0, 0.55);
   --own-bg: rgba(239, 68, 68, 0.08);
+  /* Dark steps are chosen for the dark surface, not flipped: low values recede towards it, high ones brighten. */
+  --viz-seq-1: #13304f;
+  --viz-seq-2: #104281;
+  --viz-seq-3: #1c5cab;
+  --viz-seq-4: #2a78d6;
+  --viz-seq-5: #5598e7;
+  --viz-seq-6: #86b6ef;
+  --viz-seq-7: #b7d3f6;
+  --viz-empty: #1d1d21;
+  --viz-series: #3987e5;
+  --viz-track: #1a2638;
+  --viz-replied: #3987e5;
+  --viz-done: #d95926;
+  --viz-dismissed: #199e70;
+  --viz-snoozed: #c98500;
+  --viz-legacy: #5c5b57;
+  --viz-upstream: #898781;
+  --viz-cat-5: #d55181;
+  --viz-cat-6: #0ca30c;
+  --viz-on-dark: #ffffff;
+  --viz-on-light: #0b0b0b;
+  --viz-grid: #26262b;
   color-scheme: dark;
 }

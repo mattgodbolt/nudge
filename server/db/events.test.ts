@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import Database from 'better-sqlite3';
 import type { GithubItemUpsert, Repo, YtComment, YtThread } from '../contracts.js';
-import { exportEventsJsonl, type ItemEventRow } from './events.js';
+import { createEvents, exportEventsJsonl, type ItemEventRow } from './events.js';
 import { githubItemId } from './feeds.js';
 import { openDb, migrate, type Db } from './db.js';
 import { MIGRATIONS } from './migrations.js';
@@ -103,7 +103,7 @@ describe('state events', () => {
         from: 'inbox',
         to: 'done',
         source: 'user',
-        meta: { actionId: r.actionId, reason: 'no_action' },
+        meta: { actionId: r.actionId, reason: 'no_action', threadSize: 0 },
       },
     ]);
   });
@@ -118,7 +118,7 @@ describe('state events', () => {
         from: 'inbox',
         to: 'done',
         source: 'user',
-        meta: { actionId: r.actionId, reason: 'done' },
+        meta: { actionId: r.actionId, reason: 'done', threadSize: 0 },
       },
     ]);
     expect((db.prepare('SELECT at FROM item_events').get() as { at: string }).at).toBe(new Date(nowMs).toISOString());
@@ -228,14 +228,28 @@ describe('reply events', () => {
       replyPostId: post,
     });
     expect(events('t1')).toEqual([
-      { itemId: 't1', kind: 'state', from: 'inbox', to: 'replied', source: 'user', meta: { actionId: r.actionId } },
+      // threadSize is the thread as he saw it when he answered: one reply, not counting his own.
+      {
+        itemId: 't1',
+        kind: 'state',
+        from: 'inbox',
+        to: 'replied',
+        source: 'user',
+        meta: { actionId: r.actionId, threadSize: 1 },
+      },
       {
         itemId: 't1',
         kind: 'reply',
         from: null,
         to: null,
         source: 'user',
-        meta: { replyPostId: post, postedCommentId: 't1.mine', viaChannelId: OWN, actionId: r.actionId },
+        meta: {
+          replyPostId: post,
+          postedCommentId: 't1.mine',
+          viaChannelId: OWN,
+          actionId: r.actionId,
+          threadSize: 1,
+        },
       },
     ]);
     expect(events('t1.r1')).toEqual([
@@ -283,6 +297,89 @@ describe('reply events', () => {
     // t2's top comment was published at the same instant as the reply's default; nothing else moves unless older.
     repo.updateSettings({ ownChannelIds: [OWN] });
     expect(events('t2.mine').at(-1)).toMatchObject({ from: 'own', to: 'inbox', source: 'sync' });
+  });
+});
+
+describe('thread size at the moment he acted (threadSize)', () => {
+  const metaOf = (itemId: string, kind: string) => events(itemId).find((e) => e.kind === kind)?.meta ?? null;
+
+  it('a YouTube reply in a thread carries the thread reply count; so does its top comment', () => {
+    repo.upsertThread(thread('t2', [{ id: 't2.r1' }, { id: 't2.r2' }, { id: 't2.r3' }]));
+    repo.triage(['t2.r2'], 'done');
+    repo.triage(['t2'], 'replied');
+    expect(metaOf('t2.r2', 'state')).toMatchObject({ threadSize: 3 });
+    expect(metaOf('t2', 'state')).toMatchObject({ threadSize: 3 });
+  });
+
+  it('records the size then, not now: a thread that grows later leaves the old event alone', () => {
+    repo.upsertThread(thread('t3', [{ id: 't3.r1' }]));
+    repo.triage(['t3'], 'done');
+    repo.upsertThread(thread('t3', [{ id: 't3.r1' }, { id: 't3.r2' }, { id: 't3.r3' }]));
+    repo.triage(['t3'], 'inbox');
+    const states = events('t3').filter((e) => e.kind === 'state');
+    expect(states.map((e) => e.meta?.threadSize)).toEqual([1, 3]);
+  });
+
+  it('a GitHub item carries its comment count; snooze, sync and auto events do not get one', () => {
+    const feedId = repo.addFeed({ owner: 'org', prs: true, issues: true, importMode: 'all' }).id;
+    const gid = githubItemId('org', 'app', 7);
+    repo.upsertGithubItems(feedId, [
+      {
+        id: gid,
+        kind: 'issue',
+        repo: 'org/app',
+        number: 7,
+        title: 'Seven',
+        author: 'carol',
+        authorAvatarUrl: null,
+        authorType: 'User',
+        association: 'NONE',
+        bodyPlain: 'b',
+        url: 'https://github.com/org/app/issues/7',
+        createdAt: new Date(nowMs - HOUR).toISOString(),
+        updatedAt: new Date(nowMs - HOUR).toISOString(),
+        sourceState: 'open',
+        draft: false,
+        comments: 12,
+        labels: [],
+      },
+    ]);
+    repo.snooze([gid], new Date(nowMs + HOUR).toISOString());
+    expect(metaOf(gid, 'snooze')).not.toHaveProperty('threadSize');
+    repo.triage([gid], 'done');
+    expect(metaOf(gid, 'state')).toMatchObject({ threadSize: 12 });
+    const ev = createEvents(db);
+    ev.record({
+      itemId: gid,
+      at: new Date(nowMs).toISOString(),
+      kind: 'state',
+      from: 'done',
+      to: 'inbox',
+      source: 'sync',
+    });
+    expect(
+      events(gid)
+        .filter((e) => e.source !== 'user')
+        .every((e) => !e.meta || !('threadSize' in e.meta)),
+    ).toBe(true);
+  });
+
+  it('a todo, an unknown item, and an item with unreadable data get no size; a caller-given size is kept', () => {
+    const ev = createEvents(db);
+    const at = new Date(nowMs).toISOString();
+    db.prepare(
+      `INSERT INTO items (id, provider, kind, occurred_at, state, state_source, state_changed_at, first_seen_at, data)
+       VALUES ('todo:1', 'todo', 'todo', ?, 'inbox', 'user', ?, ?, NULL),
+              ('gh:bad', 'github', 'pr', ?, 'inbox', 'sync', ?, ?, 'not json')`,
+    ).run(at, at, at, at, at, at);
+    ev.record({ itemId: 'todo:1', at, kind: 'state', from: 'inbox', to: 'done', source: 'user' });
+    ev.record({ itemId: 'gh:bad', at, kind: 'state', from: 'inbox', to: 'done', source: 'user' });
+    ev.record({ itemId: 'nope', at, kind: 'reply', source: 'user' });
+    ev.record({ itemId: 'gh:bad', at, kind: 'reply', source: 'user', meta: { threadSize: 4 } });
+    expect(metaOf('todo:1', 'state')).toBeNull();
+    expect(metaOf('gh:bad', 'state')).toBeNull();
+    expect(metaOf('nope', 'reply')).toBeNull();
+    expect(metaOf('gh:bad', 'reply')).toEqual({ threadSize: 4 });
   });
 });
 

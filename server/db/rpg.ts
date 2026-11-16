@@ -14,6 +14,25 @@ import {
 } from '../../shared/rpg.js';
 import type { RpgReader, RpgSeen } from '../contracts.js';
 import type { Db } from './db.js';
+import { REPLAY_ITEMS_WHERE, replayInbox, type ReplayState } from './replay.js';
+import {
+  DAY_MS,
+  actionIdOf,
+  bulkIndex,
+  checkTimeZone,
+  dayCounter,
+  loadEvents,
+  ms,
+  parseMeta,
+  resolutionOf,
+  undoIndex,
+  weekday,
+  type HistEvent,
+  type Resolution,
+} from './history.js';
+
+// The day helpers moved to history.ts (shared with Insights); re-exported for existing callers.
+export { checkTimeZone, dayCounter, weekday } from './history.js';
 
 /**
  * Adventure mode (docs/RPG.md): a level, titles, trophies and loot, worked out from the history in item_events plus a
@@ -28,7 +47,6 @@ import type { Db } from './db.js';
  * anything done by the app or by the remote service pay nothing.
  */
 
-const DAY_MS = 86_400_000;
 const WEEK_MS = 7 * DAY_MS;
 /** Bonus sizes and thresholds, named once so the tests and the doc can point at them. */
 export const XP = {
@@ -49,18 +67,7 @@ export const ANCIENT_ONE_MIN_INBOX = 5;
 export const HALF_LIFE_MIN_PEAK = 10;
 const NEWCOMERS = new Set(['FIRST_TIME_CONTRIBUTOR', 'FIRST_TIMER', 'NONE', 'MANNEQUIN']);
 
-type Res = 'reply' | 'done' | 'legacy' | 'dismiss';
-
-interface EventRow {
-  id: number;
-  item_id: string;
-  at: string;
-  kind: string;
-  from_value: string | null;
-  to_value: string | null;
-  source: string;
-  meta: string | null;
-}
+type Res = Resolution;
 interface ItemRow {
   id: string;
   provider: string;
@@ -73,18 +80,9 @@ interface ItemRow {
   thread_id: string | null;
 }
 
-interface Ev {
-  id: number;
-  item: string;
-  t: number;
-  kind: string;
-  from: string | null;
-  to: string | null;
-  source: string;
-  meta: Record<string, unknown>;
-}
+type Ev = HistEvent;
 
-interface ItemState {
+interface ItemState extends ReplayState {
   id: string;
   provider: string;
   kind: string;
@@ -110,51 +108,6 @@ interface ItemState {
   fallbacks: number;
   pendingFallback: boolean;
   pendingActivity: { trigger: unknown; bucket: unknown } | null;
-}
-
-function parseMeta(s: string | null): Record<string, unknown> {
-  if (!s) return {};
-  try {
-    const v = JSON.parse(s);
-    return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
-  } catch {
-    return {};
-  }
-}
-const ms = (s: string | null | undefined): number | null => {
-  if (!s) return null;
-  const t = Date.parse(s);
-  return Number.isFinite(t) ? t : null;
-};
-
-/**
- * Calendar days in a time zone, as integers (days since 1970-01-01 in that zone), so day arithmetic is plain
- * subtraction and DST never makes a day 23 or 25 hours long. Every zone's offset is a multiple of 15 minutes, so the
- * answer is memoised per quarter hour.
- */
-export function dayCounter(tz: string): { day(t: number): number; key(day: number): string } {
-  const f = new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' });
-  const memo = new Map<number, number>();
-  return {
-    day(t: number): number {
-      const q = Math.floor(t / 900_000);
-      let d = memo.get(q);
-      if (d === undefined) {
-        const p = Object.fromEntries(f.formatToParts(t).map((x) => [x.type, x.value]));
-        d = Math.round(Date.UTC(Number(p.year), Number(p.month) - 1, Number(p.day)) / DAY_MS);
-        memo.set(q, d);
-      }
-      return d;
-    },
-    key: (day: number) => new Date(day * DAY_MS).toISOString().slice(0, 10),
-  };
-}
-/** 0 = Sunday ... 6 = Saturday, for a day number from dayCounter (1970-01-01 was a Thursday). */
-export const weekday = (day: number) => (((day + 4) % 7) + 7) % 7;
-
-/** Throws RangeError when the runtime does not know the zone. */
-export function checkTimeZone(tz: string): void {
-  new Intl.DateTimeFormat('en', { timeZone: tz });
 }
 
 /** Min-heap of inbox items by age, for "is this the oldest one" and "how old is the oldest" during the replay. */
@@ -194,17 +147,7 @@ class AgeHeap {
   }
 }
 
-/** The resolution an event is, if it is one the owner made. */
-function resolution(e: Ev): Res | null {
-  if (e.kind === 'reply' && (e.source === 'user' || e.source === 'sync')) return 'reply';
-  if (e.kind !== 'state' || e.source !== 'user') return null;
-  if (e.to === 'replied') return 'reply';
-  if (e.to !== 'done') return null;
-  if (e.meta.reason === 'no_action') return 'dismiss';
-  if (e.meta.reason === 'done') return 'done';
-  return 'legacy';
-}
-const actionIdOf = (e: Ev): number | null => (typeof e.meta.actionId === 'number' ? e.meta.actionId : null);
+const resolution = resolutionOf;
 
 /** The campfire's rules, named once (docs/RPG.md, "The campfire"). */
 export const CAMPFIRE = {
@@ -307,63 +250,21 @@ export function rpgSheet(db: Db, opts: SheetOptions): RpgSheet {
   const camp = campDays(opts.tz);
   const prevCamp = opts.prevTz && opts.prevTz !== opts.tz ? campDays(opts.prevTz) : null;
 
-  const rows = db
-    .prepare(
-      `SELECT id, item_id, at, kind, from_value, to_value, source, meta FROM item_events
-        WHERE kind IN ('state', 'snooze', 'reply', 'undo') ORDER BY id`,
-    )
-    .all() as EventRow[];
-  const events: Ev[] = [];
-  for (const r of rows) {
-    const t = ms(r.at);
-    if (t === null) continue;
-    events.push({
-      id: r.id,
-      item: r.item_id,
-      t,
-      kind: r.kind,
-      from: r.from_value,
-      to: r.to_value,
-      source: r.source,
-      meta: parseMeta(r.meta),
-    });
-  }
+  const events = loadEvents(db, ['state', 'snooze', 'reply', 'undo']);
 
-  /* ---- pass 1: what was undone, and which actions were bulk ---- */
-  const cancelledIds = new Set<number>();
-  const undone = new Set<string>(); // item \0 actionId
-  const undoActions = new Set<string>();
-  const resolvedBy = new Map<number, Set<string>>(); // actionId -> items it resolved
-  for (const e of events) {
-    if (e.kind === 'undo' && e.source === 'user') {
-      if (typeof e.meta.originalEventId === 'number') cancelledIds.add(e.meta.originalEventId);
-      const a = actionIdOf(e);
-      if (a !== null) undone.add(`${e.item}\0${a}`);
-      undoActions.add(a !== null ? `a${a}` : `e${e.id}`);
-    }
-    const res = resolution(e);
-    const a = actionIdOf(e);
-    if (res && a !== null && e.kind === 'state') {
-      (resolvedBy.get(a) ?? resolvedBy.set(a, new Set()).get(a)!).add(e.item);
-    }
-  }
-  const cancelled = (e: Ev): boolean => {
-    if (cancelledIds.has(e.id)) return true;
-    if (e.source !== 'user' || e.kind === 'undo') return false;
-    const a = actionIdOf(e);
-    return a !== null && undone.has(`${e.item}\0${a}`);
-  };
-  const isBulk = (e: Ev): boolean => {
-    const a = actionIdOf(e);
-    return a !== null && (resolvedBy.get(a)?.size ?? 0) > 1;
-  };
+  /* ---- pass 1: what was undone, and which actions were bulk (shared with Insights and habits: history.ts) ---- */
+  const undos = undoIndex(events);
+  const undoActions = undos.actions;
+  const cancelled = undos.cancelled;
+  // Adventure mode judges bulk by action id alone (a resolving action that changed more than one item).
+  const isBulk = bulkIndex(events, { decisions: false }).isBulk;
 
   /* ---- items: everything with history, plus whatever sits in the inbox now ---- */
   const itemRows = db
     .prepare(
       `SELECT i.id, i.provider, i.kind, i.state, i.snoozed_until, i.first_seen_at, i.occurred_at, i.data, c.thread_id
          FROM items i LEFT JOIN comments c ON c.id = i.id
-        WHERE i.state = 'inbox' OR i.id IN (SELECT item_id FROM item_events)`,
+        WHERE ${REPLAY_ITEMS_WHERE}`,
     )
     .all() as ItemRow[];
   const items = new Map<string, ItemState>();
@@ -425,55 +326,9 @@ export function rpgSheet(db: Db, opts: SheetOptions): RpgSheet {
     return s;
   };
 
-  // What each item was when it arrived: the first state event's `from` says (the arrival itself is not recorded), and
-  // likewise the first snooze event's `from` for a snooze already in force. Without either, its current values.
-  const firstStateSeen = new Set<string>();
-  const firstSnoozeSeen = new Set<string>();
-  const firstEventAt = new Map<string, number>();
-  for (const e of [...events].sort((x, y) => x.t - y.t || x.id - y.id)) {
-    const it = items.get(e.item);
-    if (!it?.replay) continue;
-    if (!firstEventAt.has(e.item)) firstEventAt.set(e.item, e.t);
-    const isState = e.kind === 'state' || (e.kind === 'undo' && e.meta.original !== 'snooze');
-    const isSnooze = e.kind === 'snooze' || (e.kind === 'undo' && e.meta.original === 'snooze');
-    if (isState && !firstStateSeen.has(e.item)) {
-      firstStateSeen.add(e.item);
-      if (e.from) it.initialState = e.from;
-    }
-    if (isSnooze && !firstSnoozeSeen.has(e.item)) {
-      firstSnoozeSeen.add(e.item);
-      it.initialSnooze = ms(e.from);
-    }
-  }
-
-  /* ---- the timeline: arrivals, events, and the moments snoozes ran out ---- */
-  type Entry =
-    | { t: number; ord: 0; type: 'arrive'; it: ItemState }
-    | { t: number; ord: 1; type: 'event'; e: Ev }
-    | { t: number; ord: 2; type: 'expire'; it: ItemState };
-  const timeline: Entry[] = [];
-  for (const it of items.values()) {
-    if (!it.replay) continue;
-    const t = Math.min(it.firstSeen, firstEventAt.get(it.id) ?? Infinity);
-    timeline.push({ t, ord: 0, type: 'arrive', it });
-    if (it.initialSnooze !== null && it.initialSnooze <= nowMs)
-      timeline.push({ t: it.initialSnooze, ord: 2, type: 'expire', it });
-  }
-  for (const e of events) {
-    timeline.push({ t: e.t, ord: 1, type: 'event', e });
-    const it = items.get(e.item);
-    const snoozeTo = e.kind === 'snooze' || (e.kind === 'undo' && e.meta.original === 'snooze') ? ms(e.to) : null;
-    if (it?.replay && snoozeTo !== null && snoozeTo <= nowMs)
-      timeline.push({ t: snoozeTo, ord: 2, type: 'expire', it });
-  }
-  timeline.sort(
-    (x, y) => x.t - y.t || x.ord - y.ord || (x.type === 'event' && y.type === 'event' ? x.e.id - y.e.id : 0),
-  );
-
   /* ---- replay state ---- */
   let count = 0;
   let peak = 0;
-  let started = false;
   const heap = new AgeHeap();
   const live = (x: { id: string; ver: number }) => {
     const it = items.get(x.id);
@@ -535,22 +390,17 @@ export function rpgSheet(db: Db, opts: SheetOptions): RpgSheet {
   let hadBacklog30 = false;
   let hadBacklog365 = false;
 
-  const updateVis = (it: ItemState, t: number) => {
-    const vis = it.arrived && it.state === 'inbox' && (it.snoozedUntil === null || it.snoozedUntil <= t);
-    if (vis === it.visible) return;
-    it.visible = vis;
-    count += vis ? 1 : -1;
-    if (vis) {
-      it.ver++;
-      heap.push({ occ: it.occurred, id: it.id, ver: it.ver });
-    }
+  /** The replay moved an item into or out of the inbox (history.ts keeps the count; the heap and peak are ours). */
+  const onVisibility = (it: ItemState, t: number, c: number) => {
+    count = c;
+    if (it.visible) heap.push({ occ: it.occurred, id: it.id, ver: it.ver });
     if (count > peak) peak = count;
     if (peak >= HALF_LIFE_MIN_PEAK && count * 2 <= peak) earn('half_life', t);
   };
 
   /** The state between a and b did not change: what does it say about those days? */
   const advance = (a: number, b: number) => {
-    if (!started || b <= a) return;
+    if (b <= a) return;
     const cset = count === 0 ? zeroCamp : workCamp;
     for (let d = camp(a), to = camp(b); d <= to; d++) cset.add(d);
     if (count === 0) {
@@ -653,68 +503,43 @@ export function rpgSheet(db: Db, opts: SheetOptions): RpgSheet {
     }
   };
 
-  let prevT: number | null = null;
-  for (const en of timeline) {
-    if (prevT !== null) advance(prevT, en.t);
-    prevT = prevT === null ? en.t : Math.max(prevT, en.t);
-    if (en.type === 'arrive') {
-      const it = en.it;
-      it.arrived = true;
-      it.state = it.initialState;
-      it.snoozedUntil = it.initialSnooze;
-      started = true;
-      updateVis(it, en.t);
-      continue;
-    }
-    if (en.type === 'expire') {
-      updateVis(en.it, en.t);
-      continue;
-    }
-    const e = en.e;
-    const it = items.get(e.item) ?? ghost(e.item);
-    const gone = cancelled(e);
-    const userAct =
-      (e.source === 'user' && (e.kind === 'state' || e.kind === 'snooze' || e.kind === 'undo')) || e.kind === 'reply';
-    if (userAct) activeDays.add(days.day(e.t));
+  replayInbox(items, events, nowMs, {
+    gap: advance,
+    visibility: onVisibility,
+    event(e, known) {
+      const it = known ?? ghost(e.item);
+      const gone = cancelled(e);
+      const userAct =
+        (e.source === 'user' && (e.kind === 'state' || e.kind === 'snooze' || e.kind === 'undo')) || e.kind === 'reply';
+      if (userAct) activeDays.add(days.day(e.t));
 
-    if (!gone) {
-      if (e.kind === 'undo' && e.source === 'user') {
-        undoCount = undoActions.size > 0 ? Math.min(undoActions.size, undoCount + 1) : undoCount;
-        lootTimes.ring = undoCount;
-        if (undoCount >= 10) earn('ctrl_z_adept', e.t);
-      } else if (e.kind === 'snooze' && e.source === 'auto' && !e.to) {
-        if (e.meta.cause === 'fallback') {
-          it.fallbacks++;
-          it.pendingFallback = true;
-          it.pendingActivity = null;
-        } else if (e.meta.cause === 'activity') {
-          it.pendingActivity = { trigger: e.meta.trigger, bucket: e.meta.bucket };
+      if (!gone) {
+        if (e.kind === 'undo' && e.source === 'user') {
+          undoCount = undoActions.size > 0 ? Math.min(undoActions.size, undoCount + 1) : undoCount;
+          lootTimes.ring = undoCount;
+          if (undoCount >= 10) earn('ctrl_z_adept', e.t);
+        } else if (e.kind === 'snooze' && e.source === 'auto' && !e.to) {
+          if (e.meta.cause === 'fallback') {
+            it.fallbacks++;
+            it.pendingFallback = true;
+            it.pendingActivity = null;
+          } else if (e.meta.cause === 'activity') {
+            it.pendingActivity = { trigger: e.meta.trigger, bucket: e.meta.bucket };
+            it.pendingFallback = false;
+          }
+        } else if ((e.source === 'user' && (e.kind === 'state' || e.kind === 'snooze')) || e.kind === 'reply') {
+          // The owner's next move after something came back: what the audit, Monk and Mimic rules look at.
+          const afterFallback = it.pendingFallback;
+          const afterActivity = it.pendingActivity;
           it.pendingFallback = false;
+          it.pendingActivity = null;
+          if (e.kind === 'snooze' && e.to) it.snoozes++;
+          const res = resolution(e);
+          if (res) pay(it, e, res, afterFallback, afterActivity);
         }
-      } else if ((e.source === 'user' && (e.kind === 'state' || e.kind === 'snooze')) || e.kind === 'reply') {
-        // The owner's next move after something came back: what the audit, Monk and Mimic rules look at.
-        const afterFallback = it.pendingFallback;
-        const afterActivity = it.pendingActivity;
-        it.pendingFallback = false;
-        it.pendingActivity = null;
-        if (e.kind === 'snooze' && e.to) it.snoozes++;
-        const res = resolution(e);
-        if (res) pay(it, e, res, afterFallback, afterActivity);
       }
-    }
-
-    // The replay follows what actually happened, undone or not (the undo is its own event).
-    if (it.replay) {
-      if (e.kind === 'state' && e.to) it.state = e.to;
-      else if (e.kind === 'snooze') it.snoozedUntil = ms(e.to);
-      else if (e.kind === 'undo') {
-        if (e.meta.original === 'snooze') it.snoozedUntil = ms(e.to);
-        else if (e.to) it.state = e.to;
-      }
-      updateVis(it, e.t);
-    }
-  }
-  if (prevT !== null) advance(prevT, Math.max(prevT, nowMs));
+    },
+  });
 
   /* ---- after the replay: weekends off, the campfire, today's decoration ---- */
   if (activeDays.size > 0) {

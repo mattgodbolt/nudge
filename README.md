@@ -22,6 +22,11 @@ All screenshots in this README are the built-in demo mode: fake data, nothing re
 - **Triage tools:** done, snooze, undo for everything, multi-select, search, filters, sort orders, a command
   palette, and a quota meter for the YouTube API.
 - **Phone and notifications:** an installable PWA with Web Push. See [Install on your phone](#install-on-your-phone-and-get-notifications).
+- **Insights:** the top of Stats answers "when does stuff arrive, what do I do with it, and how good are the
+  suggestions?": heatmaps of arrivals and of your triage, response times, what happens to things, reply rates, snooze
+  habits, how often the robot agreed with you, the noisiest repos and videos, the backlog by age and over time, and a
+  one-line summary of the week. Read-only, local, every number with its sample size, and "not enough data yet" until
+  there is. See [docs/INSIGHTS.md](docs/INSIGHTS.md).
 - **Stats and usage:** per-source video and comment totals, plus private counters of which features you use.
 - **Adventure mode:** a purely cosmetic level, silly title, trophies and a campfire, earned from the triage you have
   already done, in the sidebar and in the Hall of Heroes under Stats. It never changes how anything works, and one
@@ -250,7 +255,7 @@ world), and the web app talks to it over `/api` plus a server-sent event stream.
 | Command                           | What it does                                                                                                                                                              |
 | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `npm test`                        | Unit and component tests (vitest)                                                                                                                                         |
-| `npm run test:e2e`                | Playwright against several demo servers (ports 4518-4529, in-memory). `E2E_PORT_OFFSET=100 npm run test:e2e` shifts them and builds elsewhere, so two runs can go at once |
+| `npm run test:e2e`                | Playwright against several demo servers (ports 4518-4530, in-memory). `E2E_PORT_OFFSET=100 npm run test:e2e` shifts them and builds elsewhere, so two runs can go at once |
 | `npm run typecheck`               | `tsc` for the server plus `svelte-check` for the web app                                                                                                                  |
 | `npm run lint` / `npm run format` | Prettier check / write                                                                                                                                                    |
 | `npm run build`                   | Production build into `dist/`                                                                                                                                             |
@@ -416,6 +421,11 @@ an `open` event (the view and how long it stayed open). They go to `POST /api/it
 `item_events` table of your own database, as ids and counts only, never text. Demo mode and automated runs record
 nothing. `npm run report:habits -- <db>` prints a read-only summary (action mix, time to first action, snooze returns,
 rank of decisions, items passed over, open dwell) from a copy of the database.
+
+Your own state, reply and snooze events also record what the suggestion called the item and which prompt version asked
+(`suggestedCategory`, `suggestedPrompt`), and state and reply events the thread's size when you acted (`threadSize`), so
+Insights can say which categories you overrule and whether thread size changes what you do. The Insights section reads
+all of this at view time, in your browser's time zone, and writes nothing.
 
 ## Naming
 

@@ -1,6 +1,7 @@
 # Adventure mode: a cosmetic RPG layer for triage
 
-Status: built (2026-11-16), on by default. Server: `server/db/rpg.ts` (reads only), `server/routes/rpg.ts`. Shared
+Status: built (2026-11-16), on by default. Server: `server/db/rpg.ts` (reads only), `server/routes/rpg.ts`, with the
+inbox replay in `server/db/replay.ts` and the history helpers in `server/db/history.ts` (both shared with Insights). Shared
 catalogue and level maths: `shared/rpg.ts`. Web: `web/src/lib/rpg.ts`, `web/src/lib/levelSound.ts`,
 `web/src/lib/stores/rpg.svelte.ts`, and the `Rpg*` / `HallOfHeroes` components.
 

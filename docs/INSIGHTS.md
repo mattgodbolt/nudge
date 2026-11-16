@@ -1,6 +1,10 @@
 # Insights: what your inbox says about you
 
-Status: proposal (2026-11-16). Nothing here is built.
+Status: built (2026-11-16), all six slices. Server: `server/db/insights.ts` (reads only), `server/db/history.ts`
+(helpers shared with habits and Adventure mode), `server/db/replay.ts` (the inbox replay, shared with Adventure mode),
+`server/routes/insights.ts`. Shared shape and the F4 sentence: `shared/insights.ts`. Web: `web/src/lib/insights.ts`,
+`web/src/components/InsightsPanel.svelte` and `web/src/components/insights/`. Where the build differs from the
+proposal below, §8 says so.
 
 A read-only section at the top of Stats that answers "when does stuff arrive, what do I do with it, and how good is the
 suggestion model?" Every number comes from tables that already exist. Sibling of [RPG.md](RPG.md): same history-first
@@ -183,7 +187,13 @@ Each ships alone, in this order.
 6. **Backlog over time (B4).** Lands with or after RPG slice 5's inbox replay; whichever ships first builds it in
    `history.ts`.
 
-## 7. Open questions
+## 7. Decisions (were open questions)
+
+The owner accepted every recommendation below: bulk actions count in the rhythm only; Regulars shows names (top 5, his
+own accounts and bots left out); arrival time is `first_seen_at`, with `occurred_at` as the second view in R1's table;
+archived and muted items are left out; the default range is 30d.
+
+### The questions as asked
 
 1. **Should bulk actions count anywhere?** Recommend: yes in rhythm (they are work done at that hour), never in rates
    or prediction accuracy.
@@ -194,3 +204,46 @@ Each ships alone, in this order.
 4. **Should insights cover archived/muted items?** Recommend no: they never reached the inbox, so they say nothing
    about his triage. Muted volume could be a single line in S1 later.
 5. **Default range?** Recommend 30d: 7d is too sparse for most minimums, "All" is dominated by the backfilled era.
+
+## 8. As built: where it differs from the above
+
+- **Capture (C1, C2)** landed on 2026-11-16. `suggestedCategory` and `suggestedPrompt` go on every owner event that
+  carries `suggested` (state, snooze, reply, decision). `threadSize` goes on his `state` and `reply` events only, as
+  proposed (GitHub snoozes already carry `meta.comments`); todos and unknown items get none. Both are added in
+  `events.ts` `record()`, so every write path gets them, and a caller-given value is kept.
+- **Shared helpers.** `history.ts` holds `parseMeta`, `ms`, `median`, `quantile`, `LEGACY_DONE`, `AGREES`, the
+  decision window, `dayCounter` / `localClock` / `weekday` / `checkTimeZone`, `loadEvents`, `undoIndex`, `bulkIndex`
+  and `resolutionOf`. The inbox replay moved out of `rpg.ts` into `replay.ts` (hooks for the parts Adventure mode adds);
+  B4 uses it too. `habits.ts` keeps its own single pass but takes its constants and parsing from `history.ts`.
+  Adventure mode judges bulk by action id alone (`bulkIndex(…, { decisions: false })`), as before; habits and
+  Insights also trust a browser decision flagged `bulk`. All existing habits and RPG tests pass unchanged.
+- **DTO** lives in `shared/insights.ts`, not `shared/types.ts`. `sentence` is always a string: the quiet line under
+  the minimum. `empty` is true when no item ever reached the inbox and he never acted (one EmptyState).
+- **Range** is whole local days: `7d` is today and the six days before it, from local midnight. "All" starts on the
+  first local day with a live arrival or an action. Weekday normalisation counts the calendar days the range covers.
+- **Who counts.** Todos are his own writing: they are left out of arrivals, sources, responses and predictions, but
+  his actions on them count in the rhythm and they count in the backlog. Items deleted since (no `items` row) are left
+  out. Re-arrivals count in R1 and the sources, not in R1's "written" view (they have no written time).
+- **Outcomes (P1).** `auto_replied` (his own reply further down a YouTube thread cleared it) counts as _replied_;
+  other sync/auto moves out of the inbox are _closed elsewhere_ (upstream). P2-P4 use the first resolution he made
+  himself (reply, done, dismissal, legacy done), single actions only; P1's "snoozed first" is P1's alone. R4 (first
+  response) also leaves bulk actions out.
+- **Predictions** use the habits rule (the first done, dismissal, reply or snooze that carried a suggestion), minus
+  anything an undo cancelled. M5 uses the recorded category, else today's `suggestions.category` (marked _approx._).
+- **Minimums as built**: P6's n is his actions in the range (min 1), so "0 undos" shows as a fun zero rather than
+  "not enough data". S4 lists authors with at least 3 items. S5 needs a thread of 10 or more that arrived or was acted
+  on in the range; a YouTube thread is one entry. B4's n is days of history in the range (min 14). F2 also needs a
+  range of at least 7 days. Each meter row under 10 shows its n instead of a bar.
+- **Cache** key: range, zone, `MAX(item_events.id)`, `MAX(items.rowid)`, `COUNT(*)` of items and the local date; 8
+  entries, 5 minutes.
+- **Boundary.** There is no ESLint, so (as for Adventure mode) `server/insights-boundary.test.ts` is the import
+  restriction, and also checks that `insights.ts`, `history.ts` and `replay.ts` hold no write statement and that the
+  panel calls no API but `insights`. The only thing the panel does besides draw is link an item to `/all?c=<id>`.
+- **Charts.** Heatmaps, hour bars, the segmented bars, range bars (P4) and the line (B4) have a "Show as table"
+  toggle; meter lists, ranked bars and stat tiles print every value and its n already, so they have none. Tap or
+  hover a heatmap cell, an hour column or the line for its value in the line underneath. Colour tokens are the
+  `--viz-*` set in `tokens.css` (categorical slots 5 and 6 added for S6), validated with the dataviz script against
+  `--bg-elev` in both themes.
+- **Demo.** `NUDGE_DEMO_HISTORY=1` (on for `npm run demo` and the Insights e2e server, port 4530) spreads the demo's
+  arrivals over the last few weeks and plays a seeded set of actions through the real repository with a clock in the
+  past (`server/demo/history.ts`), so every card has something to show.

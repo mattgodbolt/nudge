@@ -7,6 +7,7 @@
   import Icon from '../components/Icon.svelte';
   import UsagePanel from '../components/UsagePanel.svelte';
   import HallOfHeroes from '../components/HallOfHeroes.svelte';
+  import InsightsPanel from '../components/InsightsPanel.svelte';
 
   let stats = $state<StatsDTO | null>(null);
   let loading = $state(true);
@@ -45,6 +46,13 @@
 <div class="page">
   <header class="head">
     <h1>Stats</h1>
+  </header>
+
+  <!-- Insights lead: they are what changes week to week (docs/INSIGHTS.md §4). -->
+  <InsightsPanel />
+
+  <header class="head section">
+    <h2>Videos</h2>
     <span class="grow"></span>
     {#if stats && stats.mine.videos > 0}
       <div class="seg" role="group" aria-label="Scope">
@@ -167,6 +175,14 @@
     display: flex;
     align-items: center;
     gap: var(--s2);
+  }
+  .section {
+    margin-top: var(--s4);
+  }
+  h2 {
+    font-size: 16px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
   }
   h1 {
     font-size: 18px;
