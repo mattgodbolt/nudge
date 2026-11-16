@@ -31,6 +31,8 @@
   let now = $state(new Date());
   let active = $state(0);
   let custom = $state('');
+  /** The picker opens on a deliberate choice, never on hover: opening it moved "Until activity" out from under the pointer. */
+  let customOpen = $state(false);
   let error = $state('');
   let dialog: HTMLDivElement | undefined = $state();
   let customInput: HTMLInputElement | undefined = $state();
@@ -82,6 +84,7 @@
     }
     if (i === CUSTOM) {
       active = CUSTOM;
+      customOpen = true;
       void tick().then(() => customInput?.focus());
       return;
     }
@@ -97,7 +100,7 @@
   // The label's days follow the bucket, so the row says what will happen before it is pressed.
 
   function enter() {
-    if (active === CUSTOM) confirmCustom();
+    if (active === CUSTOM && customOpen) confirmCustom();
     else choose(active);
   }
 
@@ -109,6 +112,7 @@
     presets = snoozePresets(n);
     custom = toLocalInputValue(defaultCustomTime(n));
     active = 0;
+    customOpen = false;
     error = '';
     why = '';
     bucket = null;
@@ -193,7 +197,7 @@
           <span class="grow">Pick date &amp; time…</span>
           <Kbd label="5" />
         </button>
-        {#if active === CUSTOM}
+        {#if customOpen}
           <div class="custom">
             <input
               bind:this={customInput}

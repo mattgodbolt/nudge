@@ -60,3 +60,21 @@ test('l and g l do nothing now that labels are gone', async ({ page }) => {
   await expect(page.getByRole('dialog')).toHaveCount(0);
   await expect(page.getByTestId('sidebar-label')).toHaveCount(0);
 });
+
+test('hovering "Pick date & time" does not open the picker or move "Until activity"', async ({ page }) => {
+  await selectRowDownTheList(page, 16);
+  await page.keyboard.press('b');
+  await expect(page.getByTestId('snooze-menu')).toBeVisible();
+
+  const custom = page.getByTestId('snooze-custom');
+  const activity = page.getByTestId('snooze-activity');
+  const before = await activity.boundingBox();
+  await custom.hover();
+  await expect(page.getByTestId('snooze-datetime')).toHaveCount(0);
+  expect(await activity.boundingBox()).toEqual(before);
+
+  // Choosing it on purpose does open the picker.
+  await custom.click();
+  await expect(page.getByTestId('snooze-datetime')).toBeVisible();
+  await page.keyboard.press('Escape');
+});
