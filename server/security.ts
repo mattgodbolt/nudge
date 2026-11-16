@@ -54,7 +54,16 @@ export const ACCESS_PUBLIC_PATHS: ReadonlySet<string> = new Set([
   '/logo-120.png',
 ]);
 
-const CLOUDFLARE_HEADERS = ['cf-ray', 'cf-connecting-ip', 'cf-visitor', 'cdn-loop', 'cf-access-jwt-assertion'];
+/**
+ * Headers only a proxy adds. Every legitimate loopback client (the container healthcheck, a browser through `ssh -L`,
+ * the Vite dev proxy, which does not set X-Forwarded-*) talks to us directly and sends none of them.
+ */
+const isProxyHeader = (name: string): boolean =>
+  name.startsWith('cf-') ||
+  name.startsWith('x-forwarded-') ||
+  name === 'forwarded' ||
+  name === 'via' ||
+  name === 'cdn-loop';
 
 function hostnameOf(headers: Record<string, string | string[] | undefined>): string | null {
   const h = typeof headers.host === 'string' ? parseHost(headers.host) : null;
@@ -90,9 +99,9 @@ export function checkRequest(
   if (!host || !(accessHost || loopback) || (loopback && opts.port !== undefined && host.port !== String(opts.port))) {
     return reject(403, 'Forbidden host', 'bad_host');
   }
-  // Defence against a tunnel rewritten to send a loopback Host (which skips the token check): traffic that came
-  // through Cloudflare carries these headers, and local clients never do.
-  if (!accessHost && (opts.accessHosts ?? []).length > 0 && CLOUDFLARE_HEADERS.some((h) => h in headers)) {
+  // A loopback Host is trusted as local, so it must really be local: a tunnel or reverse proxy rewritten to send one
+  // (skipping the Access token check, or exposing an install with no Access at all) still adds its own headers.
+  if (!accessHost && Object.keys(headers).some((h) => isProxyHeader(h.toLowerCase()))) {
     return reject(403, 'Forbidden host', 'bad_host');
   }
   // Access hosts are authenticated by checkAccess (it needs an async signature check).

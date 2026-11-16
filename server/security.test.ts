@@ -149,9 +149,37 @@ describe('Cloudflare traffic with a loopback Host', () => {
       'bad_host',
     );
   });
-  it('leaves plain local requests alone, and does nothing when Access is not configured', () => {
+  it('leaves plain local requests alone (the deploy healthcheck, an ssh -L tunnel, the Vite proxy)', () => {
     expect(checkRequest('GET', { host: '127.0.0.1:4517' }, opts)).toBeNull();
-    expect(checkRequest('GET', { host: '127.0.0.1:4517', 'cf-ray': 'abc' }, { port: 4517 })).toBeNull();
+    expect(checkRequest('GET', { host: 'localhost:4517', 'user-agent': 'node' }, { port: 4517 })).toBeNull();
+    expect(
+      checkRequest('POST', { host: '127.0.0.1:4517', origin: 'http://127.0.0.1:4517', 'x-nudge': '1' }, { port: 4517 }),
+    ).toBeNull();
+  });
+  it('refuses any proxy or Cloudflare header on a loopback Host, whether or not Access is configured', () => {
+    const proxied = [
+      { 'cf-ray': 'abc' },
+      { 'cf-ipcountry': 'GB' },
+      { 'cf-access-jwt-assertion': 'x' },
+      { 'cdn-loop': 'cloudflare' },
+      { 'x-forwarded-for': '1.2.3.4' },
+      { 'x-forwarded-host': 'evil.example' },
+      { 'x-forwarded-proto': 'https' },
+      { forwarded: 'for=1.2.3.4' },
+      { via: '1.1 proxy' },
+    ];
+    for (const o of [opts, { port: 4517 }, {}]) {
+      for (const extra of proxied) {
+        expect(checkRequest('GET', { host: '127.0.0.1:4517', ...extra }, o)?.body.code, JSON.stringify(extra)).toBe(
+          'bad_host',
+        );
+      }
+    }
+  });
+  it('still lets proxied traffic reach an Access host', () => {
+    expect(
+      checkRequest('GET', { host: 'nudge.example.com', 'cf-ray': 'abc', 'x-forwarded-for': '1.2.3.4' }, opts),
+    ).toBeNull();
   });
 });
 
