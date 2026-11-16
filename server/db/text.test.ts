@@ -22,4 +22,12 @@ describe('htmlToPlain', () => {
     expect(htmlToPlain('')).toBe('');
     expect(htmlToPlain('great 🎉')).toBe('great 🎉');
   });
+
+  it('strips tags in linear time when a body is full of unclosed brackets', () => {
+    expect(htmlToPlain('a <b <i>c')).toBe('a c');
+    expect(htmlToPlain('a <b>c< d')).toBe('a c< d');
+    const t = performance.now();
+    expect(htmlToPlain('<'.repeat(256 * 1024)).length).toBe(256 * 1024);
+    expect(performance.now() - t).toBeLessThan(50);
+  });
 });

@@ -71,6 +71,22 @@ describe('mapSearchItem', () => {
     expect(cleanBody('x'.repeat(5000)).length).toBe(4001);
     expect(cleanBody(null)).toBe('');
   });
+
+  it('strips HTML comments the way the old regex did', () => {
+    expect(cleanBody('a<!-- x -->b<!--\ny\n-->c')).toBe('abc');
+    expect(cleanBody('a<!-->b-->c')).toBe('ac');
+    expect(cleanBody('a<!-- open <!-- nested -->b-->')).toBe('ab-->');
+    expect(cleanBody('a<!-- x -->b<!-- never closed')).toBe('ab<!-- never closed');
+    expect(cleanBody('  <!-- only -->\r\n hi \r\n')).toBe('hi');
+  });
+
+  it('cleans a hostile body of unclosed comment openers in linear time', () => {
+    const body = '<!--'.repeat(64 * 1024);
+    const t = performance.now();
+    const out = cleanBody(body);
+    expect(performance.now() - t).toBeLessThan(50);
+    expect(out.length).toBe(4001);
+  });
 });
 
 function client(res: (url: string) => Response) {

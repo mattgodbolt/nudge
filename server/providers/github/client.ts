@@ -8,6 +8,7 @@ import type {
   GithubSearchPage,
 } from '../../contracts.js';
 import { githubItemId } from '../../db/feeds.js';
+import { stripBetween } from '../../db/text.js';
 
 const API = 'https://api.github.com';
 const TIMEOUT_MS = 20_000;
@@ -40,10 +41,7 @@ function rateOf(h: Headers): GithubRate | null {
 /** Markdown bodies carry HTML comments (issue templates) that are noise in a list; trim and cap the rest. */
 export function cleanBody(body: unknown): string {
   if (typeof body !== 'string') return '';
-  const s = body
-    .replace(/<!--[\s\S]*?-->/g, '')
-    .replace(/\r\n/g, '\n')
-    .trim();
+  const s = stripBetween(body, '<!--', '-->').replace(/\r\n/g, '\n').trim();
   return s.length > BODY_MAX ? `${s.slice(0, BODY_MAX)}…` : s;
 }
 
