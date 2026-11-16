@@ -1,5 +1,8 @@
 # Nudge implementation plan: from the Python CLI to a local keyboard-driven web app
 
+_Historical: the plan the first version was built from, kept for its reasoning. The code and the README are the current
+truth; instructions below (deleting the Python CLI, for one) were carried out long ago._
+
 ## 0. Current state and environment
 
 - Repo: the repository root. It contains `youtubey/main.py` (click CLI: `new-comments` keeps a JSON seen-set in `~/.youtubey-state.json`; `watch-counts` defaults to channel The owner's channel id), `pyproject.toml`, `poetry.lock`, `README.md`, `.gitignore` (just `__pycache__`) and `.idea/`.
@@ -92,10 +95,12 @@ Searches found nothing open source that combines a self-hosted web UI, a unified
 
 **Housekeeping**
 
-- Delete `youtubey/`, `pyproject.toml` and `poetry.lock`.
-- Rewrite `README.md`.
-- Add `node_modules`, `dist`, `data/`, `test-results`, `playwright-report` and `.env` to `.gitignore`.
-- Leave `.idea/` alone.
+(Done when the web app replaced the CLI.)
+
+- The Python CLI (`youtubey/`, `pyproject.toml`, `poetry.lock`) was deleted.
+- `README.md` was rewritten.
+- `node_modules`, `dist`, `data/`, `test-results`, `playwright-report` and `.env` were added to `.gitignore`.
+- `.idea/` was left alone.
 
 ## 3. SQLite schema (`server/db/migrations/001_init.sql`)
 

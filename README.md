@@ -51,6 +51,12 @@ npm run dev      # the real thing (API on :4517, Vite on :5173)
 npm start        # production build served from :4517
 ```
 
+`npm install` may list packages whose install scripts have not been reviewed. Two of them must be allowed to run:
+`better-sqlite3` (fetches, or else compiles, its native SQLite module) and `esbuild` (installs its binary for Vite and
+`tsx`); `npm approve-scripts better-sqlite3 esbuild` records that in `package.json`. Where no prebuilt
+`better-sqlite3` binary matches your platform it compiles from source, which needs Python 3, `make` and a C++ compiler
+(on Debian or Ubuntu, `apt install python3 make g++`).
+
 `npm run demo` keeps its data in `data/demo.db` and refuses to start against a database that holds real sources.
 `NUDGE_DEMO_GITHUB=1` adds a fake GitHub organisation to it.
 

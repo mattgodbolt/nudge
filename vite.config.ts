@@ -18,7 +18,8 @@ function buildVersion(): string {
   }
 }
 
-const API = `http://127.0.0.1:${process.env.NUDGE_PORT ?? 4517}`;
+// The API's port, read the way the server reads it (an empty NUDGE_PORT means the default).
+const API = `http://127.0.0.1:${process.env.NUDGE_PORT || 4517}`;
 
 export default defineConfig({
   root: 'web',
