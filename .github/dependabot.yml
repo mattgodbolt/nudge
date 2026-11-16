@@ -1,0 +1,29 @@
+version: 2
+updates:
+  # One PR per week per ecosystem, with minor/patch bumps grouped, so a single-user
+  # project isn't buried. Merging to main auto-deploys, so CI is the gate: only merge green.
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ['*']
+
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+    ignore:
+      # Stay on the Node 22 LTS line; move deliberately, not via a bot PR.
+      - dependency-name: node
+        update-types: [version-update:semver-major]
