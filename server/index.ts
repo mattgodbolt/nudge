@@ -41,7 +41,9 @@ import { resolveVersion } from './version.js';
 /** dist/web sits next to server/ (tsx) or three levels up from dist/server/server/ (compiled). */
 function findStaticDir(): string | undefined {
   const here = dirname(fileURLToPath(import.meta.url));
-  for (const rel of ['../dist/web', '../../../dist/web']) {
+  // An e2e run with a port offset builds into a directory of its own (see playwright.config.ts).
+  const own = process.env.NUDGE_WEB_DIR;
+  for (const rel of own ? [`../${own}`] : ['../dist/web', '../../../dist/web']) {
     const dir = join(here, rel);
     if (existsSync(join(dir, 'index.html'))) return dir;
   }

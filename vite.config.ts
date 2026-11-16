@@ -24,6 +24,7 @@ export default defineConfig({
   root: 'web',
   define: { __BUILD_VERSION__: JSON.stringify(buildVersion()) },
   plugins: [svelte()],
-  build: { outDir: '../dist/web', emptyOutDir: true },
+  // NUDGE_WEB_DIR (relative to the repo root) lets a second e2e run build somewhere of its own.
+  build: { outDir: process.env.NUDGE_WEB_DIR ? `../${process.env.NUDGE_WEB_DIR}` : '../dist/web', emptyOutDir: true },
   server: { host: '127.0.0.1', port: 5173, proxy: { '/api': { target: API, changeOrigin: true } } },
 });

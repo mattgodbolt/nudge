@@ -247,13 +247,13 @@ them in `shared/` (`shared/api.ts` is the HTTP contract). The server is built fr
 for GitHub and Anthropic, `server/youtube`, `server/reply` for posting, `server/push`, `server/demo` for the fake
 world), and the web app talks to it over `/api` plus a server-sent event stream.
 
-| Command                           | What it does                                                         |
-| --------------------------------- | -------------------------------------------------------------------- |
-| `npm test`                        | Unit and component tests (vitest)                                    |
-| `npm run test:e2e`                | Playwright against several demo servers (ports 4518-4522, in-memory) |
-| `npm run typecheck`               | `tsc` for the server plus `svelte-check` for the web app             |
-| `npm run lint` / `npm run format` | Prettier check / write                                               |
-| `npm run build`                   | Production build into `dist/`                                        |
+| Command                           | What it does                                                                                                                                                              |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `npm test`                        | Unit and component tests (vitest)                                                                                                                                         |
+| `npm run test:e2e`                | Playwright against several demo servers (ports 4518-4529, in-memory). `E2E_PORT_OFFSET=100 npm run test:e2e` shifts them and builds elsewhere, so two runs can go at once |
+| `npm run typecheck`               | `tsc` for the server plus `svelte-check` for the web app                                                                                                                  |
+| `npm run lint` / `npm run format` | Prettier check / write                                                                                                                                                    |
+| `npm run build`                   | Production build into `dist/`                                                                                                                                             |
 
 Design notes: [docs/PLAN.md](docs/PLAN.md). OAuth posting design: [docs/OAUTH-PLAN.md](docs/OAUTH-PLAN.md). Design
 proposals (partly historical): [sources](docs/DESIGN-SOURCES.md), [LLM triage](docs/DESIGN-LLM-TRIAGE.md).

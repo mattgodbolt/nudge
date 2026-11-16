@@ -72,7 +72,7 @@ for (const [name, viewport] of [
 
 // The default demo server serves the build the page loaded, so it must say nothing.
 test.describe('a page that is up to date', () => {
-  test.use({ baseURL: 'http://127.0.0.1:4518' });
+  test.use({ baseURL: `http://127.0.0.1:${4518 + Number(process.env.E2E_PORT_OFFSET ?? 0)}` });
 
   test('the server names the very script the page loaded, and no prompt appears', async ({ page }) => {
     await page.goto('/inbox');
