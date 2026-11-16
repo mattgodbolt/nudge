@@ -18,10 +18,31 @@ describe('snoozePresets', () => {
   it('Tuesday afternoon', () => {
     const now = at(2025, 11, 4, 14, 30); // Tue 4 Nov 2025
     const p = byId(now);
-    expect(p.later).toEqual(at(2025, 11, 4, 17, 30));
+    expect(p.hour).toEqual(at(2025, 11, 4, 15, 30));
+    expect(p.evening).toEqual(at(2025, 11, 4, 19, 0));
     expect(p.tomorrow).toEqual(at(2025, 11, 5, 8, 0));
     expect(p.weekend).toEqual(at(2025, 11, 8, 8, 0)); // Saturday
     expect(p.nextweek).toEqual(at(2025, 11, 10, 8, 0)); // Monday
+  });
+
+  it('this evening (7pm) is offered only while it is at least an hour away, and the other slots stay put', () => {
+    const slots = (now: Date) => snoozePresets(now).map((x) => [x.id, x.slot]);
+    expect(byId(at(2025, 11, 4, 18, 0)).evening).toEqual(at(2025, 11, 4, 19, 0));
+    expect(byId(at(2025, 11, 4, 18, 1)).evening).toBeUndefined();
+    expect(byId(at(2025, 11, 4, 21, 0)).evening).toBeUndefined();
+    expect(slots(at(2025, 11, 4, 9, 0))).toEqual([
+      ['hour', 0],
+      ['evening', 1],
+      ['tomorrow', 2],
+      ['weekend', 3],
+      ['nextweek', 4],
+    ]);
+    expect(slots(at(2025, 11, 4, 21, 0))).toEqual([
+      ['hour', 0],
+      ['tomorrow', 2],
+      ['weekend', 3],
+      ['nextweek', 4],
+    ]);
   });
 
   it('Friday: the weekend is tomorrow', () => {
@@ -42,7 +63,8 @@ describe('snoozePresets', () => {
 
   it('crosses month and year boundaries', () => {
     const p = byId(at(2025, 12, 31, 23, 0));
-    expect(p.later).toEqual(at(2026, 1, 1, 2, 0));
+    expect(p.hour).toEqual(at(2026, 1, 1, 0, 0));
+    expect(p.evening).toBeUndefined();
     expect(p.tomorrow).toEqual(at(2026, 1, 1, 8, 0));
   });
 

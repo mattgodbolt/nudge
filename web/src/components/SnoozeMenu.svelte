@@ -24,8 +24,8 @@
   import { fade } from 'svelte/transition';
   import { tick } from 'svelte';
 
-  const CUSTOM = 4; // index of "Pick date & time…"
-  const ACTIVITY = 5; // index of "Until activity"
+  const CUSTOM = 5; // index of "Pick date & time…"
+  const ACTIVITY = 6; // index of "Until activity"
 
   let presets = $state<SnoozePreset[]>([]);
   let now = $state(new Date());
@@ -77,6 +77,14 @@
     bucket = bucket === b ? null : b;
   }
 
+  /** The next row in a direction, jumping over a slot that is not showing (the evening one, late in the day). */
+  function step(dir: 1 | -1): number {
+    let i = active;
+    do i += dir;
+    while (i > 0 && i < CUSTOM && !presets.some((p) => p.slot === i));
+    return Math.max(0, Math.min(i, ACTIVITY));
+  }
+
   function choose(i: number) {
     if (i === ACTIVITY) {
       void snoozeAt(fallbackDate(new Date(), bucket, days), 'activity', true);
@@ -88,7 +96,7 @@
       void tick().then(() => customInput?.focus());
       return;
     }
-    const p = presets[i];
+    const p = presets.find((x) => x.slot === i);
     if (p) void snoozeAt(p.at, 'preset');
   }
 
@@ -131,12 +139,12 @@
     });
     const unreg = keymap.register([
       bind('close', ['Escape'], close),
-      bind('down', ['ArrowDown', 'j'], () => (active = Math.min(active + 1, ACTIVITY)), true),
-      bind('up', ['ArrowUp', 'k'], () => (active = Math.max(active - 1, 0)), true),
+      bind('down', ['ArrowDown', 'j'], () => (active = step(1)), true),
+      bind('up', ['ArrowUp', 'k'], () => (active = step(-1)), true),
       bind('enter', ['Enter'], enter),
       // Skipping the reason costs nothing; Tab is the way in to it from the keyboard.
       bind('why', ['Tab'], () => whyInput?.focus()),
-      ...['1', '2', '3', '4', '5', '6'].map((k, i) => bind(`n${k}`, [k], () => choose(i))),
+      ...['1', '2', '3', '4', '5', '6', '7'].map((k, i) => bind(`n${k}`, [k], () => choose(i))),
       // Letters pick why it is parked; u also wakes it early on activity. None of them snoozes by itself.
       ...SNOOZE_BUCKETS.map((b) => bind(`bucket.${b}`, [BUCKETS[b].key], () => pickBucket(b))),
       bind('wake', ['u'], () => (wake = !wake)),
@@ -168,7 +176,8 @@
         <span class="faint meta">{count > 1 ? pluralize(count, 'comment') : 'until…'}</span>
       </div>
       <div class="opts" role="listbox" aria-label="Snooze until">
-        {#each presets as p, i (p.id)}
+        {#each presets as p (p.id)}
+          {@const i = p.slot}
           <button
             type="button"
             class="opt"
@@ -195,7 +204,7 @@
           onclick={() => choose(CUSTOM)}
         >
           <span class="grow">Pick date &amp; time…</span>
-          <Kbd label="5" />
+          <Kbd label="6" />
         </button>
         {#if customOpen}
           <div class="custom">
@@ -231,7 +240,7 @@
         >
           <span class="grow">Until activity</span>
           <span class="when faint" data-testid="snooze-activity-days">or {fallbackDays}d</span>
-          <Kbd label="6" />
+          <Kbd label="7" />
         </button>
       </div>
       <div class="reasons" role="group" aria-label="Why it is parked (optional)" data-testid="snooze-reasons">

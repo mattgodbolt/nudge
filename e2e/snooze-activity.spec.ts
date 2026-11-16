@@ -69,7 +69,7 @@ test("b, a reason key and 6 snoozes until activity, with that bucket's fallback;
   await page.keyboard.press('m'); // waiting on merge / CI
   await expect(page.getByTestId('snooze-bucket-waiting_on_merge')).toHaveAttribute('aria-pressed', 'true');
   await expect(page.getByTestId('snooze-activity-days')).toHaveText('or 3d'); // the bucket's own default
-  await page.keyboard.press('6');
+  await page.keyboard.press('7');
   await expect(page.getByTestId('toast').filter({ hasText: 'Snoozed until activity' })).toBeVisible();
 
   const s = (await find(request, 'snoozed', row.comment.id))!;

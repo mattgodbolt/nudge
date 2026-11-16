@@ -4,16 +4,19 @@
  * a "08:00" preset to 07:00 or 09:00.
  */
 
-export type SnoozePresetId = 'later' | 'tomorrow' | 'weekend' | 'nextweek';
+export type SnoozePresetId = 'hour' | 'evening' | 'tomorrow' | 'weekend' | 'nextweek';
 
 export interface SnoozePreset {
   id: SnoozePresetId;
   label: string;
   at: Date;
+  /** Fixed position in the menu (and so its number key), whether or not the rows before it are showing. */
+  slot: number;
 }
 
 const MORNING_HOUR = 8;
-const LATER_HOURS = 3;
+const EVENING_HOUR = 19;
+const EVENING_MIN_AWAY_MS = 3_600_000;
 
 /** Local 08:00 on the day `days` after `from`'s date. */
 function morning(from: Date, days: number): Date {
@@ -26,12 +29,20 @@ export function snoozePresets(now: Date): SnoozePreset[] {
   const toSaturday = dow === 6 || dow === 0 ? (6 - dow + 7) % 7 || 7 : 6 - dow;
   // Monday 08:00 strictly after today.
   const toMonday = (8 - dow) % 7 || 7;
-  return [
-    { id: 'later', label: 'Later today', at: new Date(now.getTime() + LATER_HOURS * 3_600_000) },
-    { id: 'tomorrow', label: 'Tomorrow morning', at: morning(now, 1) },
-    { id: 'weekend', label: 'This weekend', at: morning(now, toSaturday) },
-    { id: 'nextweek', label: 'Next week', at: morning(now, toMonday) },
+  const evening = new Date(now.getFullYear(), now.getMonth(), now.getDate(), EVENING_HOUR, 0, 0, 0);
+  const presets: SnoozePreset[] = [
+    { id: 'hour', label: 'In 1 hour', at: new Date(now.getTime() + 3_600_000), slot: 0 },
   ];
+  // Left out (not renamed) when it is under an hour away, so it never duplicates "In 1 hour"; the others keep their slots.
+  if (evening.getTime() - now.getTime() >= EVENING_MIN_AWAY_MS) {
+    presets.push({ id: 'evening', label: 'This evening', at: evening, slot: 1 });
+  }
+  presets.push(
+    { id: 'tomorrow', label: 'Tomorrow morning', at: morning(now, 1), slot: 2 },
+    { id: 'weekend', label: 'This weekend', at: morning(now, toSaturday), slot: 3 },
+    { id: 'nextweek', label: 'Next week', at: morning(now, toMonday), slot: 4 },
+  );
+  return presets;
 }
 
 /** Default for the custom picker: tomorrow morning. */
