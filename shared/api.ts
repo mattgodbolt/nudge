@@ -61,6 +61,11 @@ export interface SettingsUpdate {
   llm?: { apiKey?: string | null; model?: string };
   /** Google OAuth client: pasted JSON from the console, explicit fields, or null to remove. */
   googleClient?: { json: string } | { clientId: string; clientSecret: string } | null;
+  /**
+   * Settings > About you. Each part is trimmed; an empty string clears it. name: 1-60 characters, one line; about:
+   * 1-1500 characters. No control characters in either.
+   */
+  owner?: { name?: string; about?: string };
   /** Adventure mode: on/off, the level-up chime, and which earned title to show (null = the current level's). */
   rpg?: { enabled?: boolean; sound?: boolean; title?: number | null };
 }

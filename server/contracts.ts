@@ -3,6 +3,7 @@
 import type { UsageStore } from './db/usage.js';
 import type { SpendStore } from './db/spend.js';
 import type { Insights, InsightsRange } from '../shared/insights.js';
+import type { OwnerProfile } from '../shared/owner.js';
 import type { SuggestionStore } from './db/suggestions.js';
 import type { NoteStore } from './db/notes.js';
 import type { ClientEventStore } from './db/events.js';
@@ -140,6 +141,8 @@ export interface StoredSettings {
   /** GitHub: a read-only token (never sent to the browser) and the logins that are me. */
   github: { token: string | null; myAccounts: string[] };
   llm: { apiKey: string | null; model: string };
+  /** Who the model works for (Settings > About you). Empty strings until filled in; model features wait for both. */
+  owner: OwnerProfile;
   /** Adventure mode (docs/RPG.md). `seen` is what has been announced already; null = never claimed since switch-on. */
   rpg: RpgStored;
 }

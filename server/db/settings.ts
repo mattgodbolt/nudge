@@ -1,3 +1,4 @@
+import { EMPTY_OWNER } from '../../shared/owner.js';
 import { DEFAULT_SNOOZE_DAYS } from '../../shared/snooze.js';
 import type { PushPrefs } from '../../shared/types.js';
 import type { PushSubscriptionRow, Repo, StoredSettings } from '../contracts.js';
@@ -16,6 +17,7 @@ const DEFAULT_SETTINGS: StoredSettings = {
   snoozeDays: { ...DEFAULT_SNOOZE_DAYS },
   github: { token: null, myAccounts: [] },
   llm: { apiKey: null, model: 'claude-haiku-5-5' },
+  owner: { ...EMPTY_OWNER },
   // Adventure mode is on unless switched off: the owner asked for it (docs/RPG.md).
   rpg: { enabled: true, sound: true, title: null, seen: null, tz: null, prevTz: null },
 };
@@ -63,6 +65,12 @@ export function createSettings(deps: SettingsDeps): SettingsStore {
     // Stored days may predate a bucket; fill from the defaults so every bucket always has a number.
     out.snoozeDays = { ...DEFAULT_SNOOZE_DAYS, ...(out.snoozeDays as object) };
     out.rpg = { ...DEFAULT_SETTINGS.rpg, ...(out.rpg && typeof out.rpg === 'object' ? (out.rpg as object) : {}) };
+    // Seeded by hand into a database (see README), so a half-written row reads as the missing parts, never a crash.
+    const o = (out.owner && typeof out.owner === 'object' ? out.owner : {}) as Row;
+    out.owner = {
+      name: typeof o.name === 'string' ? o.name.trim() : '',
+      about: typeof o.about === 'string' ? o.about.trim() : '',
+    };
     return out as StoredSettings;
   }
   const putSetting = db.prepare(

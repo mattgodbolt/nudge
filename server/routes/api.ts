@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { SUGGESTION_FILTERS } from '../../shared/api.js';
+import { checkOwnerField } from '../../shared/owner.js';
 import type { InboxQuery, SettingsUpdate, SyncRequest } from '../../shared/api.js';
 import { SNOOZE_BUCKETS, SNOOZE_DAYS_MAX, SNOOZE_DAYS_MIN, fallbackDate, isSnoozeBucket } from '../../shared/snooze.js';
 import type { SnoozeBucket } from '../../shared/types.js';
@@ -90,6 +91,19 @@ function parseLlmUpdate(v: unknown): NonNullable<SettingsUpdate['llm']> {
     if (typeof g.model !== 'string' || !/^[\w.:-]{3,80}$/.test(g.model.trim()))
       throw bad('"llm.model" must be a model id');
     out.model = g.model.trim();
+  }
+  return out;
+}
+
+/** Settings > About you: either part may be sent alone; an empty string clears it (see shared/owner.ts). */
+function parseOwnerUpdate(v: unknown): NonNullable<SettingsUpdate['owner']> {
+  const o = asObject(v);
+  const out: NonNullable<SettingsUpdate['owner']> = {};
+  for (const field of ['name', 'about'] as const) {
+    if (o[field] === undefined) continue;
+    const r = checkOwnerField(field, o[field]);
+    if ('error' in r) throw bad(r.error);
+    out[field] = r.value;
   }
   return out;
 }
@@ -440,10 +454,20 @@ export function registerApiRoutes(app: FastifyInstance, deps: AppDeps): void {
     if (b.github !== undefined) u.github = parseGithubUpdate(b.github);
     if (b.rpg !== undefined) u.rpg = parseRpgUpdate(b.rpg);
     const llm = b.llm === undefined ? undefined : parseLlmUpdate(b.llm);
+    const owner = b.owner === undefined ? undefined : parseOwnerUpdate(b.owner);
     const googleClient = b.googleClient === undefined ? undefined : parseGoogleClientUpdate(b.googleClient);
 
     const before = repo.getSettings();
-    const { apiKey, googleClient: _ignored, github, llm: _llmIgnored, snoozeDays, rpg, ...rest } = u;
+    const {
+      apiKey,
+      googleClient: _ignored,
+      github,
+      llm: _llmIgnored,
+      owner: _ownerIgnored,
+      snoozeDays,
+      rpg,
+      ...rest
+    } = u;
     const patch: Parameters<typeof repo.updateSettings>[0] = { ...rest };
     if (rpg) {
       const next = { ...before.rpg, ...rpg };
@@ -464,6 +488,7 @@ export function registerApiRoutes(app: FastifyInstance, deps: AppDeps): void {
         model: llm.model ?? before.llm.model,
       };
     }
+    if (owner) patch.owner = { ...before.owner, ...owner };
     if (googleClient !== undefined) patch.googleClient = googleClient;
     if (apiKey !== undefined) patch.apiKey = apiKey?.trim() ? apiKey.trim() : null;
     repo.updateSettings(patch);

@@ -1,5 +1,6 @@
 // Shared domain + DTO types. This file is the contract between server and web.
 // Changes go through the lead only.
+import type { OwnerProfile } from './owner.js';
 import type { SnoozeBucket, WakeCause } from './snooze.js';
 export type { SnoozeBucket, WakeCause } from './snooze.js';
 
@@ -415,6 +416,8 @@ export interface SettingsDTO {
   version: string;
   github: GithubSettingsDTO;
   llm: LlmSettingsDTO;
+  /** Who the model works for (Settings > About you). Model features are paused while either part is empty. */
+  owner: OwnerProfile;
   google: GoogleAuthDTO;
   /** Adventure mode (docs/RPG.md): a cosmetic level/title layer. Off hides it all and stops the /api/rpg calls. */
   rpg: RpgSettingsDTO;

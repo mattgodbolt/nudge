@@ -63,6 +63,7 @@ function stubRepo() {
     theme: 'system',
     github: { token: null, myAccounts: [] },
     llm: { apiKey: null, model: 'claude-haiku-5-5' },
+    owner: { name: '', about: '' },
     rpg: { enabled: true, sound: true, title: null, seen: null, tz: null, prevTz: null },
   };
   const sources: SourceDTO[] = [];
@@ -373,6 +374,42 @@ describe('settings', () => {
     expect((await send('PUT', '/api/settings', { ownChannelIds: ['nope'] })).statusCode).toBe(400);
     expect((await send('PUT', '/api/settings', { theme: 'pink' })).statusCode).toBe(400);
     expect((await send('PUT', '/api/settings', { dailyQuotaBudget: -1 })).statusCode).toBe(400);
+  });
+  it('About you: stores the trimmed profile, either part alone, and an empty string clears a part', async () => {
+    expect((await get('/api/settings')).json().owner).toEqual({ name: '', about: '' });
+    const res = await send('PUT', '/api/settings', {
+      owner: { name: '  Sam  ', about: ' Maintains a compiler.\nAlso writes docs. ' },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().owner).toEqual({ name: 'Sam', about: 'Maintains a compiler.\nAlso writes docs.' });
+    expect(events.map((e) => e.type)).toContain('settings.changed');
+    expect(deps.onSettingsChanged).toHaveBeenCalled();
+    // One part alone keeps the other.
+    expect((await send('PUT', '/api/settings', { owner: { name: 'Robin' } })).json().owner).toEqual({
+      name: 'Robin',
+      about: 'Maintains a compiler.\nAlso writes docs.',
+    });
+    expect((await send('PUT', '/api/settings', { owner: { about: '   ' } })).json().owner).toEqual({
+      name: 'Robin',
+      about: '',
+    });
+  });
+  it('About you: validates length, type and control characters', async () => {
+    const put = async (owner: unknown) => (await send('PUT', '/api/settings', { owner })).statusCode;
+    expect(await put({ name: 'x'.repeat(60) })).toBe(200);
+    expect(await put({ name: 'x'.repeat(61) })).toBe(400);
+    expect(await put({ about: 'y'.repeat(1500) })).toBe(200);
+    expect(await put({ about: 'y'.repeat(1501) })).toBe(400);
+    // Surrounding space does not count towards the limit: it is trimmed first.
+    expect(await put({ name: `  ${'x'.repeat(60)}  ` })).toBe(200);
+    expect(await put({ name: 'Two\nlines' })).toBe(400);
+    expect(await put({ name: 'Bell\u0007' })).toBe(400);
+    expect(await put({ about: 'Escape \u001b[31m' })).toBe(400);
+    expect(await put({ about: 'Tab\there' })).toBe(400);
+    expect(await put({ about: 'Separator\u2028here' })).toBe(400);
+    expect(await put({ name: 5 })).toBe(400);
+    expect(await put('Sam')).toBe(400);
+    expect(repo.getSettings().owner.name).toBe('x'.repeat(60));
   });
   it('test-key uses supplied or resolved key', async () => {
     expect((await send('POST', '/api/settings/test-key', { apiKey: 'good' })).json().ok).toBe(true);
