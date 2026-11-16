@@ -7,6 +7,7 @@ set -uo pipefail
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 REAL_DATE="$(command -v date)"
+REAL_MV="$(command -v mv)"
 SANDBOX="$(mktemp -d "${TMPDIR:-/tmp}/nudge-update-test.XXXXXX")"
 trap 'rm -rf "$SANDBOX"' EXIT
 BIN="$SANDBOX/bin"
@@ -47,6 +48,7 @@ case "$1 ${2:-}" in
     n=$(($(cat "$STATE/clock" 2>/dev/null || echo 0) + 1))
     echo "$n" > "$STATE/clock"
     touch -d "@$((1800000000 + n * 60))" "$WORK/data/${dest#/app/data/}"
+    chmod 644 "$WORK/data/${dest#/app/data/}" # as the container's default umask would leave it
     ;;
   "compose build")
     flag build && exit 1
@@ -72,6 +74,12 @@ if [ "\${1:-}" = "+%Y%m%d-%H%M%S" ]; then
 else
   exec "$REAL_DATE" "\$@"
 fi
+EOF
+# mv: real, but notes the mode of an off-box .partial copy at the moment it is renamed into place.
+cat > "$BIN/mv" <<EOF
+#!/usr/bin/env bash
+case "\$1" in *.partial) stat -c %a "\$1" > "$STATE/partial-mode" ;; esac
+exec "$REAL_MV" "\$@"
 EOF
 chmod +x "$BIN"/*
 
@@ -253,6 +261,8 @@ check "succeeds" [ $? = 0 ]
 check "still keeps 7 nightly snapshots" [ "$(count 'nudge-*.db')" = 7 ]
 check "leaves the pre-update snapshots alone" [ "$(count 'pre-update-*.db')" = 3 ]
 check "copies to the off-box directory" [ "$(find "$SANDBOX/nas" -name 'nudge-*.db' | wc -l)" = 1 ]
+check "never leaves the off-box copy readable by others, even before it is renamed" \
+  [ "$(cat "$STATE/partial-mode")" = 600 ]
 (cd "$WORK" && PATH="$BIN:$PATH" NUDGE_BACKUP_DIR="$SANDBOX/nas" deploy/backup.sh bogus > "$OUT" 2>&1)
 check "rejects an unknown mode" [ $? = 2 ]
 

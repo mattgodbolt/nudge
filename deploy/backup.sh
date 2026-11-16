@@ -6,6 +6,9 @@
 # keeps the newest 3 of those, locally only. They are named apart from the nightly nudge-<time>.db files so that several
 # deploys a day never push the nightly backups out of their retention.
 set -euo pipefail
+# Everything this script creates is a copy of the database (tokens, keys): owner-only from the first byte, so the
+# off-box copy is never world-readable, not even while it is still a .partial.
+umask 077
 cd "$(dirname "$0")/.."
 NAS_DIR="${NUDGE_BACKUP_DIR:-/nas/BackedUp/nudge}"
 KEEP_LOCAL=7
