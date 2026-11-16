@@ -2,7 +2,7 @@
 
 ## 0. Current state and environment
 
-- Repo: `/home/matthew/dev/youtubey`. It contains `youtubey/main.py` (click CLI: `new-comments` keeps a JSON seen-set in `~/.youtubey-state.json`; `watch-counts` defaults to channel `UC9-y-6csu5WGm29I7JiwpnA`), `pyproject.toml`, `poetry.lock`, `README.md`, `.gitignore` (just `__pycache__`) and `.idea/`.
+- Repo: the repository root. It contains `youtubey/main.py` (click CLI: `new-comments` keeps a JSON seen-set in `~/.youtubey-state.json`; `watch-counts` defaults to channel The owner's channel id), `pyproject.toml`, `poetry.lock`, `README.md`, `.gitignore` (just `__pycache__`) and `.idea/`.
 - Toolchain: Node v24.18.1 (nvm) and npm 11.16.0. The key file `~/.nudge-key` exists. The old code does not trim the key, so the new code must `.trim()` it.
 - Bugs and quota waste in the old code that the new code must not repeat:
   - On first run every comment is treated as new.
@@ -800,7 +800,7 @@ Ordering and dependencies: step 0, then A–F in parallel. Expected integration 
   - If it does surface, drop the deep-scan frequency to weekly.
 - **R2, quota with many third-party videos.** "All new comments" on big third-party videos can produce hundreds of inbox items a day, and a playlist of 200 videos at warm tier costs about 4,800 units/day. Mitigations: tiers, projected units in the UI, and the per-video paused tier.
   - **Open:** should old videos in large playlists default to `frozen`?
-- **R3, own channel id.** `UC9-y-6csu5WGm29I7JiwpnA` was the default for `watch-counts`. Confirm it is the user's channel and the identity they reply as, since a brand account vs personal channel may differ. `ownChannelIds` is a list to cover both. In demo mode it is seeded. In real mode it is pre-filled with this id with a confirmation prompt in onboarding.
+- **R3, own channel id.** The owner's channel id was the default for `watch-counts`. Confirm it is the user's channel and the identity they reply as, since a brand account vs personal channel may differ. `ownChannelIds` is a list to cover both. In demo mode it is seeded. In real mode it is pre-filled with this id with a confirmation prompt in onboarding.
 - **R4, better-sqlite3 native build on Node 24.18.** It is likely prebuilt; if not it needs python3 and a C++ toolchain. Do not switch silently to `node:sqlite`; ask the user.
 - **R5, `textOriginal` availability.** The API docs say it is only guaranteed to be returned to the comment's author. Use `textFormat=html` and derive `text_plain` server-side by stripping tags and decoding entities, so we never depend on `textOriginal`.
 - **R6, clipboard and popup user-gesture rules.** These are handled by doing both synchronously in the handler. Firefox may still block the popup; if so, fall back to a toast with an "Open" link.
@@ -831,9 +831,9 @@ Sources:
 
 ### Critical Files for Implementation
 
-- /home/matthew/dev/youtubey/shared/types.ts (and /home/matthew/dev/youtubey/shared/api.ts)
-- /home/matthew/dev/youtubey/server/db/repo.ts (with /home/matthew/dev/youtubey/server/db/migrations/001_init.sql)
-- /home/matthew/dev/youtubey/server/sync/engine.ts (with /home/matthew/dev/youtubey/server/youtube/client.ts and /home/matthew/dev/youtubey/server/youtube/fake.ts)
-- /home/matthew/dev/youtubey/web/src/lib/keys/keymap.svelte.ts
-- /home/matthew/dev/youtubey/web/src/lib/stores/inbox.svelte.ts
-- Reference for the code being retired: /home/matthew/dev/youtubey/youtubey/main.py
+- shared/types.ts (and shared/api.ts)
+- server/db/repo.ts (with server/db/migrations/001_init.sql)
+- server/sync/engine.ts (with server/youtube/client.ts and server/youtube/fake.ts)
+- web/src/lib/keys/keymap.svelte.ts
+- web/src/lib/stores/inbox.svelte.ts
+- Reference for the code being retired: youtubey/main.py

@@ -444,11 +444,11 @@ Technical risks the plan already handles (no decision needed):
 
 ### Critical Files for Implementation
 
-- /home/matthew/dev/youtubey/server/reply/poster.ts
-- /home/matthew/dev/youtubey/server/contracts.ts
-- /home/matthew/dev/youtubey/server/db/repo.ts
-- /home/matthew/dev/youtubey/server/routes/api.ts (+ new /home/matthew/dev/youtubey/server/auth/google.ts and /home/matthew/dev/youtubey/server/routes/auth.ts)
-- /home/matthew/dev/youtubey/web/src/lib/reply.ts and /home/matthew/dev/youtubey/web/src/views/SettingsView.svelte
+- server/reply/poster.ts
+- server/contracts.ts
+- server/db/repo.ts
+- server/routes/api.ts (+ new server/auth/google.ts and server/routes/auth.ts)
+- web/src/lib/reply.ts and web/src/views/SettingsView.svelte
 
 Sources:
 

@@ -56,7 +56,13 @@ npm start        # production build served from :4517
 
 Data lives in `data/nudge.db` (gitignored) unless `NUDGE_DB` says otherwise.
 
-An API key is read from `YOUTUBE_API_KEY`, then the Settings screen, then `~/.nudge-key`.
+`npm run dev` and `npm run demo` both use ports 4517 and 5173, so run one at a time (Ctrl-C stops both). `npm start`
+is the one to run on your own machine for daily use; it needs no Cloudflare, but it has no login of its own, so
+leave it bound to the loopback address and do not expose the port.
+
+YouTube comments need a YouTube Data API v3 key (free): in the [Google Cloud console](https://console.cloud.google.com/)
+create a project, enable "YouTube Data API v3", and create an API key. GitHub-only use needs no YouTube key. The key is
+read from `YOUTUBE_API_KEY`, then the Settings screen, then `~/.nudge-key`.
 On first run, paste your channel URL or @handle when asked (or under **Settings > My channels**): comments by it
 are never inbox items, a reply from it auto-clears older comments in the same thread, and its uploads are tracked.
 Ticking "This is my channel" when adding a channel source does exactly the same thing.
@@ -302,9 +308,12 @@ application on that hostname decides who gets through (phone included). Nudge th
 plus Host and Origin (see [Security model](#security-model)). It has no password of its own, so do not publish the port
 anywhere else. This is one way to run it, not a requirement.
 
+Fork the repository first and clone your fork: the auto-update below deploys whatever is on `origin/main`, so you
+want that to be a branch you control, not the upstream project's.
+
 ```shell
-git clone https://github.com/mattgodbolt/nudge.git ~/nudge && cd ~/nudge
-mkdir -p data
+git clone https://github.com/<you>/nudge.git ~/nudge && cd ~/nudge
+mkdir -p data && sudo chown 1000:1000 data   # the container runs as uid 1000 (see compose.yaml)
 cp .env.example .env    # then fill in NUDGE_ACCESS_HOSTS, _TEAM_DOMAIN, _AUD, NUDGE_ALLOWED_USERS and the YouTube key
 docker compose up -d --build            # the image build runs the unit tests
 deploy/install-cron.sh                  # auto-update + nightly backup
