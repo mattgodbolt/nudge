@@ -1,0 +1,6 @@
+# Reviewed false positives: fake keys in test fixtures and a localStorage key name.
+28e385352dbd4dc19d0f7f675e59dc16d4f2e72c:server/routes/reply-api.test.ts:generic-api-key:83
+47fdacbfd323e3179348d834d02726fd10b66fe1:web/src/lib/push.test.ts:generic-api-key:23
+88099e8e66cb097c32bf5580dd1aa644a37bfd93:server/routes/github.test.ts:generic-api-key:144
+bd4c8a5cd310ef1f064c09718e48804dbc2652c0:server/classify/labelPage.ts:generic-api-key:62
+cfbb2537cd69fa427ce71a4cdafcdff4545ff99e:server/routes/github.test.ts:generic-api-key:134
