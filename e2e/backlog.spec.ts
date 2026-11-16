@@ -1,4 +1,4 @@
-import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
+import { expect, test, type APIRequestContext, type Page } from './fixtures';
 
 // A demo server with a 300-item backlog on top of the usual GitHub items, comment threads, the fake suggestion source,
 // and a daily cap that bites after 1,100 suggestions (NUDGE_DEMO_BACKLOG / NUDGE_DEMO_SUGGEST_CAP_AFTER). So the worker

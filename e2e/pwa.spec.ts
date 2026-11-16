@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures';
 
 // Playwright's browsers run without Web Push (and the sandbox has no push service), so these cover what can be checked
 // here: the app is installable-shaped, the service worker registers, and the Settings card is honest about the state.

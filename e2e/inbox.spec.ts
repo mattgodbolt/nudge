@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures';
 
 // Toasts are found by their text: Adventure mode may add its own (an arrival or a level-up) to the stack.
 test.beforeEach(async ({ page }) => {

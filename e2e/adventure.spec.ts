@@ -1,4 +1,4 @@
-import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
+import { expect, test, type APIRequestContext, type Page } from './fixtures';
 
 // Adventure mode (docs/RPG.md) on a private demo server: the chip, the Hall of Heroes, the level-up toast (and its
 // chime, through a stand-in AudioContext: nothing can be heard in CI), a missed campfire day (the demo can run the

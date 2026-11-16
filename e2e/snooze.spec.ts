@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './fixtures';
 
 // These share one demo server with the other specs, so they run in order and assert on changes, not absolutes.
 test.describe.configure({ mode: 'serial' });

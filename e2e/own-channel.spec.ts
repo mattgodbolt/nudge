@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures';
 
 // The second test starts from where the first leaves the demo server (one channel marked as mine), so they run in order.
 test.describe.configure({ mode: 'serial' });

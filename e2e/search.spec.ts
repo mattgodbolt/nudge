@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures';
 
 // Search and filters. Read-only, so it shares the hand-off demo server.
 

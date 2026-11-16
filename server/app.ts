@@ -17,6 +17,7 @@ import { registerItemEventRoutes } from './routes/itemEvents.js';
 import { registerRpgRoutes } from './routes/rpg.js';
 import { registerInsightsRoutes } from './routes/insights.js';
 import { HttpError } from './routes/util.js';
+import { registerSecurityHeaders } from './headers.js';
 import { registerSecurity, type SecurityOptions } from './security.js';
 
 export interface BuildAppOptions extends SecurityOptions {
@@ -34,6 +35,7 @@ export function devOrigins(env: NodeJS.ProcessEnv = process.env): string[] {
 export function buildApp(deps: AppDeps, opts: BuildAppOptions = {}): FastifyInstance {
   const app = Fastify({ logger: false, forceCloseConnections: true });
 
+  registerSecurityHeaders(app);
   registerSecurity(app, { extraOrigins: devOrigins(), ...opts });
 
   app.setErrorHandler((err: Error & { statusCode?: number; code?: string }, _req, reply) => {

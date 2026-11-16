@@ -1,4 +1,4 @@
-import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
+import { expect, test, type APIRequestContext, type Page } from './fixtures';
 
 // Live updates from the server reaching a page that is mid-list or reading a thread. Changes are made "elsewhere"
 // (another device) through the API, which the page hears about over its event stream. Its own demo server, since

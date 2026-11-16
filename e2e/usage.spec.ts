@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from './fixtures';
 
 const day = (offset: number) => new Date(Date.UTC(2026, 10, 11 + offset)).toISOString().slice(0, 10);
 

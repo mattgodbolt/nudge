@@ -1,4 +1,4 @@
-import { expect, test, type CDPSession, type Page } from '@playwright/test';
+import { expect, test, type CDPSession, type Page } from './fixtures';
 
 // Resync from a stale tab: a button, Shift+R, coming back to the tab, and (on touch) pulling the list down.
 

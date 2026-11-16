@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './fixtures';
 
 // The "New version available" prompt. Its own demo server (4527) claims a build that is not the one the page loaded
 // (NUDGE_DEMO_BUILD_ID), which is exactly what a tab left open across a deploy sees. The server pings its build id as

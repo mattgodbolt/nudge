@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './fixtures';
 
 // One shared demo server with a fake GitHub feed ("demo-org"): 30 pull requests and issues from six kinds of author.
 // The tests change shared state (done, muted), so they run in order.

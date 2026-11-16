@@ -1,4 +1,4 @@
-import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
+import { expect, test, type APIRequestContext, type Page } from './fixtures';
 
 // Snoozing until activity, on a demo server with a fake GitHub feed whose items have comment threads. Comments are
 // delivered on demand (POST /api/demo/comment) and the snooze waker can be run as if days had passed

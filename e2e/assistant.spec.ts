@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './fixtures';
 
 // One private demo server (the fake assistant understands "remind me in N days to X", "snooze this ... tomorrow" and
 // "done"). The tests add todos and a key, so they run in order.

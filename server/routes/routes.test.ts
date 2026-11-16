@@ -524,4 +524,30 @@ describe('static serving', () => {
     expect((await s.inject({ url: '/api/nope', headers: h })).statusCode).toBe(404);
     await s.close();
   });
+
+  it('sends the security headers on pages, assets, API replies and rejections alike', async () => {
+    const { mkdtempSync, writeFileSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const dir = mkdtempSync(join(tmpdir(), 'yt-static-'));
+    writeFileSync(join(dir, 'index.html'), '<html>spa</html>');
+    writeFileSync(join(dir, 'app.js'), 'console.log(1)');
+    const s = buildApp({ ...deps, staticDir: dir });
+    const h = { host: H.host };
+    const responses = [
+      await s.inject({ url: '/', headers: h }),
+      await s.inject({ url: '/sources/3', headers: h }),
+      await s.inject({ url: '/app.js', headers: h }),
+      await s.inject({ url: '/api/settings', headers: H }),
+      await s.inject({ url: '/api/nope', headers: h }),
+      await s.inject({ url: '/', headers: { host: 'evil.example' } }),
+    ];
+    for (const r of responses) {
+      expect(r.headers['x-content-type-options']).toBe('nosniff');
+      expect(r.headers['referrer-policy']).toBe('no-referrer');
+      expect(r.headers['content-security-policy']).toContain("default-src 'self'");
+      expect(r.headers['content-security-policy']).toContain("frame-ancestors 'none'");
+    }
+    await s.close();
+  });
 });

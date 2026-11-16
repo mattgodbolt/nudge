@@ -1,4 +1,4 @@
-import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
+import { expect, test, type APIRequestContext, type Page } from './fixtures';
 import type { Insights } from '../shared/insights';
 
 // Insights on Stats (docs/INSIGHTS.md), on a private demo server seeded with weeks of made-up history

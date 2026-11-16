@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page } from './fixtures';
 
 // A private demo server (NUDGE_DEMO_SUGGEST=1, NUDGE_DEMO_COMMENTS=1): the fake suggestion source judges a GitHub
 // thread by who wrote last ("your turn · answer alice-maintainer", "waiting on them"), uses the owner's snooze note and
