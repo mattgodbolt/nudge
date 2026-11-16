@@ -47,9 +47,10 @@ import { createSuggestions, suggestionDto } from './suggestions.js';
 import { htmlToPlain } from './text.js';
 import { tierFor, unitsPerDay } from '../sync/tiers.js';
 
-type Row = Record<string, any>;
+import { iso, loadUndoable as loadUndoableIn, type Row } from './common.js';
 
-const UNDO_WINDOW_MS = 24 * 60 * 60 * 1000;
+export { UndoError, type UndoErrorCode } from './common.js';
+
 const EPOCH = '1970-01-01T00:00:00.000Z';
 const OWN_FEED_UNITS_PER_DAY = 144; // allThreadsRelatedToChannelId every 10 min
 const DEFAULT_LIMIT = 100;
@@ -70,23 +71,6 @@ const DEFAULT_SETTINGS: StoredSettings = {
   // Adventure mode is on unless switched off: the owner asked for it (docs/RPG.md).
   rpg: { enabled: true, sound: true, title: null, seen: null, tz: null, prevTz: null },
 };
-
-export type UndoErrorCode = 'not_found' | 'already_undone' | 'expired';
-export class UndoError extends Error {
-  constructor(
-    public code: UndoErrorCode,
-    message: string,
-  ) {
-    super(message);
-    this.name = 'UndoError';
-  }
-}
-
-/** Normalise any ISO-ish timestamp so string comparison in SQL is chronological. */
-function iso(s: string): string {
-  const d = new Date(s);
-  return Number.isNaN(d.getTime()) ? s : d.toISOString();
-}
 
 /** A dismissal's marker, only while the item is actually done (the column is cleared on triage, but be safe). */
 function doneReasonOf(r: Row): { doneReason?: DoneReason } {
@@ -1331,16 +1315,7 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
     })();
   }
 
-  /** Fetch an undoable action row; snooze actions (to_state 'snoozed') and triage actions never cross over. */
-  function loadUndoable(actionId: number, snooze: boolean): Row {
-    const a = db.prepare('SELECT * FROM triage_actions WHERE id = ?').get(actionId) as Row | undefined;
-    if (!a || (a.to_state === 'snoozed') !== snooze) throw new UndoError('not_found', `No such action ${actionId}`);
-    if (a.undone_at) throw new UndoError('already_undone', `Action ${actionId} was already undone`);
-    if (clock().getTime() - new Date(a.created_at).getTime() >= UNDO_WINDOW_MS) {
-      throw new UndoError('expired', `Action ${actionId} is older than 24 hours`);
-    }
-    return a;
-  }
+  const loadUndoable = (actionId: number, snooze: boolean): Row => loadUndoableIn(db, clock, actionId, snooze);
 
   function undo(actionId: number): TriageResult {
     return db.transaction(() => {
