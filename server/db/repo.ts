@@ -1,6 +1,4 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import type { TriageResult } from '../../shared/types.js';
-import type { DraftDTO } from '../../shared/api.js';
 import type { GoogleAccountRow, Repo, YtComment } from '../contracts.js';
 import { openDb, type Db } from './db.js';
 import { createClientEvents, createEvents } from './events.js';
@@ -16,6 +14,7 @@ import { createYoutube } from './youtube.js';
 import { createInbox } from './inbox.js';
 import { createTriage } from './triage.js';
 import { createSnooze } from './snooze.js';
+import { createDrafts } from './drafts.js';
 import { iso, type Row } from './common.js';
 
 export { UndoError, type UndoErrorCode } from './common.js';
@@ -47,31 +46,7 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
   const { counts, getComment } = inbox;
   const triageStore = createTriage({ db, clock, now, events: ev, counts });
   const { triage } = triageStore;
-
-  /* ---------------- drafts ---------------- */
-  function draftDto(r: Row): DraftDTO {
-    return { body: r.body, updatedAt: r.updated_at, status: r.status };
-  }
-  function getDraft(commentId: string): DraftDTO | null {
-    const r = db.prepare('SELECT * FROM drafts WHERE item_id = ?').get(commentId) as Row | undefined;
-    return r ? draftDto(r) : null;
-  }
-  function saveDraft(commentId: string, body: string, status: DraftDTO['status']): DraftDTO {
-    db.prepare(
-      `INSERT INTO drafts (item_id, body, updated_at, status) VALUES (?, ?, ?, ?)
-       ON CONFLICT(item_id) DO UPDATE SET body = excluded.body, updated_at = excluded.updated_at,
-         status = excluded.status`,
-    ).run(commentId, body, now(), status);
-    return getDraft(commentId)!;
-  }
-
-  function markHandedOff(commentId: string, body: string): TriageResult {
-    return db.transaction(() => {
-      if (!getComment(commentId)) throw new Error(`Unknown comment ${commentId}`);
-      saveDraft(commentId, body, 'handed_off');
-      return triage([commentId], 'replied');
-    })();
-  }
+  const { saveDraft, ...draftMethods } = createDrafts({ db, now, getComment, triage });
 
   /* ---------------- Google accounts + reply posts ---------------- */
   const accountRow = (r: Row): GoogleAccountRow => ({
@@ -291,11 +266,8 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
     ...youtubeMethods,
     ...inbox,
     ...triageStore,
+    ...draftMethods,
     ...createSnooze({ db, clock, now, events: ev, counts }),
-    markHandedOff,
-    getDraft,
-    putDraft: (commentId, body) => saveDraft(commentId, body, 'draft'),
-    deleteDraft: (commentId) => void db.prepare('DELETE FROM drafts WHERE item_id = ?').run(commentId),
     ...createQuota({ db, now }),
   };
 }
