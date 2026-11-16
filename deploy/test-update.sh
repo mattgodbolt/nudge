@@ -263,6 +263,9 @@ check "leaves the pre-update snapshots alone" [ "$(count 'pre-update-*.db')" = 3
 check "copies to the off-box directory" [ "$(find "$SANDBOX/nas" -name 'nudge-*.db' | wc -l)" = 1 ]
 check "never leaves the off-box copy readable by others, even before it is renamed" \
   [ "$(cat "$STATE/partial-mode")" = 600 ]
+(cd "$WORK" && PATH="$BIN:$PATH" NUDGE_BACKUP_DIR= deploy/backup.sh > "$OUT" 2>&1)
+check "with no off-box directory configured it still succeeds" [ $? = 0 ]
+check "and says so" grep -q "NUDGE_BACKUP_DIR is not set" "$OUT"
 (cd "$WORK" && PATH="$BIN:$PATH" NUDGE_BACKUP_DIR="$SANDBOX/nas" deploy/backup.sh bogus > "$OUT" 2>&1)
 check "rejects an unknown mode" [ $? = 2 ]
 

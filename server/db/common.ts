@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import type { Db } from './db.js';
 
-/** A row as better-sqlite3 returns it; the stores map these to DTOs by hand (docs/review/server.md 5.5). */
+/** A row as better-sqlite3 returns it; the stores map these to DTOs by hand. */
 export type Row = Record<string, any>;
 
 /** Normalise any ISO-ish timestamp so string comparison in SQL is chronological. */

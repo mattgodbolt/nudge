@@ -342,8 +342,8 @@ Settings.
   `main` with required status checks, have the workflow move a `deploy` branch (or tag) to the commit only when every
   job is green, and point `update.sh` at that ref instead of `origin/main`.
 - **Backups:** `deploy/backup.sh` (cron, 03:15) snapshots the live database with SQLite's online backup API, verifies
-  it, keeps 7 in `data/backups/` and 14 in an off-box directory (`NUDGE_BACKUP_DIR`; the built-in default is a
-  NAS mount path, so set it to something that exists for you). It exits non-zero if that copy fails. The snapshots
+  it, keeps 7 in `data/backups/` and 14 in an off-box directory (`NUDGE_BACKUP_DIR`; unset means no off-box copy, so put
+  it in the cron line's environment, e.g. `NUDGE_BACKUP_DIR=/mnt/backup/nudge`). With it set, it exits non-zero if that copy fails. The snapshots
   `update.sh` takes before each deploy are named `pre-update-<time>.db` and kept apart (newest 3, local only), so
   frequent deploys never push the nightly ones out. Separately, the app itself writes
   `data/backups/pre-migrate-v<N>-<time>.db` (newest 5 kept) before applying any schema migration to an existing
