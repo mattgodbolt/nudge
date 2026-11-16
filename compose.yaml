@@ -10,6 +10,12 @@ services:
     container_name: nudge
     restart: unless-stopped
     user: '1000:1000' # matches the owner of ./data on the host
+    # It needs no Linux capabilities and never escalates; everything it writes goes to ./data (or /tmp, for SQLite's
+    # temporary files), so the rest of the filesystem is read-only.
+    cap_drop: [ALL]
+    security_opt: ['no-new-privileges:true']
+    read_only: true
+    tmpfs: [/tmp]
     ports:
       - '127.0.0.1:4517:4517'
     environment:

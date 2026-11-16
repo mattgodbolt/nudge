@@ -3,10 +3,10 @@ dist
 data
 .git
 .idea
-test-results
+test-results*
 playwright-report
 *.db
 *.db-wal
 *.db-shm
 .env
-youtubey
+.env.*
