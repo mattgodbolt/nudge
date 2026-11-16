@@ -112,6 +112,7 @@ export function registerSnoozeAiRoutes(app: FastifyInstance, deps: AppDeps): voi
         {
           title: found.item.title ?? '',
           kind: found.item.kind === 'pr' ? 'pr' : 'issue',
+          author: found.item.author,
           bucket,
           days: nag.days,
           why: nag.why,

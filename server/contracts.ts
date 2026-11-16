@@ -700,6 +700,8 @@ export interface SnoozeAi {
     input: {
       title: string;
       kind: 'pr' | 'issue';
+      /** The item's author: with the commenters, the only people the draft may @-mention. */
+      author: string | null;
       bucket: SnoozeBucket | null;
       days: number;
       why: string | null;

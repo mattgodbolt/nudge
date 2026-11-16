@@ -117,7 +117,8 @@ export function renderOwnerNotes(notes: string[]): string {
   ].join('\n');
 }
 
-const URL_RE = /\b(?:https?:\/\/|www\.)\S+/gi;
+/** A link in model output: stripped wherever the output could reach someone else. */
+export const URL_RE = /\b(?:https?:\/\/|www\.)\S+/gi;
 
 /** Validate the model's tool input. Anything off-schema is rejected rather than coerced into a verdict. */
 export function parseClassification(input: unknown): Classification | null {

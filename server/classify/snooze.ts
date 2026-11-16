@@ -1,7 +1,7 @@
 import { BUCKETS, SNOOZE_BUCKETS, isSnoozeBucket } from '../../shared/snooze.js';
 import type { LlmTokens, SnoozeAi } from '../contracts.js';
 import { LlmError } from '../contracts.js';
-import { clip, esc, escAttr } from './anthropic.js';
+import { URL_RE, clip, esc, escAttr } from './anthropic.js';
 
 const API = 'https://api.anthropic.com/v1/messages';
 const TIMEOUT_MS = 20_000;
@@ -29,6 +29,26 @@ const TOOL = {
 };
 
 type Json = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
+
+/** A GitHub @-mention of a user or a team (@org/team), not part of an email address or a word. */
+const MENTION_RE = /(^|[^\w@`])@([A-Za-z0-9][A-Za-z0-9-]{0,38})(\/[\w.-]+)?/g;
+
+/**
+ * The draft is meant to be pasted onto GitHub as Matt, and the thread it was written from is untrusted, so whatever
+ * the model was talked into must not ride along: links are removed, and an @-mention pings only someone already on the
+ * thread (the author or a recent commenter). Anyone else, and any team, loses the @ and is just a name.
+ */
+export function cleanNudge(text: string, onThread: Iterable<string>): string {
+  const known = new Set([...onThread].map((l) => l.toLowerCase()));
+  return text
+    .replace(URL_RE, '')
+    .replace(MENTION_RE, (whole, pre: string, login: string, team: string | undefined) =>
+      !team && known.has(login.toLowerCase()) ? whole : `${pre}${login}${team ?? ''}`,
+    )
+    .replace(/[ \t]+/g, ' ')
+    .replace(/ ?\n ?/g, '\n')
+    .trim();
+}
 
 const tokensOf = (json: Json): LlmTokens => {
   const u: Json = json.usage && typeof json.usage === 'object' ? json.usage : {};
@@ -116,14 +136,15 @@ export function createSnoozeAi(opts: { fetchImpl?: typeof fetch } = {}): SnoozeA
         messages: [{ role: 'user', content: lines.join('\n') }],
       });
       const blocks: Json[] = Array.isArray(json.content) ? json.content : [];
-      const text = blocks
+      let text = blocks
         .filter((b) => b?.type === 'text')
         .map((b) => String(b.text))
         .join('')
         .trim()
         .replace(/^["“]|["”]$/g, '')
-        .trim()
-        .slice(0, NUDGE_MAX);
+        .trim();
+      const onThread = [...(input.author ? [input.author] : []), ...input.comments.map((c) => c.author)];
+      text = cleanNudge(text, onThread).slice(0, NUDGE_MAX);
       if (!text) throw new LlmError('The model returned nothing');
       return { text, tokens: tokensOf(json) };
     },

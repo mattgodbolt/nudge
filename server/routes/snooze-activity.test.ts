@@ -322,6 +322,7 @@ describe('POST /api/items/:id/nudge-draft', () => {
     expect(nudgeCalls[0]).toMatchObject({
       title: 'Change 1',
       kind: 'pr',
+      author: 'carol',
       bucket: 'waiting_on_them',
       why: 'waiting for carol',
       body: 'adds a thing',

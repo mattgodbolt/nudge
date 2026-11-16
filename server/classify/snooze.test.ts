@@ -84,6 +84,7 @@ describe('drafting a nudge', () => {
   const input = {
     title: 'Add <save state>',
     kind: 'pr' as const,
+    author: 'dave',
     bucket: 'waiting_on_them' as const,
     days: 7,
     why: 'wait for the author',
@@ -117,6 +118,22 @@ describe('drafting a nudge', () => {
     expect((await ai.nudge(input, 'k', 'm')).text.length).toBeLessThanOrEqual(700);
     const empty = make([text('   ')]);
     await expect(empty.ai.nudge(input, 'k', 'm')).rejects.toBeInstanceOf(LlmError);
+  });
+
+  it('strips links from the draft, so a thread cannot get one into a comment posted as Matt', async () => {
+    const { ai } = make([
+      text('Could you rebase? Details at https://evil.example/x?y=1 and www.evil.example.\n\nThanks for the patch.'),
+    ]);
+    expect((await ai.nudge(input, 'k', 'm')).text).toBe('Could you rebase? Details at and\n\nThanks for the patch.');
+  });
+
+  it('keeps @-mentions of the author and the commenters, and defuses any other', async () => {
+    const { ai } = make([
+      text('@dave @Carol are you still on this? cc @mallory @org/admins, mail me at m@example.com (@matt).'),
+    ]);
+    expect((await ai.nudge(input, 'k', 'm')).text).toBe(
+      '@dave @Carol are you still on this? cc mallory org/admins, mail me at m@example.com (@matt).',
+    );
   });
 
   it('sends at most the six newest comments', async () => {
