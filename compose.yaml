@@ -1,5 +1,5 @@
-# Deployment on a LAN box fronted by `tailscale serve` (see README, "Deploying"). The port is published on the
-# host's loopback only; Tailscale (HTTPS, tailnet-only) is the sole way in.
+# Deployment on a box fronted by a Cloudflare Tunnel with Cloudflare Access in front of it (see README, "Deploying").
+# The port is published on the host's loopback only; Access (HTTPS, signed-in users only) is the sole way in.
 services:
   nudge:
     build:
@@ -13,20 +13,22 @@ services:
     ports:
       - '127.0.0.1:4517:4517'
     environment:
-      # Set these in a gitignored .env next to this file, e.g.
-      #   NUDGE_ALLOWED_HOSTS=phoenix.your-tailnet.ts.net
-      #   NUDGE_ALLOWED_USERS=you@example.com
-      NUDGE_ALLOWED_HOSTS: ${NUDGE_ALLOWED_HOSTS:-}
-      NUDGE_ALLOWED_USERS: ${NUDGE_ALLOWED_USERS:-}
-      # Cloudflare Access (optional): hosts behind it are authenticated by its signed token, not by a header, e.g.
+      # Set these in a gitignored .env next to this file (see .env.example). Hosts behind Cloudflare Access are
+      # authenticated by its signed token, and the email in it must be one of NUDGE_ALLOWED_USERS, e.g.
       #   NUDGE_ACCESS_HOSTS=nudge.example.com
       #   NUDGE_ACCESS_TEAM_DOMAIN=your-team.cloudflareaccess.com
       #   NUDGE_ACCESS_AUD=<the Access application's audience tag>
-      # and NUDGE_ALLOWED_USERS must then hold the exact email(s) allowed. Compose passes only the variables listed.
+      #   NUDGE_ALLOWED_USERS=you@example.com
+      # Compose passes only the variables listed here.
+      NUDGE_ALLOWED_USERS: ${NUDGE_ALLOWED_USERS:-}
       NUDGE_ACCESS_HOSTS: ${NUDGE_ACCESS_HOSTS:-}
       NUDGE_ACCESS_TEAM_DOMAIN: ${NUDGE_ACCESS_TEAM_DOMAIN:-}
       NUDGE_ACCESS_AUD: ${NUDGE_ACCESS_AUD:-}
       # Or paste the key into Settings (then it lives in the database and its backups instead).
       YOUTUBE_API_KEY: ${YOUTUBE_API_KEY:-}
+      # Optional: the OAuth client for posting replies (else Settings), and the contact sent to push services.
+      NUDGE_GOOGLE_CLIENT_ID: ${NUDGE_GOOGLE_CLIENT_ID:-}
+      NUDGE_GOOGLE_CLIENT_SECRET: ${NUDGE_GOOGLE_CLIENT_SECRET:-}
+      NUDGE_PUSH_SUBJECT: ${NUDGE_PUSH_SUBJECT:-}
     volumes:
       - ./data:/app/data

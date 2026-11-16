@@ -93,7 +93,7 @@ beforeEach(() => {
     demo: false,
     githubClient: {
       latestCommenter: async () => null,
-      recentComments: (...a) => recent(...a),
+      recentComments: (...a: Parameters<GithubClient['recentComments']>) => recent(...a),
     } as unknown as GithubClient,
     snoozeAi: {
       bucket: async (input, key, model) => {

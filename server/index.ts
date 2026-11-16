@@ -4,8 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { buildApp } from './app.js';
 import type { AppDeps, GoogleAuth, PostGateway, ReplyPoster } from './contracts.js';
 import { createGoogleAuth } from './auth/google.js';
-import { checkExposure } from './security.js';
-import { createAccessVerifier } from './auth/access.js';
+import { checkExposure, securityOptions } from './security.js';
 import { loadConfig, migrateLegacyDb, resolveApiKey, resolveGoogleClient } from './config.js';
 import { openDb } from './db/db.js';
 import { createRepo } from './db/repo.js';
@@ -275,16 +274,7 @@ async function main(): Promise<void> {
     // A demo server may claim a different build (NUDGE_DEMO_BUILD_ID) so the "new version" prompt can be shown in e2e.
     buildId: createBuildId(staticDir, config.demo ? process.env.NUDGE_DEMO_BUILD_ID : undefined),
   };
-  const app = buildApp(deps, {
-    port: config.port || undefined,
-    allowedHosts: config.allowedHosts,
-    allowedUsers: config.allowedUsers,
-    accessHosts: config.accessHosts,
-    verifyAccess:
-      config.accessHosts.length > 0
-        ? createAccessVerifier({ teamDomain: config.accessTeamDomain, aud: config.accessAud })
-        : undefined,
-  });
+  const app = buildApp(deps, securityOptions(config));
 
   await app.listen({ host: config.host, port: config.port });
   const port = (app.server.address() as { port: number }).port;

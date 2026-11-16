@@ -156,7 +156,7 @@ describe('POST /api/assistant', () => {
     const until = new Date(Date.now() + 86_400_000).toISOString();
     command = async (i) => {
       expect(i.selected).toEqual({ title: 'A PR', kind: 'pr' });
-      return { actions: [{ type: 'snooze', until }], reply: '' };
+      return { actions: [{ type: 'snooze', until, why: null, bucket: null, untilActivity: false }], reply: '' };
     };
     let res = (await post({ text: 'snooze this till tomorrow', selectedId: id })).json();
     expect(res.outcomes).toMatchObject([{ type: 'snooze', id, until }]);

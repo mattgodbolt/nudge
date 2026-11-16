@@ -8,10 +8,12 @@ export interface Config {
   port: number;
   /** Listen address. Loopback unless a container publishes the port (then 0.0.0.0 inside, loopback on the host). */
   host: string;
-  allowedHosts: string[];
+  /** Emails allowed in through Cloudflare Access (exact, case-insensitive), checked against the verified token. */
   allowedUsers: string[];
-  /** Hostnames fronted by Cloudflare Access: these authenticate by its signed token, never by a Tailscale header. */
+  /** Hostnames fronted by Cloudflare Access: the only names accepted in Host besides loopback. */
   accessHosts: string[];
+  /** Variables that are set but no longer read (e.g. NUDGE_ALLOWED_HOSTS from the Tailscale days), to warn about. */
+  retiredVars: string[];
   /** Cloudflare Access team domain (`<team>.cloudflareaccess.com`) and the Access application's audience tag. */
   accessTeamDomain: string;
   accessAud: string;
@@ -43,6 +45,13 @@ function homeFile(home: string, name: string): string {
 
 export const DEFAULT_DB = 'data/nudge.db';
 
+/**
+ * Settings that used to mean something and no longer do. ALLOWED_HOSTS named the `tailscale serve` hostname; Tailscale
+ * is no longer a way in (Cloudflare Access is), so it is ignored. A deployment whose .env still sets it must keep
+ * starting, so it only earns a warning.
+ */
+const RETIRED = ['ALLOWED_HOSTS'];
+
 /** One-off: the default database used to be data/youtubey.db. Move it (and WAL/SHM) before it is opened. */
 export function migrateLegacyDb(dbPath: string, legacyPath = 'data/youtubey.db'): boolean {
   if (dbPath !== DEFAULT_DB || existsSync(dbPath) || !existsSync(legacyPath)) return false;
@@ -67,8 +76,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, home: string = 
   return {
     port,
     host: pick(env, 'HOST') || '127.0.0.1',
-    allowedHosts: list(pick(env, 'ALLOWED_HOSTS')),
     allowedUsers: list(pick(env, 'ALLOWED_USERS')),
+    retiredVars: RETIRED.filter((name) => pick(env, name) !== undefined).map((name) => `NUDGE_${name}`),
     accessHosts: list(pick(env, 'ACCESS_HOSTS')).map((h) =>
       h
         .toLowerCase()

@@ -124,14 +124,18 @@ describe('security', () => {
     expect(rows()).toEqual([]);
   });
 
-  it('requires an allowed tailnet user on a proxied host', async () => {
-    const proxied = buildApp(deps, { allowedHosts: ['nudge.ts.net'], allowedUsers: ['me@example.com'] });
-    const headers = { 'x-nudge': '1', host: 'nudge.ts.net' };
+  it('requires a verified Access user on an Access host', async () => {
+    const proxied = buildApp(deps, {
+      accessHosts: ['nudge.example.com'],
+      allowedUsers: ['me@example.com'],
+      verifyAccess: async (t) => (t === 'good' ? 'me@example.com' : null),
+    });
+    const headers = { 'x-nudge': '1', host: 'nudge.example.com' };
     expect((await proxied.inject({ method: 'GET', url: '/api/usage', headers })).statusCode).toBe(403);
     const ok = await proxied.inject({
       method: 'GET',
       url: '/api/usage',
-      headers: { ...headers, 'tailscale-user-login': 'me@example.com' },
+      headers: { ...headers, 'cf-access-jwt-assertion': 'good' },
     });
     expect(ok.statusCode).toBe(200);
     await proxied.close();

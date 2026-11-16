@@ -18,20 +18,27 @@ if (!process.env.NUDGE_E2E_BUILT) {
   process.env.NUDGE_E2E_BUILT = '1';
 }
 
-const use = { permissions: ['clipboard-read', 'clipboard-write'] };
+const use = {
+  permissions: ['clipboard-read', 'clipboard-write'],
+  // Something to look at when a test fails (CI uploads test-results/ and the report).
+  trace: 'retain-on-failure' as const,
+  screenshot: 'only-on-failure' as const,
+};
 
-// Three demo servers, so specs that change shared state cannot disturb each other (the specs run in parallel):
-// hand-off mode (4518, the default), API-posting mode (4519, NUDGE_DEMO_POST=api) for reply-api.spec.ts, and a private
-// one (4520) for snooze.spec.ts, which reorders the inbox and moves counts, and one (4521,
-// NUDGE_DEMO_GITHUB=1) with a fake GitHub feed for github.spec.ts, and one (4522) for assistant.spec.ts, which adds todos, and one (4523, NUDGE_DEMO_SUGGEST=1) with the fake suggestion
-// source for suggestions.spec.ts, and one (4525, as 4524 plus a 300-item backlog and a daily cap that bites after 1,100 suggestions) for backlog.spec.ts, and one (4524, as 4523 plus NUDGE_DEMO_COMMENTS=1: GitHub items with comment threads) for notes.spec.ts, which snoozes items, records notes and edits them.
+// Several demo servers, so specs that change shared state cannot disturb each other (the specs run in parallel). Each
+// project below says which server it talks to; the webServer list at the end starts them all.
 export default defineConfig({
   testDir: 'e2e',
+  // A run with an offset gets its own output folder too, so two runs in one checkout do not clear each other's.
+  outputDir: OFFSET ? `test-results-${OFFSET}` : 'test-results',
+  // A stray test.only must not turn a CI run green while skipping everything else.
+  forbidOnly: !!process.env.CI,
+  reporter: process.env.CI ? [['list'], ['html', { open: 'never' }]] : 'list',
   projects: [
     {
       name: 'handoff',
       testIgnore:
-        /(inbox|reply-api|snooze|snooze-activity|github|assistant|suggestions|notes|backlog|update|adventure|insights|live)\.spec\.ts/,
+        /(inbox|reply-api|snooze|snooze-activity|github|assistant|suggestions|notes|backlog|update|adventure|insights|live|own-channel)\.spec\.ts/,
       use: { ...use, baseURL: `${base(4518)}` },
     },
     {
@@ -100,6 +107,13 @@ export default defineConfig({
       name: 'live',
       testMatch: /live\.spec\.ts/,
       use: { ...use, baseURL: `${base(4531)}` },
+    },
+    {
+      // own-channel.spec.ts un-marks and re-marks the demo's own channel; on the shared 4518 server that raced
+      // stats.spec.ts, whose "My channels" scope switch is only offered while a channel is marked as mine.
+      name: 'channel',
+      testMatch: /own-channel\.spec\.ts/,
+      use: { ...use, baseURL: `${base(4532)}` },
     },
     {
       name: 'github',
@@ -183,6 +197,12 @@ export default defineConfig({
     {
       command: 'npm run demo:e2e:live',
       url: `${base(4531)}/api/bootstrap`,
+      reuseExistingServer: false,
+      timeout: 120000,
+    },
+    {
+      command: 'npm run demo:e2e:channel',
+      url: `${base(4532)}/api/bootstrap`,
       reuseExistingServer: false,
       timeout: 120000,
     },

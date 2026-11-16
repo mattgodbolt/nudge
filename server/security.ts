@@ -1,33 +1,42 @@
 import type { FastifyInstance } from 'fastify';
 import { CLIENT_HEADER } from '../shared/api.js';
 import type { ApiError } from '../shared/types.js';
+import { createAccessVerifier, type AccessVerifierOptions } from './auth/access.js';
+import type { Config } from './config.js';
 
 const LOOPBACK = /^(127\.0\.0\.1|localhost)$/i;
 
 export interface SecurityOptions {
-  /** If set, Host must carry exactly this port. */
+  /** If set, a loopback Host must carry exactly this port. */
   port?: number;
   /** Extra allowed Origin values (e.g. the Vite dev server). */
   extraOrigins?: string[];
-  /**
-   * Extra hostnames accepted in Host besides loopback, e.g. the Tailscale name of the machine when `tailscale serve`
-   * fronts the app. The port check is skipped for these (the proxy talks on 443, not our port).
-   */
-  allowedHosts?: string[];
-  /**
-   * If non-empty, a request to an allowed (non-loopback) host must carry a Tailscale-User-Login header naming one of
-   * these logins. `tailscale serve` sets it from the caller's tailnet identity and strips any client-supplied value;
-   * it is only trustworthy because the app listens on loopback, so only the local proxy can reach it.
-   */
+  /** Emails allowed in through Cloudflare Access (exact, case-insensitive). Required when accessHosts is set. */
   allowedUsers?: string[];
   /**
-   * Hostnames behind Cloudflare Access. They are allowed hosts too, but are authenticated by the signed
-   * Cf-Access-Jwt-Assertion token (see verifyAccess), and the Tailscale header means nothing on them; conversely the
-   * token means nothing on any other host.
+   * Hostnames behind Cloudflare Access: the only names accepted in Host besides loopback. Requests to them are
+   * authenticated by the signed Cf-Access-Jwt-Assertion token (see verifyAccess); the token means nothing on any
+   * other host.
    */
   accessHosts?: string[];
   /** Verifies the Access token and returns the lower-cased email it proves, or null. Required when accessHosts is set. */
   verifyAccess?: (token: string | undefined) => Promise<string | null>;
+}
+
+/** The options the server runs with, built from its config (a function so tests exercise the same wiring). */
+export function securityOptions(
+  config: Pick<Config, 'port' | 'allowedUsers' | 'accessHosts' | 'accessTeamDomain' | 'accessAud'>,
+  access: Pick<AccessVerifierOptions, 'fetchKeys' | 'now'> = {},
+): SecurityOptions {
+  return {
+    port: config.port || undefined,
+    allowedUsers: config.allowedUsers,
+    accessHosts: config.accessHosts,
+    verifyAccess:
+      config.accessHosts.length > 0
+        ? createAccessVerifier({ teamDomain: config.accessTeamDomain, aud: config.accessAud, ...access })
+        : undefined,
+  };
 }
 
 /**
@@ -78,25 +87,15 @@ export function checkRequest(
   // Blocks DNS rebinding: a rebound hostname is never 127.0.0.1/localhost or one we were told to expect.
   const loopback = host !== null && LOOPBACK.test(host.hostname);
   const accessHost = isAccessHost(headers, opts);
-  const allowed =
-    host !== null &&
-    (accessHost || (opts.allowedHosts ?? []).some((h) => h.toLowerCase() === host.hostname.toLowerCase()));
-  if (!host || !(allowed || loopback) || (loopback && opts.port !== undefined && host.port !== String(opts.port))) {
+  if (!host || !(accessHost || loopback) || (loopback && opts.port !== undefined && host.port !== String(opts.port))) {
     return reject(403, 'Forbidden host', 'bad_host');
   }
-  // Defence against a tunnel rewritten to send a loopback Host (which skips every check below): traffic that came
-  // through Cloudflare carries these headers, and tailscale serve and local clients never do.
+  // Defence against a tunnel rewritten to send a loopback Host (which skips the token check): traffic that came
+  // through Cloudflare carries these headers, and local clients never do.
   if (!accessHost && (opts.accessHosts ?? []).length > 0 && CLOUDFLARE_HEADERS.some((h) => h in headers)) {
     return reject(403, 'Forbidden host', 'bad_host');
   }
-  // Access hosts are authenticated by checkAccess (it needs an async signature check), not by a header we can read.
-  if (allowed && !accessHost && (opts.allowedUsers ?? []).length > 0) {
-    const login = headers['tailscale-user-login'];
-    const who = typeof login === 'string' ? login.toLowerCase() : '';
-    if (!(opts.allowedUsers ?? []).some((u) => u.toLowerCase() === who)) {
-      return reject(403, 'Not signed in to the tailnet as an allowed user', 'bad_user');
-    }
-  }
+  // Access hosts are authenticated by checkAccess (it needs an async signature check).
   if (method === 'GET' || method === 'HEAD' || method === 'OPTIONS') return null;
 
   const origin = headers.origin;
@@ -149,17 +148,17 @@ export function registerSecurity(app: FastifyInstance, opts: SecurityOptions): v
 }
 
 /**
- * Startup sanity check on how the app is exposed. The Tailscale login header is only trustworthy when the sole route
- * in is the local proxy, so a non-loopback bind is flagged, and naming a proxied hostname without saying who may use
- * it would admit every device on the tailnet (the app can post replies as the owner), which is refused outright.
+ * Startup sanity check on how the app is exposed. Naming an Access hostname without saying who may use it would admit
+ * everyone Access lets in (the app can post replies as the owner), so that and an incomplete Access setup are refused
+ * outright. A non-loopback bind is flagged, and settings that are no longer read are named so they can be removed.
  */
 export function checkExposure(cfg: {
   host: string;
-  allowedHosts: string[];
   allowedUsers: string[];
   accessHosts?: string[];
   accessTeamDomain?: string;
   accessAud?: string;
+  retiredVars?: string[];
 }): {
   fatal: string | null;
   warnings: string[];
@@ -169,10 +168,10 @@ export function checkExposure(cfg: {
   const accessHosts = cfg.accessHosts ?? [];
   const team = cfg.accessTeamDomain ?? '';
   const aud = cfg.accessAud ?? '';
-  if ((cfg.allowedHosts.length > 0 || accessHosts.length > 0) && cfg.allowedUsers.length === 0) {
+  if (accessHosts.length > 0 && cfg.allowedUsers.length === 0) {
     fatal =
-      'NUDGE_ALLOWED_HOSTS or NUDGE_ACCESS_HOSTS is set but NUDGE_ALLOWED_USERS is empty, which would let everyone ' +
-      'who can reach those hosts use this app. Set NUDGE_ALLOWED_USERS to your Tailscale login or Access email.';
+      'NUDGE_ACCESS_HOSTS is set but NUDGE_ALLOWED_USERS is empty, which would let everyone Cloudflare Access lets ' +
+      'in use this app. Set NUDGE_ALLOWED_USERS to the email(s) allowed.';
   } else if (accessHosts.length > 0 && (!team || !aud)) {
     fatal = 'NUDGE_ACCESS_HOSTS needs NUDGE_ACCESS_TEAM_DOMAIN and NUDGE_ACCESS_AUD, or no token could be verified.';
   } else if (accessHosts.length === 0 && (team || aud)) {
@@ -181,10 +180,13 @@ export function checkExposure(cfg: {
   } else if (team && !/^[a-z0-9-]+(\.[a-z0-9-]+)*\.cloudflareaccess\.com$/.test(team)) {
     fatal = 'NUDGE_ACCESS_TEAM_DOMAIN must look like <team>.cloudflareaccess.com.';
   }
+  for (const name of cfg.retiredVars ?? []) {
+    warnings.push(`${name} is set but no longer used (Tailscale is no longer a way in); remove it from your .env.`);
+  }
   if (!LOOPBACK.test(cfg.host)) {
     warnings.push(
       `Listening on ${cfg.host}, not loopback. This is only safe if the port is published to 127.0.0.1 alone (as ` +
-        'compose.yaml does) or firewalled: anyone who can reach it can send a forged Tailscale-User-Login header.',
+        'compose.yaml does) or firewalled: anyone who can reach it with a loopback Host header is treated as local.',
     );
   }
   return { fatal, warnings };

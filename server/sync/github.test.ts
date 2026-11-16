@@ -66,6 +66,12 @@ function fakeClient(s: Script): GithubClient {
     async latestCommenter() {
       return s.commenter;
     },
+    async recentComments() {
+      return [];
+    },
+    async discussion() {
+      throw new Error('the poller never fetches a discussion');
+    },
   };
 }
 
@@ -302,11 +308,11 @@ describe('GitHub poller: a busy window', () => {
       ...fakeClient(script),
       async search(q, page) {
         script.queries.push(`${page}:${q}`);
-        if (!/\bis:pr\b/.test(q)) return { items: [], total: 0 };
+        if (!/\bis:pr\b/.test(q)) return { items: [], total: 0, rate: null };
         const since = /updated:>=(\S+)/.exec(q)![1]!;
         // Like GitHub: oldest first, from the given time (whole seconds) on.
         const hits = all.filter((i) => i.updatedAt >= since.replace('Z', '.000Z'));
-        return { items: hits.slice((page - 1) * 100, page * 100), total: hits.length };
+        return { items: hits.slice((page - 1) * 100, page * 100), total: hits.length, rate: null };
       },
     };
     const p = createGithubPoller({ repo, bus, client, clock: clock.now, maxPages: 1 });

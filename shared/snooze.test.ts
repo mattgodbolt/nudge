@@ -9,7 +9,7 @@ import {
   isSnoozeBucket,
   nagText,
   wholeDays,
-} from './snooze';
+} from './snooze.js';
 
 const DAY = 86_400_000;
 const NOW = new Date('2026-11-14T12:00:00.000Z');

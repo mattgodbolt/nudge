@@ -620,7 +620,7 @@ export interface ReplyPoster {
 }
 
 /** Everything the HTTP layer needs. */
-/* ---------------- GitHub (polled; no webhooks, the box is only reachable on the tailnet) ---------------- */
+/* ---------------- GitHub (polled; no webhooks, the box is behind Cloudflare Access) ---------------- */
 export interface GithubRate {
   limit: number;
   remaining: number;

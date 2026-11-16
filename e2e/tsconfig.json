@@ -1,0 +1,13 @@
+{
+  // Playwright specs: Node for the test runner, plus the DOM for the callbacks that run in the page.
+  // Bundler resolution, as Playwright resolves extensionless imports itself.
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "types": ["node"],
+    "noEmit": true
+  },
+  "include": ["./**/*.ts", "../playwright.config.ts"]
+}

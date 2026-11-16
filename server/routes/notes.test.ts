@@ -140,7 +140,13 @@ describe('the assistant records notes', () => {
 
   it('snoozes with the why the assistant understood, and can do both in one command', async () => {
     actions = [
-      { type: 'snooze', until: new Date(Date.now() + 86_400_000).toISOString(), why: 'review the proposed fix' },
+      {
+        type: 'snooze',
+        until: new Date(Date.now() + 86_400_000).toISOString(),
+        why: 'review the proposed fix',
+        bucket: null,
+        untilActivity: false,
+      },
       note('waiting on a fix', 'item'),
     ];
     const res = await say('snooze this until tomorrow to review the proposed fix, I am waiting on a fix', {

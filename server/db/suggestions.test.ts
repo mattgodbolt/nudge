@@ -157,18 +157,18 @@ describe('recording the suggestion with what the owner did', () => {
   });
 
   it('keeps the category and prompt version the suggestion had when he acted, even after it is replaced', () => {
-    repo.suggestions.save(row(1, { verdict: 'no_reply_needed', category: 'thanks', promptVersion: 'p1-2' }));
+    repo.suggestions.save(row(1, { verdict: 'no_reply_needed', category: 'chat', promptVersion: 'p1-2' }));
     repo.triage([id(1)], 'done', 'no_action');
     repo.suggestions.save(row(1, { category: 'question', promptVersion: 'p1-3' })); // a later run replaces the row
     expect(metaOf(id(1), 'state')).toMatchObject({
       suggested: 'skip',
-      suggestedCategory: 'thanks',
+      suggestedCategory: 'chat',
       suggestedPrompt: 'p1-2',
     });
   });
 
   it('records no category or prompt for an injection attempt, nor without a suggestion', () => {
-    repo.suggestions.save(row(1, { injectionAttempt: true, category: 'sneaky' }));
+    repo.suggestions.save(row(1, { injectionAttempt: true, category: 'other' }));
     repo.triage([id(1), id(2)], 'done');
     for (const n of [1, 2]) {
       const m = metaOf(id(n), 'state');
@@ -179,10 +179,10 @@ describe('recording the suggestion with what the owner did', () => {
   });
 
   it('tags decision and reply events with the category too, but leaves a caller-given suggestion alone', () => {
-    repo.suggestions.save(row(1, { category: 'bug-report' }));
+    repo.suggestions.save(row(1, { category: 'bug' }));
     const ev = createEvents(db);
     ev.record({ itemId: id(1), at: '2026-11-12T10:00:00.000Z', kind: 'decision', to: 'done', source: 'user' });
-    expect(metaOf(id(1), 'decision')).toMatchObject({ suggestedCategory: 'bug-report', suggestedPrompt: 'p0-7' });
+    expect(metaOf(id(1), 'decision')).toMatchObject({ suggestedCategory: 'bug', suggestedPrompt: 'p0-7' });
     ev.record({
       itemId: id(1),
       at: '2026-11-12T10:00:00.000Z',

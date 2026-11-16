@@ -475,10 +475,9 @@ describe('GitHub sync events', () => {
 
   it('changing my accounts moves items in and out of own as sync events', () => {
     repo.upsertGithubItems(feedId, [up(1, { author: 'carol' })]);
+    // updateSettings recomputes GitHub ownership itself when the accounts change.
     repo.updateSettings({ github: { token: null, myAccounts: ['carol'] } });
-    repo.recomputeGithubOwnership();
     repo.updateSettings({ github: { token: null, myAccounts: [] } });
-    repo.recomputeGithubOwnership();
     expect(events(id1).map((e) => [e.from, e.to, e.source])).toEqual([
       ['inbox', 'own', 'sync'],
       ['own', 'inbox', 'sync'],

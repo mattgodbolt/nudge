@@ -47,14 +47,25 @@ describe('pre-rename compatibility', () => {
 
 describe('network config', () => {
   it('defaults to loopback with nothing extra allowed', () => {
-    expect(loadConfig({}, tmp())).toMatchObject({ host: '127.0.0.1', allowedHosts: [], allowedUsers: [] });
+    expect(loadConfig({}, tmp())).toMatchObject({
+      host: '127.0.0.1',
+      allowedUsers: [],
+      accessHosts: [],
+      retiredVars: [],
+    });
   });
   it('parses comma-separated lists and a custom bind host', () => {
     expect(
       loadConfig(
-        { NUDGE_HOST: '0.0.0.0', NUDGE_ALLOWED_HOSTS: 'a.ts.net, b.ts.net ,', NUDGE_ALLOWED_USERS: 'm@x.com' },
+        { NUDGE_HOST: '0.0.0.0', NUDGE_ACCESS_HOSTS: 'a.example.com, b.example.com ,', NUDGE_ALLOWED_USERS: 'm@x.com' },
         tmp(),
       ),
-    ).toMatchObject({ host: '0.0.0.0', allowedHosts: ['a.ts.net', 'b.ts.net'], allowedUsers: ['m@x.com'] });
+    ).toMatchObject({ host: '0.0.0.0', accessHosts: ['a.example.com', 'b.example.com'], allowedUsers: ['m@x.com'] });
+  });
+  it('notes, rather than reads, the retired Tailscale host setting (under either prefix)', () => {
+    const c = loadConfig({ NUDGE_ALLOWED_HOSTS: 'a.ts.net' }, tmp());
+    expect(c.retiredVars).toEqual(['NUDGE_ALLOWED_HOSTS']);
+    expect(c).not.toHaveProperty('allowedHosts');
+    expect(loadConfig({ YOUTUBEY_ALLOWED_HOSTS: 'a.ts.net' }, tmp()).retiredVars).toEqual(['NUDGE_ALLOWED_HOSTS']);
   });
 });

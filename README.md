@@ -5,11 +5,12 @@ appear in), new pull requests and issues from GitHub accounts and organisations 
 all of them are cleared the same way: read, reply, snooze, done.
 
 Nudge is a personal tool for one person, not a SaaS. There are no accounts and no multi-user mode: it runs on your own
-machine (or a box on your LAN behind Tailscale), keeps its data in a local SQLite file and never writes to GitHub.
+machine (or a box of your own behind Cloudflare Access), keeps its data in a local SQLite file and never writes to GitHub.
 
-![The inbox: todos, YouTube comments and GitHub items in one list](docs/screenshots/inbox.png)
+![The inbox: YouTube comments, each with a suggestion, and the open one beside the list](docs/screenshots/inbox.png)
 
-All screenshots in this README are the built-in demo mode: fake data, nothing real.
+All screenshots in this README are the built-in demo mode: fake data, nothing real. `npm run shots` retakes them
+(see `scripts/screenshots.ts`).
 
 ## What it does
 
@@ -28,8 +29,8 @@ All screenshots in this README are the built-in demo mode: fake data, nothing re
   one-line summary of the week. Read-only, local, every number with its sample size, and "not enough data yet" until
   there is. See [docs/INSIGHTS.md](docs/INSIGHTS.md).
 - **Stats and usage:** per-source video and comment totals, plus private counters of which features you use.
-- **Adventure mode:** a purely cosmetic level, silly title, trophies and a campfire, earned from the triage you have
-  already done, in the sidebar and in the Hall of Heroes under Stats. It never changes how anything works, and one
+- **Adventure mode:** a purely cosmetic level, silly title, loot, bosses, achievements and a campfire, earned from the
+  triage you have already done, in the sidebar and in the Hall of Heroes under Stats. It never changes how anything works, and one
   switch in Settings turns it off. See [docs/RPG.md](docs/RPG.md).
 - **Demo mode:** a complete fake world, with no API keys or network, for trying it out.
 
@@ -62,50 +63,57 @@ Ticking "This is my channel" when adding a channel source does exactly the same 
 
 ## Configuration
 
-All optional. Everything except the YouTube key can also be set in the app; keys saved in Settings live in the
-database.
+All optional. The YouTube key and the Google OAuth client can also be given in Settings (they then live in the
+database). For Docker, [`.env.example`](.env.example) lists what `compose.yaml` passes through.
 
-| Variable                                                             | Meaning                                                                                                         |
-| -------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| `YOUTUBE_API_KEY`                                                    | YouTube Data API key (else Settings, else `~/.nudge-key`)                                                       |
-| `NUDGE_PORT`                                                         | API port, default `4517`                                                                                        |
-| `NUDGE_HOST`                                                         | Listen address, default `127.0.0.1`                                                                             |
-| `NUDGE_DB`                                                           | SQLite path, default `data/nudge.db` (`:memory:` works)                                                         |
-| `NUDGE_ALLOWED_HOSTS`, `NUDGE_ALLOWED_USERS`                         | Comma-separated extra hostnames and Tailscale logins, see [Security](#security-model)                           |
-| `NUDGE_ACCESS_HOSTS`, `NUDGE_ACCESS_TEAM_DOMAIN`, `NUDGE_ACCESS_AUD` | Cloudflare Access: host(s) it fronts, team domain and application audience tag, see [Security](#security-model) |
-| `NUDGE_GOOGLE_CLIENT_ID`, `NUDGE_GOOGLE_CLIENT_SECRET`               | OAuth client for posting replies (else Settings, else `~/.nudge-google-client.json`)                            |
-| `NUDGE_PUSH_SUBJECT`                                                 | Contact `mailto:` sent to push services                                                                         |
-| `NUDGE_DEMO`, `NUDGE_DEMO_GITHUB`, `NUDGE_DEMO_POST`                 | Demo mode, its fake GitHub organisation, and `api` to fake a connected Google account                           |
-| `NUDGE_DEMO_CLOCK=fixed`                                             | Demo world stops growing on its own (used by the e2e tests)                                                     |
+| Variable                                               | Meaning                                                                                                      |
+| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------ |
+| `YOUTUBE_API_KEY`                                      | YouTube Data API key (else Settings, else `~/.nudge-key`)                                                    |
+| `NUDGE_PORT`                                           | API port, default `4517`                                                                                     |
+| `NUDGE_HOST`                                           | Listen address, default `127.0.0.1`                                                                          |
+| `NUDGE_DB`                                             | SQLite path, default `data/nudge.db` (`:memory:` works)                                                      |
+| `NUDGE_ACCESS_HOSTS`                                   | Comma-separated hostnames behind Cloudflare Access, see [Security](#security-model)                          |
+| `NUDGE_ACCESS_TEAM_DOMAIN`, `NUDGE_ACCESS_AUD`         | The Access team domain (`<team>.cloudflareaccess.com`) and the application's audience tag                    |
+| `NUDGE_ALLOWED_USERS`                                  | Comma-separated emails allowed in through Access (required with `NUDGE_ACCESS_HOSTS`)                        |
+| `NUDGE_GOOGLE_CLIENT_ID`, `NUDGE_GOOGLE_CLIENT_SECRET` | OAuth client for posting replies (else Settings, else `~/.nudge-google-client.json`)                         |
+| `NUDGE_PUSH_SUBJECT`                                   | Contact `mailto:` sent to push services, default `mailto:nudge@example.invalid`                              |
+| `NUDGE_WEB_DIR`                                        | Built web UI to serve, relative to the repository (default `dist/web`)                                       |
+| `GIT_SHA`                                              | Commit shown in Settings > About; the build reads it from git when unset (the Docker build passes it in)     |
+| `NUDGE_BACKUP_DIR`                                     | Off-box directory for `deploy/backup.sh` (host side, see [Deploying](#deploying-docker--cloudflare-access))  |
+| `NUDGE_DEMO`                                           | `1`: demo mode, a fake world with no keys or network (refuses a database that holds real sources)            |
+| `NUDGE_DEMO_GITHUB`, `NUDGE_DEMO_COMMENTS`             | Demo: a fake GitHub organisation; give some of its items comment threads                                     |
+| `NUDGE_DEMO_SUGGEST`, `NUDGE_DEMO_SUGGEST_CAP_AFTER`   | Demo: fake suggestions; make the daily cost cap bite after N calls                                           |
+| `NUDGE_DEMO_HISTORY`, `NUDGE_DEMO_BACKLOG`             | Demo: weeks of made-up history for Insights; N extra inbox items                                             |
+| `NUDGE_DEMO_POST=api`                                  | Demo: fake a connected Google account, so replies "post"                                                     |
+| `NUDGE_DEMO_CLOCK=fixed`, `NUDGE_DEMO_BUILD_ID`        | Demo: the world stops growing on its own; claim a different web build (both for the e2e tests)               |
+| `E2E_PORT_OFFSET`, `NUDGE_SHOTS`                       | Tests: shift every e2e port (see [CONTRIBUTING.md](CONTRIBUTING.md)); a directory for the specs' screenshots |
+| `ANTHROPIC_API_KEY`                                    | Only for `npm run eval:classify`; the app's own Anthropic key is entered in Settings                         |
 
-GitHub and Anthropic tokens are entered in Settings only.
+GitHub and Anthropic tokens for the app are entered in Settings only. `NUDGE_ALLOWED_HOSTS`, from when Tailscale was a
+way in, is no longer read; Nudge starts anyway and logs a warning naming it.
 
 ## Security model
 
 Nudge has no login of its own. The server listens on loopback (`127.0.0.1`) only, and every request is checked:
 
-- the `Host` header must be loopback with the right port, or a name in `NUDGE_ALLOWED_HOSTS` (blocks DNS rebinding);
-- if `NUDGE_ALLOWED_USERS` is set, requests arriving on an allowed non-loopback host must carry a
-  `Tailscale-User-Login` header naming one of those users. `tailscale serve` sets that header from the caller's tailnet
-  identity, and it is only trustworthy because the app is reachable only through that local proxy;
+- the `Host` header must be loopback with the right port, or a name in `NUDGE_ACCESS_HOSTS` (blocks DNS rebinding);
 - hosts listed in `NUDGE_ACCESS_HOSTS` sit behind [Cloudflare Access](https://developers.cloudflare.com/cloudflare-one/policies/access/).
-  There the `Tailscale-User-Login` header means nothing. Instead the signed `Cf-Access-Jwt-Assertion` token is verified
-  (RS256 signature against the team's published keys, issuer `https://<NUDGE_ACCESS_TEAM_DOMAIN>`, audience
-  `NUDGE_ACCESS_AUD`, expiry), and the email in the verified token must equal one of `NUDGE_ALLOWED_USERS`
-  (exact match, never a domain). The plain `Cf-Access-Authenticated-User-Email` header is never read. Any failure
-  rejects the request, and so does Cloudflare traffic carrying a loopback `Host`. A stream that is already open (the live
-  event feed) is not re-checked, so it can outlive the token until the page reconnects. Conversely the token is ignored on every other host. Only the static files a browser fetches
-  without credentials to install the PWA (`/manifest.webmanifest`, `/sw.js`, the icons) are served to an Access host
-  without a token, so the Access policy needs a bypass for exactly those paths;
+  There the signed `Cf-Access-Jwt-Assertion` token is verified (RS256 signature against the team's published keys,
+  issuer `https://<NUDGE_ACCESS_TEAM_DOMAIN>`, audience `NUDGE_ACCESS_AUD`, expiry), and the email in the verified token
+  must equal one of `NUDGE_ALLOWED_USERS` (exact match, never a domain). The plain `Cf-Access-Authenticated-User-Email`
+  header is never read. Any failure rejects the request, and so does Cloudflare traffic carrying a loopback `Host`. A
+  stream that is already open (the live event feed) is not re-checked, so it can outlive the token until the page
+  reconnects. The token is ignored on every other host. Only the static files a browser fetches without credentials to
+  install the PWA (`/manifest.webmanifest`, `/sw.js`, the icons) are served to an Access host without a token, so the
+  Access policy needs a bypass for exactly those paths;
 - changing requests must have a same-origin `Origin` (when sent) and the `X-Nudge: 1` header;
 - stored secrets (API keys, tokens) are never sent back to the browser, and Nudge never writes to GitHub.
 
-Do not expose the port anywhere else. The Tailscale header is only trusted because the app is reachable solely
-through the local proxy: anyone who can reach the port directly can forge it. Nudge refuses to start if
-`NUDGE_ALLOWED_HOSTS` or `NUDGE_ACCESS_HOSTS` is set without `NUDGE_ALLOWED_USERS` (that would admit every device on
-the tailnet, or everyone Access lets in), if the Access settings are incomplete, and warns
-when bound to a non-loopback address. Containers need `0.0.0.0` inside, so publish the port to `127.0.0.1` only, as
-`compose.yaml` does. See [Deploying](#deploying-docker--tailscale).
+Do not expose the port anywhere else: a request that reaches it directly with a loopback `Host` is treated as local.
+Nudge refuses to start if `NUDGE_ACCESS_HOSTS` is set without `NUDGE_ALLOWED_USERS` (that would admit everyone Access
+lets in) or if the Access settings are incomplete, and warns when bound to a non-loopback address. Containers need
+`0.0.0.0` inside, so publish the port to `127.0.0.1` only, as `compose.yaml` does. See
+[Deploying](#deploying-docker--cloudflare-access). To report a security problem, see [SECURITY.md](SECURITY.md).
 
 ## Your data and third parties
 
@@ -252,15 +260,21 @@ them in `shared/` (`shared/api.ts` is the HTTP contract). The server is built fr
 for GitHub and Anthropic, `server/youtube`, `server/reply` for posting, `server/push`, `server/demo` for the fake
 world), and the web app talks to it over `/api` plus a server-sent event stream.
 
-| Command                           | What it does                                                                                                                                                              |
-| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `npm test`                        | Unit and component tests (vitest)                                                                                                                                         |
-| `npm run test:e2e`                | Playwright against several demo servers (ports 4518-4530, in-memory). `E2E_PORT_OFFSET=100 npm run test:e2e` shifts them and builds elsewhere, so two runs can go at once |
-| `npm run typecheck`               | `tsc` for the server plus `svelte-check` for the web app                                                                                                                  |
-| `npm run lint` / `npm run format` | Prettier check / write                                                                                                                                                    |
-| `npm run build`                   | Production build into `dist/`                                                                                                                                             |
+| Command                           | What it does                                                                                                                |
+| --------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `npm run check`                   | Everything quick: `typecheck`, `lint` and `test`. Run it before every push                                                  |
+| `npm test`                        | Unit and component tests (vitest)                                                                                           |
+| `npm run test:e2e`                | Playwright against 15 in-memory demo servers (ports 4518-4532). A fresh clone first needs `npx playwright install chromium` |
+| `npm run test:deploy`             | Rehearses `deploy/update.sh` and `deploy/backup.sh` in a sandbox with a fake `docker`                                       |
+| `npm run typecheck`               | `tsc` for the server, its tests, `e2e/` and `scripts/`, plus `svelte-check` for the web app                                 |
+| `npm run lint` / `npm run format` | Prettier check / write                                                                                                      |
+| `npm run build`                   | Production build into `dist/`                                                                                               |
 
-Design notes: [docs/PLAN.md](docs/PLAN.md). OAuth posting design: [docs/OAUTH-PLAN.md](docs/OAUTH-PLAN.md). Design
+GitHub Actions ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs `npm run check`, the deploy rehearsal and
+the Playwright suite on every push and pull request. [CONTRIBUTING.md](CONTRIBUTING.md) has the details, including
+`E2E_PORT_OFFSET` for running two e2e suites at once.
+
+The original build plan (historical): [docs/PLAN.md](docs/PLAN.md). OAuth posting design: [docs/OAUTH-PLAN.md](docs/OAUTH-PLAN.md). Design
 proposals (partly historical): [sources](docs/DESIGN-SOURCES.md), [LLM triage](docs/DESIGN-LLM-TRIAGE.md).
 
 Known limitations: held-for-review comments are still invisible (viewing them needs OAuth reads, deferred), liking
@@ -280,36 +294,47 @@ None of this runs in the app; it all works on a copy of a database.
   asks to confirm the projected cost), `score` compares with your labels; `rank-sample` and `rank-score` do the same
   for a priority ranking built from pairwise comparisons (Bradley-Terry). Output goes under `data/eval/`.
 
-## Deploying (Docker + Tailscale)
+## Deploying (Docker + Cloudflare Access)
 
-One box on your LAN runs the container; `tailscale serve` puts HTTPS in front of it, reachable only from your tailnet
-(phone included). The app listens on the host's loopback only and still checks Host, Origin and, optionally, your
-Tailscale identity (see [Security model](#security-model)). It has no password of its own, so do not publish the port
+One box runs the container, published on the host's loopback only. A [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/)
+(`cloudflared` on the same box, pointing at `http://127.0.0.1:4517`) puts HTTPS in front of it, and a Cloudflare Access
+application on that hostname decides who gets through (phone included). Nudge then checks the Access token itself,
+plus Host and Origin (see [Security model](#security-model)). It has no password of its own, so do not publish the port
 anywhere else. This is one way to run it, not a requirement.
 
 ```shell
 git clone https://github.com/mattgodbolt/nudge.git ~/nudge && cd ~/nudge
 mkdir -p data
-cat > .env <<EOF
-NUDGE_ALLOWED_HOSTS=<machine>.<tailnet>.ts.net
-NUDGE_ALLOWED_USERS=<your tailscale login>
-YOUTUBE_API_KEY=<your key>     # the container cannot see ~/.nudge-key; or paste it into Settings
-EOF
+cp .env.example .env    # then fill in NUDGE_ACCESS_HOSTS, _TEAM_DOMAIN, _AUD, NUDGE_ALLOWED_USERS and the YouTube key
 docker compose up -d --build            # the image build runs the unit tests
-tailscale serve --bg --https=443 http://127.0.0.1:4517
 deploy/install-cron.sh                  # auto-update + nightly backup
 ```
 
-- **Auto-update:** `deploy/update.sh` (cron, every 5 minutes) fetches `origin/main`; on a new commit it takes a backup
-  (and skips the update, to retry next time, if none could be made while the app is up), builds (a failing test aborts the build and the old container keeps running), restarts, and rolls back to the
-  previous image if the new one is not healthy within ~90s. A commit that fails is remembered and not retried. See
-  `data/update.log`.
+In Cloudflare Zero Trust: create a self-hosted Access application for the hostname with a policy that allows only you,
+copy its audience (AUD) tag into `NUDGE_ACCESS_AUD`, and add a bypass policy for the PWA's static files (listed under
+[Security model](#security-model)). The container cannot see `~/.nudge-key`, so give the YouTube key in `.env` or
+Settings.
+
+- **Auto-update:** `deploy/update.sh` (cron, every 5 minutes) fetches `origin/main`; on a new commit it takes a
+  pre-update snapshot (and skips the update, to retry next time, if none could be made while the app is up), builds (a
+  failing test aborts the build and the old container keeps running), restarts, and rolls back to the previous image if
+  the new one is not healthy within ~90s. A commit that fails is remembered and not retried, and so is an `origin/main`
+  that is not a fast-forward of the checkout. Every failure exits non-zero with an `ERROR` line in `data/update.log`.
+  After a successful update, dangling images and build cache older than a week are pruned (`nudge:prev`, the rollback
+  image, is kept). `npm run test:deploy` rehearses all of this against a fake `docker`.
+- **CI does not gate deploys yet.** The cron job deploys whatever is on `origin/main`, whether or not the GitHub Actions
+  run for it passed (only the unit tests inside the Docker build stop a bad commit). To make CI a gate later: protect
+  `main` with required status checks, have the workflow move a `deploy` branch (or tag) to the commit only when every
+  job is green, and point `update.sh` at that ref instead of `origin/main`.
 - **Backups:** `deploy/backup.sh` (cron, 03:15) snapshots the live database with SQLite's online backup API, verifies
   it, keeps 7 in `data/backups/` and 14 in an off-box directory (`NUDGE_BACKUP_DIR`; the built-in default is a
-  NAS mount path, so set it to something that exists for you). It exits non-zero if that copy fails. Separately, the
-  app itself writes `data/backups/pre-migrate-v<N>-<time>.db` (newest 5 kept) before applying any schema migration to
-  an existing database, and refuses to migrate if it cannot. Restore: stop the container, copy a snapshot over
-  `data/nudge.db`, delete `nudge.db-wal`/`-shm`, start it. Snapshots contain your Google token and API key, so keep them private.
+  NAS mount path, so set it to something that exists for you). It exits non-zero if that copy fails. The snapshots
+  `update.sh` takes before each deploy are named `pre-update-<time>.db` and kept apart (newest 3, local only), so
+  frequent deploys never push the nightly ones out. Separately, the app itself writes
+  `data/backups/pre-migrate-v<N>-<time>.db` (newest 5 kept) before applying any schema migration to an existing
+  database, and refuses to migrate if it cannot. Restore: stop the container, copy a snapshot over `data/nudge.db`,
+  delete `nudge.db-wal`/`-shm`, start it. Snapshots contain your Google token and API key, so keep them private.
+  `data/update.log` and `data/backup.log` are not rotated.
 - **Google sign-in** redirects to `http://127.0.0.1:4517/...`, which only works on the machine itself. Connect once
   with `ssh -L 4517:127.0.0.1:4517 <box>` and open `http://127.0.0.1:4517/settings` (the tokens then live in the
   database), or connect on your laptop and copy the database across.
@@ -373,7 +398,7 @@ A tab that has been in the background catches up on its own when you return to i
 meanwhile it shows the "New version available" bar rather than reloading, so nothing half-typed is lost. You can also refresh by hand: the circular-arrow button in the header, `Shift+R`, or
 pull the list down on a touch screen.
 
-1. On the phone (connected to your tailnet), open the HTTPS address in Chrome. Menu → **Install app**, or use the
+1. On the phone, open the HTTPS address in Chrome (sign in through Access if asked). Menu → **Install app**, or use the
    **Install as an app** button in Settings → Notifications.
 2. Open **Settings → Notifications → Turn on for this device**, allow notifications, then **Send a test**.
 3. Choose what you want: new comments and/or snoozed comments coming back. Settings are per device.
@@ -382,8 +407,7 @@ How it works:
 
 - The server generates a VAPID key pair on first start (stored in the database) and sends each message, encrypted
   end to end, to your browser's push service (Google's FCM for Chrome). The server needs outbound HTTPS to that
-  service; the phone does **not** need the tailnet to _receive_ a notification, only to open the page when you tap it
-  (an always-on Tailscale VPN makes that invisible).
+  service; the phone does not need to be signed in to _receive_ a notification, only to open the page when you tap it.
 - New-comment notifications are batched for ~20 seconds, so one sync is one notification ("5 new comments", or the
   comment itself if there is one). A sync only finds comments as often as it polls the YouTube API, so that is how
   fresh a notification can be. Comments older than 48 hours are never announced (a new source's history, or a slow

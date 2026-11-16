@@ -102,7 +102,7 @@ describe('incremental sync', () => {
     env.clock.advance(15 * 60_000);
     const list = env.yt.threads.get(V1) ?? [];
     const r = comment('t0.r1', V1, env.clock.now(), { parentId: 't0' });
-    env.yt.threads.set(V1, [{ ...(list[0] as never), totalReplyCount: 1, replies: [r] }, ...list.slice(1)]);
+    env.yt.threads.set(V1, [{ ...list[0]!, totalReplyCount: 1, replies: [r] }, ...list.slice(1)]);
     const s = await syncVideo(env, V1);
     expect(s.newComments).toBe(1);
     expect(stateOf(env, 't0.r1')).toBe('inbox');

@@ -17,15 +17,13 @@ test('stats page shows aggregate totals, switches scope, and g t navigates there
   );
   await expect(page.getByTestId('stats-table').locator('tbody tr').first()).toBeVisible();
 
-  // The shared demo server may have had its own-channel flag toggled by another spec, so only check the scope switch
-  // when it is offered.
+  // The demo seed marks one channel as mine, so the scope switch is offered.
   const toggle = page.getByRole('button', { name: 'My channels' });
-  if (await toggle.isVisible()) {
-    await toggle.click();
-    const mine = Number((await page.getByTestId('stat-videos').innerText()).replace(/\D/g, ''));
-    expect(mine).toBeGreaterThan(0);
-    expect(mine).toBeLessThanOrEqual(videos);
-  }
+  await toggle.click();
+  await expect(toggle).toHaveClass(/primary/);
+  const mine = Number((await page.getByTestId('stat-videos').innerText()).replace(/\D/g, ''));
+  expect(mine).toBeLessThanOrEqual(videos);
+  expect(mine).toBeGreaterThan(0);
 });
 
 test('when the totals cannot be loaded the page says so and offers Retry, rather than "Nothing tracked yet"', async ({

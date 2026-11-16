@@ -2,10 +2,16 @@ node_modules
 dist
 data/
 test-results
+test-results-*/
 playwright-report
+blob-report/
+coverage/
 .env
-__pycache__
+.env.*
+!.env.example
+*.log
 *.db
 *.db-wal
 *.db-shm
 .idea/
+.claude/

@@ -1,0 +1,29 @@
+# Security
+
+Nudge is a personal tool with no login of its own. It stores API keys, a GitHub token and a Google refresh token that
+can post to YouTube as you, so a hole in it matters.
+
+## Reporting a problem
+
+Please report anything you think is a vulnerability privately, through GitHub's
+[private vulnerability reporting](https://github.com/mattgodbolt/nudge/security/advisories/new) for this repository,
+not in a public issue. Say what you found, how to reproduce it, and what it lets someone do. You will get a reply,
+and a fix or an explanation, as soon as it can be looked at; this is a one-person project with no bug bounty.
+
+## What is in scope
+
+- Ways past the request checks in `server/security.ts`: Host and Origin checks, the `X-Nudge` header, and the
+  Cloudflare Access token verification in `server/auth/access.ts`.
+- Anything that sends a stored secret back to the browser, or writes it to a log.
+- Anything that makes Nudge write to GitHub, or post to YouTube without you asking.
+- The deploy scripts in `deploy/` doing something unsafe with the database or its backups.
+
+## Running it safely
+
+- Keep the port on loopback. The server listens on `127.0.0.1` by default; in Docker publish it to `127.0.0.1` only, as
+  `compose.yaml` does. Anything that can reach the port directly with a loopback `Host` header is treated as local.
+- To reach it from elsewhere, put it behind Cloudflare Access and set `NUDGE_ACCESS_HOSTS`, `NUDGE_ACCESS_TEAM_DOMAIN`,
+  `NUDGE_ACCESS_AUD` and `NUDGE_ALLOWED_USERS` (see the README's "Security model"). Nudge refuses to start with an
+  incomplete Access setup.
+- The database (`data/nudge.db`) and every backup of it hold your tokens and keys. Keep them private.
+- Give the Anthropic key a small spend limit, and the GitHub token read-only access (see the README).

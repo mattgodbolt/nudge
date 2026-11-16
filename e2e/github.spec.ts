@@ -443,7 +443,11 @@ test.describe('on a phone, the top of the inbox leaves the room to the list', ()
   });
 });
 
-const SHOTS = '/tmp/claude-1000/-home-matthew-dev-nudge/8310d065-b0ad-4a4a-8d51-bf2a6cd22982/scratchpad';
+// Screenshots for eyeballing the layout are written only when $NUDGE_SHOTS names a directory, as in the other specs.
+const SHOTS = process.env.NUDGE_SHOTS;
+const shot = async (page: Page, name: string) => {
+  if (SHOTS) await page.screenshot({ path: `${SHOTS}/${name}.png`, fullPage: true });
+};
 
 async function addRepoFeed(page: Page, name: string) {
   await page.goto('/sources');
@@ -487,7 +491,7 @@ test('Sources: a single repository can be followed on its own, and an unknown on
   await expect(row.getByRole('button', { name: 'Poll now' })).toBeVisible();
   await expect(row.locator('td.num').first()).toHaveText('3', { timeout: 15_000 });
 
-  await page.screenshot({ path: `${SHOTS}/repo-feed-desktop.png`, fullPage: true });
+  await shot(page, 'repo-feed-desktop');
 
   // Its items are filed under it, and only its own repository is there.
   const side = page.getByTestId('sidebar-feed').filter({ hasText: 'quiet-org/tiny' });
@@ -528,7 +532,7 @@ test.describe('a repository feed on a phone', () => {
     const wrap = page.getByTestId('github-feeds').locator('.tablewrap');
     expect(await wrap.evaluate((el) => getComputedStyle(el).overflowX)).toBe('auto');
     await row.getByRole('button', { name: 'Poll now' }).scrollIntoViewIfNeeded();
-    await page.screenshot({ path: `${SHOTS}/repo-feed-390.png`, fullPage: true });
+    await shot(page, 'repo-feed-390');
     await removeFeed(page, 'quiet-org/tiny');
   });
 });

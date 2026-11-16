@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildChanged, entryScript, parsePing } from './build';
+import { buildChanged, entryScript, parsePing } from './build.js';
 
 const page = (hash: string) =>
   `<!doctype html><html><head><script type="module" crossorigin src="/assets/index-${hash}.js"></script></head></html>`;

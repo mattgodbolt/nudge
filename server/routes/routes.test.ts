@@ -3,6 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../app.js';
 import type { AppDeps, Repo, StoredSettings } from '../contracts.js';
 import { createEventBus } from '../events/bus.js';
+import { DEFAULT_SNOOZE_DAYS } from '../../shared/snooze.js';
 import { createHandoffPoster } from '../reply/poster.js';
 import { fakeGoogleAuth } from '../reply/test-helpers.js';
 import type {
@@ -58,6 +59,7 @@ function stubRepo() {
     dailyQuotaBudget: 9000,
     manualReserve: 1000,
     backfillDays: 14,
+    snoozeDays: { ...DEFAULT_SNOOZE_DAYS },
     theme: 'system',
     github: { token: null, myAccounts: [] },
     llm: { apiKey: null, model: 'claude-haiku-5-5' },

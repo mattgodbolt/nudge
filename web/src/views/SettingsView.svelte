@@ -641,7 +641,7 @@
       {:else}
         <p class="muted meta">
           Get a notification on <strong>this device</strong> when comments arrive or a snoozed one comes back. Tapping it
-          opens that comment. You need to be connected to the network that serves Nudge (e.g. Tailscale) to open it.
+          opens that comment. You need to be able to reach Nudge (e.g. signed in through Cloudflare Access) to open it.
         </p>
         {#if push.status === 'blocked'}
           <p class="bad meta">

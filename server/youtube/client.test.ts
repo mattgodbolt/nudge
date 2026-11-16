@@ -15,7 +15,7 @@ const json = (body: unknown, status = 200) =>
 function setup(responses: (Response | Error)[] | ((url: URL) => Response), key: string | null = '  KEY123\n') {
   const urls: URL[] = [];
   let i = 0;
-  const fetchImpl = vi.fn(async (input: RequestInfo | URL) => {
+  const fetchImpl = vi.fn(async (input: string | URL | Request) => {
     const url = new URL(String(input));
     urls.push(url);
     if (typeof responses === 'function') return responses(url);

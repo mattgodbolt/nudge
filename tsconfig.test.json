@@ -1,0 +1,13 @@
+{
+  // Typechecks everything the build does not: server and shared tests, scripts and the tool configs. vitest strips
+  // types without checking them, so without this a stale fake or fixture would go unnoticed. e2e/ has its own config
+  // (it needs the DOM types for page.evaluate callbacks).
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "types": ["node"],
+    "noEmit": true
+  },
+  "include": ["server/**/*.ts", "shared/**/*.ts", "scripts/**/*.ts", "vitest.config.ts", "vite.config.ts"]
+}
