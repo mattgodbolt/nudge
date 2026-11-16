@@ -341,6 +341,10 @@ transaction would remove the three route copies and 2.8.
 
 ### 5.2 `db/repo.ts` is a god object, half refactored — cleanup, L
 
+**Status (2026-11-16):** split done: `createRepo` composes `settings`, `youtube`, `inbox`, `triage`, `snooze`, `drafts`,
+`accounts` and `quota` stores; `upsertComment`'s statements are hoisted. Still open: `Repo` slices in `contracts.ts`,
+the `events.ts` migration fallbacks.
+
 Newer areas are already separate stores reached through a namespace (`repo.usage`, `repo.suggestions`, `repo.notes`,
 `repo.clientEvents`), feeds and todos are separate files but spread flat onto the repo object (`repo.ts:1875-1879`),
 and everything older (settings, push subscriptions, videos, sources, threads and comments, inbox listing, triage,
