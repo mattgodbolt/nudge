@@ -6,6 +6,20 @@
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', (event) => event.waitUntil(self.clients.claim()));
 
+/**
+ * A notification may only open a page of this app. A push names a path, but "//host" and "/\host" are paths that
+ * leave the site, so the path is resolved and kept only if it stays on this origin.
+ */
+function inAppPath(url) {
+  if (typeof url !== 'string' || !url.startsWith('/')) return '/inbox';
+  try {
+    const u = new URL(url, self.location.origin);
+    return u.origin === self.location.origin ? u.pathname + u.search + u.hash : '/inbox';
+  } catch {
+    return '/inbox';
+  }
+}
+
 /* A push is { title, body, url, tag }. */
 self.addEventListener('push', (event) => {
   let data = {};
@@ -24,7 +38,7 @@ self.addEventListener('push', (event) => {
         renotify: !!data.tag,
         icon: '/icon-192.png',
         badge: '/badge-96.png',
-        data: { url: typeof data.url === 'string' && data.url.startsWith('/') ? data.url : '/inbox' },
+        data: { url: inAppPath(data.url) },
       });
       // If Nudge is open and in view the user is already watching the comment arrive, so dismiss it again. The test
       // push stays up, otherwise pressing "Send a test" with the app open would appear to do nothing.
@@ -39,7 +53,7 @@ self.addEventListener('push', (event) => {
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-  const url = (event.notification.data && event.notification.data.url) || '/inbox';
+  const url = inAppPath(event.notification.data && event.notification.data.url);
   event.waitUntil(
     (async () => {
       const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
