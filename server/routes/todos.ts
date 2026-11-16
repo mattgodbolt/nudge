@@ -6,7 +6,8 @@ import { costMicros } from '../classify/anthropic.js';
 import { fallbackDate } from '../../shared/snooze.js';
 import { recordNote } from './notes.js';
 import { bucketInBackground } from './snoozeAi.js';
-import { HttpError, asObject, bad, notFound, str } from './util.js';
+import { overDailyCap } from '../suggest/worker.js';
+import { HttpError, asObject, bad, logBackground, notFound, str } from './util.js';
 
 const TEXT_MAX = 4000;
 const TITLE_MAX = 140;
@@ -65,6 +66,10 @@ export function registerTodoRoutes(app: FastifyInstance, deps: AppDeps): void {
     let error: string | null = null;
     if (!apiKey || !deps.llm) {
       fallback = 'off';
+    } else if (overDailyCap(repo)) {
+      // The assistant draws on the same daily cap as suggestions; the words are still kept below.
+      fallback = 'failed';
+      error = 'The daily limit on model spending has been reached';
     } else {
       try {
         const r = await deps.llm.command(
@@ -74,13 +79,13 @@ export function registerTodoRoutes(app: FastifyInstance, deps: AppDeps): void {
         );
         actions = r.actions;
         said = r.reply;
+        const micros = r.tokens ? costMicros(model, r.tokens) : 0;
+        repo.spend.add('assistant', micros);
         // Counts only: how often the assistant is used, what it did and what it cost. Never the words.
         usage.add({
           'assistant.call': 1,
           ...(r.actions.length ? { 'assistant.tool_call': r.actions.length } : {}),
-          ...(r.tokens && costMicros(model, r.tokens) > 0
-            ? { 'assistant.cost_micros': costMicros(model, r.tokens) }
-            : {}),
+          ...(micros > 0 ? { 'assistant.cost_micros': micros } : {}),
         });
       } catch (e) {
         usage.add({ 'assistant.call': 1, 'assistant.fail': 1 });
@@ -131,7 +136,7 @@ export function registerTodoRoutes(app: FastifyInstance, deps: AppDeps): void {
         });
         // A reason in words with no bucket from the assistant: file it afterwards, never holding up the answer.
         if (!a.bucket && a.why && r.actionId !== null) {
-          void bucketInBackground(deps, r.actionId, [selected.item.id], (m, e) => console.warn(m, e));
+          void bucketInBackground(deps, r.actionId, [selected.item.id], logBackground);
         }
       } else if (a.type === 'dismiss') {
         const r = repo.triage([selected.item.id], 'done', 'no_action');

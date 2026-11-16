@@ -1,5 +1,8 @@
 import type { PollTier } from '../../shared/types.js';
 
+// The one polling-tier table: the engine polls by it, and the repo shows each video's tier and budgets each source by
+// it. Dependency-free, so db/ may import it.
+
 export interface TierInfo {
   tier: PollTier;
   /** Minutes between incremental polls (Infinity = never). */
@@ -39,6 +42,14 @@ export function colder(info: TierInfo): TierInfo {
   const i = ORDER.indexOf(info.tier);
   if (i < 0) return info;
   return infoForTier(ORDER[Math.min(i + 1, ORDER.length - 1)] as PollTier);
+}
+
+/**
+ * Roughly one API unit per poll (one page of threads), for the projected daily cost shown per source. A paused video
+ * costs nothing.
+ */
+export function unitsPerDay(info: TierInfo): number {
+  return Number.isFinite(info.intervalMin) ? DAY / info.intervalMin : 0;
 }
 
 export function addMinutes(d: Date, min: number): Date {

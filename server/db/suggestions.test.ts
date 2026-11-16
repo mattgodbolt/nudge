@@ -64,13 +64,12 @@ beforeEach(() => {
 });
 
 describe('suggestion store', () => {
-  it('keeps one current row per item and sums spend by time', () => {
+  it('keeps one current row per item', () => {
     repo.suggestions.save(row(1));
     repo.suggestions.save(row(1, { stateKey: 'k2', reason: 'Newer', costUsd: 0.5 }));
     repo.suggestions.save(row(2, { createdAt: '2026-11-11T23:59:59.000Z', costUsd: 1 }));
     expect(db.prepare('SELECT COUNT(*) AS n FROM suggestions').get()).toEqual({ n: 2 });
     expect(repo.suggestions.get([id(1)]).get(id(1))?.reason).toBe('Newer');
-    expect(repo.suggestions.spentSince('2026-11-12T00:00:00.000Z')).toBeCloseTo(0.5);
   });
 
   it('never exposes an action or the reason for an injection attempt', () => {

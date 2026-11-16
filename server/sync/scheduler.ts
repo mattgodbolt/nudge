@@ -8,6 +8,7 @@ export interface SchedulerDeps {
   hasApiKey: () => boolean;
   clock?: () => Date;
   tickMs?: number;
+  log?: (msg: string, err?: unknown) => void;
 }
 
 /**
@@ -18,11 +19,18 @@ export interface SchedulerDeps {
 export function createScheduler(deps: SchedulerDeps): Scheduler & { tick(): Promise<void> } {
   let timer: ReturnType<typeof setInterval> | null = null;
   let ticking = false;
+  const log = deps.log ?? ((m: string, e?: unknown) => console.warn(m, e instanceof Error ? e.message : (e ?? '')));
 
   async function tick(): Promise<void> {
     if (ticking) return;
-    if (!deps.getSettings().pollEnabled || !deps.hasApiKey() || !deps.quota.canPoll()) return;
-    if (deps.engine.status().running) return;
+    // Called from a timer: a throw here (reading settings, the quota) must be logged, never left as a rejection.
+    try {
+      if (!deps.getSettings().pollEnabled || !deps.hasApiKey() || !deps.quota.canPoll()) return;
+      if (deps.engine.status().running) return;
+    } catch (e) {
+      log('scheduler tick failed', e);
+      return;
+    }
     ticking = true;
     try {
       await deps.engine.run({ trigger: 'poll', scope: 'all' });

@@ -5,15 +5,17 @@
   import Icon from './Icon.svelte';
 
   const label = $derived(
-    sync.status.running
-      ? sync.status.total > 0
-        ? `Syncing ${sync.status.done}/${sync.status.total}`
-        : 'Syncing…'
-      : sync.blocked
-        ? 'Quota exhausted'
-        : sync.status.lastRun
-          ? `Synced ${ago(sync.status.lastRun.finishedAt ?? sync.status.lastRun.startedAt, sync.now)}`
-          : 'Not synced yet',
+    sync.streamDown
+      ? 'Live updates lost · Reconnecting…'
+      : sync.status.running
+        ? sync.status.total > 0
+          ? `Syncing ${sync.status.done}/${sync.status.total}`
+          : 'Syncing…'
+        : sync.blocked
+          ? 'Quota exhausted'
+          : sync.status.lastRun
+            ? `Synced ${ago(sync.status.lastRun.finishedAt ?? sync.status.lastRun.startedAt, sync.now)}`
+            : 'Not synced yet',
   );
 </script>
 
@@ -24,6 +26,7 @@
     if (e.detail > 0) e.currentTarget.blur();
   }}
   data-testid="sync-indicator"
+  class:down={sync.streamDown}
   {@attach tip({ id: 'sync.now', label: 'Sync now' })}
 >
   <span class="spin" class:on={sync.status.running}><Icon name="refresh" size={14} /></span>
@@ -57,5 +60,8 @@
     to {
       transform: rotate(360deg);
     }
+  }
+  .sync.down {
+    color: var(--danger);
   }
 </style>

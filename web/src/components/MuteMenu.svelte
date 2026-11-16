@@ -76,6 +76,12 @@
   let active = $state(0);
   let dialog: HTMLDivElement | undefined = $state();
 
+  // The dialog only renders while its item is in the list. If it leaves (finished elsewhere), close the menu too:
+  // otherwise its keyboard scope would outlive it and swallow every key until Escape.
+  $effect(() => {
+    if (ui.muteFor && !item) ui.muteFor = null;
+  });
+
   function close() {
     ui.muteFor = null;
   }

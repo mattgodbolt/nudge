@@ -15,6 +15,8 @@ import type { FeedPollResult, FeedRow, GithubItemUpsert, NewFeed, UpsertGithubRe
 type Row = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
 
 const EPOCH = '1970-01-01T00:00:00.000Z';
+/** States a GitHub item leaves when someone other than the owner comments on it while it is open. */
+const DONE_LIKE: ReadonlySet<string> = new Set(['done', 'replied', 'resolved']);
 const MUTE_KINDS: readonly MuteKind[] = ['repo', 'owner', 'author', 'bots', 'item'];
 
 export const githubItemId = (owner: string, repo: string, number: number): string => `gh:${owner}/${repo}#${number}`;
@@ -396,7 +398,6 @@ export function createFeedsRepo(deps: FeedsDeps) {
         const muted = muteHit(u);
         const existing = get.get(u.id) as Row | undefined;
         const prev = existing ? parseData(existing.data) : {};
-        const grew = !!existing && u.comments > (prev.comments ?? 0);
         // Parked until someone else acts: the poll below decides whether that just happened.
         const waiting =
           !!existing &&
@@ -404,19 +405,30 @@ export function createFeedsRepo(deps: FeedsDeps) {
           existing.snooze_until_activity === 1 &&
           !!existing.snoozed_until &&
           existing.snoozed_until > at;
+        const counted = !!existing && u.comments > (prev.comments ?? 0);
+        // Whether the newest comment is mine decides what happens to a Done or parked item. When the poller could not
+        // find out (a failed lookup, or past its per-poll cap) the growth is not taken in at all: the stored count stays
+        // where it was, so the next poll sees the same growth and asks again. Treating "unknown" as "someone else"
+        // would bring the owner's items back on his own comments.
+        const unknown =
+          counted &&
+          u.sourceState === 'open' &&
+          u.lastCommenterIsMe === undefined &&
+          (DONE_LIKE.has(existing.state) || waiting);
+        const grew = counted && !unknown;
         const data = JSON.stringify({
           // The newest commenter is only known when the poller looked it up for this very growth.
           lastCommenter: u.lastCommenter ?? (grew ? undefined : prev.lastCommenter),
           // Comments after the last poll that saw the old count are the ones that bring a Done item back. Kept while
           // the item sits in the inbox so a second reply does not hide the first.
-          checkedAt: at,
+          checkedAt: unknown ? (prev.checkedAt ?? at) : at,
           activitySince:
             grew && (existing.state !== 'inbox' || waiting) ? (prev.checkedAt ?? null) : (prev.activitySince ?? null),
           number: u.number,
           draft: u.draft,
           association: u.association,
           authorType: u.authorType,
-          comments: u.comments,
+          comments: unknown ? prev.comments : u.comments,
           labels: u.labels,
           createdAt: u.createdAt,
         });
@@ -464,7 +476,6 @@ export function createFeedsRepo(deps: FeedsDeps) {
         if (grew && u.lastCommenterIsMe === true) {
           ev.record({ itemId: u.id, at, kind: 'reply', source: 'sync', meta: { commenter: u.lastCommenter ?? null } });
         }
-        const prevComments: number = prev.comments ?? 0;
         const wasOpen = existing.source_state === 'open';
         const state: CommentState = existing.state;
         if (isMine || muted) {
@@ -490,12 +501,7 @@ export function createFeedsRepo(deps: FeedsDeps) {
         } else if (u.sourceState === 'open' && state === 'resolved' && !wasOpen) {
           moveTo(existing, u.id, 'inbox', 'reopened', at);
           res.reopened.push(u.id);
-        } else if (
-          u.sourceState === 'open' &&
-          (state === 'done' || state === 'replied' || state === 'resolved') &&
-          u.comments > prevComments &&
-          u.lastCommenterIsMe !== true
-        ) {
+        } else if (u.sourceState === 'open' && DONE_LIKE.has(state) && grew && u.lastCommenterIsMe !== true) {
           moveTo(existing, u.id, 'inbox', 'new_activity', at);
           res.reopened.push(u.id);
         }

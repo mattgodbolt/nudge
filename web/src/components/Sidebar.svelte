@@ -173,7 +173,7 @@
       assistant.show();
     }}
   >
-    <Icon name="mic" size={14} /><span class="grow">Tell Nudge…</span><Kbd label="c" />
+    <Icon name="mic" size={14} /><span class="grow">Tell Nudge…</span><Kbd id="assistant.open" />
   </button>
 
   <div class="nav" bind:this={navEl}>

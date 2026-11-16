@@ -1,7 +1,6 @@
 import { app } from './stores/app.svelte';
 import { inbox } from './stores/inbox.svelte';
 import { toasts } from './stores/toasts.svelte';
-import { buildChanged, entryScript } from '../../../shared/build';
 import { reconnectEvents } from './sse';
 
 /** A tab hidden for less than this is assumed to have kept up with the event stream. */
@@ -12,38 +11,19 @@ export function shouldResyncOnReturn(hiddenAt: number | null, now: number): bool
   return hiddenAt !== null && now - hiddenAt >= STALE_AFTER_MS;
 }
 
-export { entryScript };
-
-/** True when the server is now serving a different build than the one this page loaded. */
-export function newBuildAvailable(serverHtml: string, loadedSrc: string | null): boolean {
-  return buildChanged(entryScript(serverHtml), loadedSrc);
-}
-
-async function reloadIfOutdated(): Promise<boolean> {
-  const loaded = document.querySelector<HTMLScriptElement>('script[type=module][src*="/assets/index-"]');
-  if (!loaded) return false;
-  try {
-    const res = await fetch('/', { cache: 'no-store', headers: { Accept: 'text/html' } });
-    if (!res.ok || !newBuildAvailable(await res.text(), loaded.getAttribute('src'))) return false;
-    location.reload();
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 class Resync {
   busy = $state(false);
 
   /**
-   * Bring this tab fully up to date: reload if a newer build was deployed, reopen the event stream, and refetch counts,
-   * sources and the top of the list. Only a failure is reported.
+   * Bring this tab's data up to date: reopen the event stream, and refetch counts, sources and the top of the list.
+   * Only a failure is reported. It never reloads the page, even after a deploy: that would throw away anything
+   * half-typed. The reopened stream's first ping names the server's build, which raises the "New version available"
+   * prompt instead (see update.svelte.ts).
    */
   async run(): Promise<void> {
     if (this.busy) return;
     this.busy = true;
     try {
-      if (await reloadIfOutdated()) return;
       reconnectEvents();
       await Promise.all([app.boot(), inbox.refreshTop()]);
       if (app.error) toasts.error(`Couldn't reach Nudge: ${app.error}`);

@@ -112,3 +112,16 @@ describe('DELETE /api/settings/own-channels/:id', () => {
     expect(env.repo.listSources()).toMatchObject([{ ytId: CH, isOwn: false }]);
   });
 });
+
+describe('PUT /api/settings ownChannelIds', () => {
+  it('recomputes ownership once (in the repo), not again in the route, and still flips the source flag', async () => {
+    await add('@mychannel');
+    // The repo's own recompute calls its internal function; only a second, redundant pass goes through this property.
+    const spy = vi.spyOn(env.repo, 'recomputeOwnership');
+    const res = await app.inject({ method: 'PUT', url: '/api/settings', headers: H, payload: { ownChannelIds: [] } });
+    expect(res.statusCode).toBe(200);
+    expect(env.repo.getSettings().ownChannelIds).toEqual([]);
+    expect(env.repo.listSources()).toMatchObject([{ kind: 'channel', ytId: CH, isOwn: false }]);
+    expect(spy).not.toHaveBeenCalled();
+  });
+});

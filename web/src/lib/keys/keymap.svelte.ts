@@ -20,6 +20,11 @@ export interface Binding {
   repeat?: boolean;
   /** Fires even when a lower-than-exclusive scope would normally swallow it. */
   global?: boolean;
+  /**
+   * Fires (with its modifier) while a text field has focus. Off by default so a field keeps its own editing keys:
+   * Ctrl/Cmd+Z in the search box must undo the typing, not the last triage.
+   */
+  inInputs?: boolean;
 }
 
 /** Scopes that block everything beneath them (except `global: true` bindings). */
@@ -176,6 +181,7 @@ export class Keymap {
     let partial = false;
     let hit: Binding | null = null;
     for (const b of this.#candidates()) {
+      if (editable && e.key !== 'Escape' && !b.inInputs) continue;
       for (const steps of this.#sequences(b)) {
         if (steps.length < seq.length) continue;
         if (!seq.every((ev, i) => this.#stepMatches(steps[i]!, ev))) continue;
@@ -259,12 +265,6 @@ export function keyLabels(keys: string, isMac = keymap.isMac): string[] {
 /** First (primary) key string of a binding, e.g. 'e' for 'triage.done'. Reactive via the registry. */
 export function hotkey(id: string): string | undefined {
   return keymap.byId(id)?.keys[0];
-}
-
-/** Display tokens for a binding's primary key, e.g. ['Shift+U'] or ['g i'] -> ['g', 'i']. */
-export function hotkeyLabel(id: string): string[] {
-  const k = hotkey(id);
-  return k ? keyLabels(k) : [];
 }
 
 /** WAI-ARIA `aria-keyshortcuts` value; chords have no ARIA form, so they yield undefined. */

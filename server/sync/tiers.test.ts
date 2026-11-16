@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { colder, tierFor } from './tiers.js';
+import { colder, infoForTier, tierFor, unitsPerDay } from './tiers.js';
 
 const now = new Date('2026-03-10T12:00:00Z');
 const ago = (days: number) => new Date(now.getTime() - days * 86_400_000).toISOString();
@@ -33,5 +33,15 @@ describe('tierFor', () => {
     expect(colder(tierFor(ago(1), null, now)).tier).toBe('warm');
     expect(colder(tierFor(ago(900), null, now)).tier).toBe('frozen');
     expect(colder(tierFor(ago(1), 'paused', now)).tier).toBe('paused');
+  });
+});
+
+describe('unitsPerDay', () => {
+  it('is one unit per poll, and nothing for a paused video', () => {
+    expect(unitsPerDay(infoForTier('hot'))).toBe(144);
+    expect(unitsPerDay(infoForTier('warm'))).toBe(24);
+    expect(unitsPerDay(infoForTier('cold'))).toBe(2);
+    expect(unitsPerDay(infoForTier('frozen'))).toBe(0.5);
+    expect(unitsPerDay(tierFor(null, 'paused', now))).toBe(0);
   });
 });

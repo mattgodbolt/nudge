@@ -3,11 +3,17 @@
   import { ui } from '../lib/stores/ui.svelte';
   import Kbd from './Kbd.svelte';
   import { fade } from 'svelte/transition';
+  import { tick } from 'svelte';
 
   const ORDER: Group[] = ['Navigation', 'Triage', 'Reply', 'Go to', 'App'];
 
+  let dialog: HTMLDivElement | undefined = $state();
+
   $effect(() => {
     if (!ui.helpOpen) return;
+    // Into the dialog, so a screen reader is in it and Tab starts there; focus goes back where it was on close.
+    const before = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    void tick().then(() => dialog?.focus());
     const close = () => (ui.helpOpen = false);
     const unscope = keymap.pushScope('help');
     const unreg = keymap.register([
@@ -33,6 +39,7 @@
     return () => {
       unreg();
       unscope();
+      before?.focus();
     };
   });
 
@@ -42,9 +49,6 @@
     const by = new Map<Group, Binding[]>();
     for (const b of keymap.all()) {
       if (b.scope === 'help' || b.scope === 'palette' || seen.has(b.id)) continue;
-      if (b.id === 'palette.open') {
-        // shown below with its key regardless of palette flag
-      }
       seen.add(b.id);
       (by.get(b.group) ?? by.set(b.group, []).get(b.group)!).push(b);
     }
@@ -62,6 +66,7 @@
       tabindex="-1"
       aria-modal="true"
       aria-label="Keyboard shortcuts"
+      bind:this={dialog}
       onclick={(e) => e.stopPropagation()}
     >
       <header>

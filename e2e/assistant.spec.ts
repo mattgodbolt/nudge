@@ -27,6 +27,14 @@ test('without a key, c then Enter saves what you said as a todo, and says how to
   const row = page.getByTestId('inbox-row').filter({ hasText: 'buy milk on the way home' });
   await expect(row).toBeVisible();
   await expect(row.getByTestId('row-title')).toHaveText('buy milk on the way home');
+  // The open todo says when it was added in plain words, and its key hints are the keys that really do it.
+  await row.click();
+  const pane = page.getByTestId('thread-view');
+  // ("now ago" and "Mar 3 ago" were how it used to read.)
+  await expect(pane.locator('.vt > .meta')).toHaveText(
+    /^Todo · added (just now|\d+[mhdw] ago|[A-Z][a-z]+ \d+(, \d{4})?)$/,
+  );
+  await expect(pane.locator('.keys-only')).toContainText('e marks it done, b snoozes it');
 });
 
 test('Settings stores the Anthropic key without echoing it back', async ({ page }) => {

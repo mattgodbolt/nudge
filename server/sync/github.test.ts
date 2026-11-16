@@ -291,3 +291,145 @@ describe('GitHub poller', () => {
     expect(repo.getFeedRow(feedId)!.lastError).toMatch(/no user or organisation called "org"/);
   });
 });
+
+describe('GitHub poller: a busy window', () => {
+  it('makes progress through more items than the page cap updated inside the overlap window', async () => {
+    // 250 items updated a second apart, all within the 15-minute overlap: a bot relabelling everything at once.
+    const all = Array.from({ length: 250 }, (_, i) =>
+      item(i + 1, { updatedAt: new Date(clock.now().getTime() + 60_000 + i * 1000).toISOString() }),
+    );
+    const client: GithubClient = {
+      ...fakeClient(script),
+      async search(q, page) {
+        script.queries.push(`${page}:${q}`);
+        if (!/\bis:pr\b/.test(q)) return { items: [], total: 0 };
+        const since = /updated:>=(\S+)/.exec(q)![1]!;
+        // Like GitHub: oldest first, from the given time (whole seconds) on.
+        const hits = all.filter((i) => i.updatedAt >= since.replace('Z', '.000Z'));
+        return { items: hits.slice((page - 1) * 100, page * 100), total: hits.length };
+      },
+    };
+    const p = createGithubPoller({ repo, bus, client, clock: clock.now, maxPages: 1 });
+    clock.advance(10 * 60_000); // the burst ended a few minutes ago
+    const cursors: string[] = [];
+    for (let n = 0; n < 6; n++) {
+      clock.advance(1000);
+      await p.pollNow();
+      cursors.push(repo.getFeedRow(feedId)!.cursor!);
+    }
+    expect(repo.listInbox({ view: 'all' }).total).toBe(250);
+    // Re-reading the overlap after catching up hits the page cap again, but must never step the cursor back into it.
+    expect([...cursors].sort()).toEqual(cursors);
+  });
+});
+
+describe('GitHub poller: was the newest comment mine?', () => {
+  const ID = githubItemId('org', 'app', 1);
+  async function doneWithComments(p: ReturnType<typeof poller>) {
+    script.pages = [[item(1)]];
+    await p.pollNow();
+    repo.triage([ID], 'done');
+    repo.updateSettings({ github: { token: null, myAccounts: ['me'] } });
+  }
+
+  it('leaves a Done item alone when the lookup fails, and asks again on the next poll', async () => {
+    let fail = true;
+    const asked: number[] = [];
+    const p = createGithubPoller({
+      repo,
+      bus,
+      client: {
+        ...fakeClient(script),
+        latestCommenter: async (_r, _n, count) => {
+          asked.push(count);
+          if (fail) throw new GithubError('GitHub is unavailable (502)', 502);
+          return 'me';
+        },
+      },
+      clock: clock.now,
+    });
+    await doneWithComments(p);
+    script.pages = [[item(1, { comments: 2 })]];
+    await p.pollNow();
+    expect(repo.getItem(ID)!.state).toBe('done'); // unknown is not "someone else"
+
+    fail = false;
+    await p.pollNow();
+    expect(asked).toEqual([2, 2]); // asked again: the growth was not forgotten
+    expect(repo.getItem(ID)!.state).toBe('done'); // and it was my own comment
+  });
+
+  it('still brings a Done item back once the retried lookup says someone else wrote it', async () => {
+    let who: string | Error = new Error('timeout');
+    const p = createGithubPoller({
+      repo,
+      bus,
+      client: {
+        ...fakeClient(script),
+        latestCommenter: async () => {
+          if (who instanceof Error) throw who;
+          return who;
+        },
+      },
+      clock: clock.now,
+    });
+    await doneWithComments(p);
+    script.pages = [[item(1, { comments: 1 })]];
+    await p.pollNow();
+    expect(repo.getItem(ID)!.state).toBe('done');
+    who = 'carol';
+    await p.pollNow();
+    expect(repo.getItem(ID)!.state).toBe('inbox');
+    expect(repo.listInbox({ view: 'inbox' }).items[0]!.item.github?.lastCommenter).toBe('carol');
+  });
+
+  it('does not reopen an item past the per-poll lookup cap, and looks it up on a later poll', async () => {
+    const asked: number[] = [];
+    const p = createGithubPoller({
+      repo,
+      bus,
+      client: { ...fakeClient(script), latestCommenter: async (_r, n) => (asked.push(n), 'me') },
+      clock: clock.now,
+      maxCommenterLookups: 1,
+    });
+    script.pages = [[item(1), item(2)]];
+    await p.pollNow();
+    const ids = [1, 2].map((n) => githubItemId('org', 'app', n));
+    repo.triage(ids, 'done');
+    repo.updateSettings({ github: { token: null, myAccounts: ['me'] } });
+    script.pages = [[item(1, { comments: 1 }), item(2, { comments: 1 })]];
+    await p.pollNow();
+    expect(ids.map((i) => repo.getItem(i)!.state)).toEqual(['done', 'done']);
+    await p.pollNow();
+    expect(asked).toEqual([1, 2]);
+    expect(ids.map((i) => repo.getItem(i)!.state)).toEqual(['done', 'done']);
+  });
+});
+
+describe('GitHub poller: failures outside a poll', () => {
+  it('keeps polling after a poll that threw where the per-feed error handling cannot catch it', async () => {
+    const loose: unknown[] = [];
+    const onLoose = (e: unknown) => loose.push(e);
+    process.on('unhandledRejection', onLoose);
+    try {
+      const real = repo.getSettings;
+      let broken = true;
+      repo.getSettings = () => {
+        if (broken) throw new Error('database is locked');
+        return real();
+      };
+      const logged: string[] = [];
+      const p = poller({ log: (m: string) => logged.push(m) });
+      await expect(p.tick()).resolves.toBeUndefined();
+      expect(logged).toEqual(['polling org failed']);
+      broken = false;
+      script.pages = [[item(1)]];
+      await p.pollNow();
+      expect(repo.listInbox({ view: 'inbox' }).total).toBe(1);
+      await new Promise((r) => setTimeout(r, 0));
+      expect(loose).toEqual([]);
+    } finally {
+      process.off('unhandledRejection', onLoose);
+    }
+  });
+});

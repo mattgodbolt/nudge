@@ -4,8 +4,12 @@ import {
   BOSSES,
   LOOT,
   LOOT_LOG_EVERY,
+  RPG_SEEN_VERSION,
+  describeTier,
   levelForXp,
   lootLogItem,
+  roman,
+  tierKey,
   titleFor,
   xpForLevel,
   type AchievementId,
@@ -65,6 +69,14 @@ export const XP = {
 export const ANCIENT_ONE_MIN_INBOX = 5;
 /** Half-Life needs a peak at least this big, so a 2 → 1 inbox earns nothing. */
 export const HALF_LIFE_MIN_PEAK = 10;
+/** Thresholds of the one-off silly achievements (docs/RPG.md §5). */
+export const SILLY = { answerReplies: 42, leetXp: 1337, groundhogDones: 3, necromancyDays: 3 * 365 } as const;
+/** Each boss's own ladder of achievements (the Elder Wyrm's is Archaeologist, which counts items rather than falls). */
+const BOSS_LADDER: Partial<Record<BossId, AchievementId>> = {
+  ancient_one: 'ancient_bane',
+  hydra: 'hydra_hunter',
+  lich: 'lich_bane',
+};
 const NEWCOMERS = new Set(['FIRST_TIME_CONTRIBUTOR', 'FIRST_TIMER', 'NONE', 'MANNEQUIN']);
 
 type Res = Resolution;
@@ -78,6 +90,7 @@ interface ItemRow {
   occurred_at: string;
   data: string | null;
   thread_id: string | null;
+  title: string | null;
 }
 
 type Ev = HistEvent;
@@ -92,6 +105,7 @@ interface ItemState extends ReplayState {
   newcomer: boolean;
   comments: number;
   thread: string;
+  title: string;
   /** Replay. */
   replay: boolean;
   initialState: string;
@@ -108,6 +122,9 @@ interface ItemState extends ReplayState {
   fallbacks: number;
   pendingFallback: boolean;
   pendingActivity: { trigger: unknown; bucket: unknown } | null;
+  /** Times marked done (not undone), and whether the owner has undone anything on it (Groundhog Day, Off-by-One). */
+  dones: number;
+  undone: boolean;
 }
 
 /** Min-heap of inbox items by age, for "is this the oldest one" and "how old is the oldest" during the replay. */
@@ -192,6 +209,8 @@ export function campfire(p: {
   days: number[];
   today: number;
   decidedThrough: number;
+  /** Called on each good day with the run's length so far (for Keeper of the Flame and Steady Hand). */
+  onGood?: (run: number, day: number) => void;
 }): CampfireState {
   const out: CampfireState = { current: 0, longest: 0, restUsed: false, goodToRestore: 0, notice: null };
   if (p.days.length === 0) return out;
@@ -203,6 +222,7 @@ export function campfire(p: {
     if (p.good(d)) {
       run ??= { good: 0, restsLeft: CAMPFIRE.rests, sinceMiss: 0, missDay: null };
       run.good++;
+      p.onGood?.(run.good, d);
       out.longest = Math.max(out.longest, run.good);
       if (run.restsLeft < CAMPFIRE.rests && ++run.sinceMiss >= CAMPFIRE.restoreAfterGood) {
         run.restsLeft = CAMPFIRE.rests;
@@ -262,7 +282,8 @@ export function rpgSheet(db: Db, opts: SheetOptions): RpgSheet {
   /* ---- items: everything with history, plus whatever sits in the inbox now ---- */
   const itemRows = db
     .prepare(
-      `SELECT i.id, i.provider, i.kind, i.state, i.snoozed_until, i.first_seen_at, i.occurred_at, i.data, c.thread_id
+      `SELECT i.id, i.provider, i.kind, i.state, i.snoozed_until, i.first_seen_at, i.occurred_at, i.data, c.thread_id,
+              i.title
          FROM items i LEFT JOIN comments c ON c.id = i.id
         WHERE ${REPLAY_ITEMS_WHERE}`,
     )
@@ -280,6 +301,7 @@ export function rpgSheet(db: Db, opts: SheetOptions): RpgSheet {
       newcomer: r.provider === 'github' && typeof data.association === 'string' && NEWCOMERS.has(data.association),
       comments: typeof data.comments === 'number' ? data.comments : 0,
       thread: r.provider === 'youtube' && r.thread_id ? `yt:${r.thread_id}` : r.id,
+      title: r.title ?? '',
       replay: true,
       initialState: r.state,
       initialSnooze: ms(r.snoozed_until),
@@ -294,6 +316,8 @@ export function rpgSheet(db: Db, opts: SheetOptions): RpgSheet {
       fallbacks: 0,
       pendingFallback: false,
       pendingActivity: null,
+      dones: 0,
+      undone: false,
     });
   }
   /** Items deleted since (a purged source) still keep what they paid; they just take no part in the replay. */
@@ -307,6 +331,7 @@ export function rpgSheet(db: Db, opts: SheetOptions): RpgSheet {
       newcomer: false,
       comments: 0,
       thread: id,
+      title: '',
       replay: false,
       initialState: 'archived',
       initialSnooze: null,
@@ -321,6 +346,8 @@ export function rpgSheet(db: Db, opts: SheetOptions): RpgSheet {
       fallbacks: 0,
       pendingFallback: false,
       pendingActivity: null,
+      dones: 0,
+      undone: false,
     };
     items.set(id, s);
     return s;
@@ -358,9 +385,23 @@ export function rpgSheet(db: Db, opts: SheetOptions): RpgSheet {
   const replyDaysYt = new Set<number>();
   const replyDaysGh = new Set<number>();
   const repliesPerThread = new Map<string, Set<string>>();
+  /** Every reply action, counted once each (the app-posted reply writes two events for one action). */
+  const replyActions = new Set<string>();
+  const polyglotDays = new Set<number>();
+  const ytReplied = new Set<string>();
   const newcomersReplied = new Set<string>();
   const audited = new Set<string>();
   const todosDone = new Set<string>();
+  /** Items dealt with (done or reply, not a dismissal, not bulk), in all and by what they were. */
+  const dealtItems = new Set<string>();
+  const prsDealt = new Set<string>();
+  const issuesDealt = new Set<string>();
+  const old90 = new Set<string>();
+  const old365 = new Set<string>();
+  const snoozedOften = new Set<string>();
+  const mimics = new Set<string>();
+  const ballads = new Set<string>();
+  let monks = 0;
   let undoCount = 0;
   const lootTimes: Record<LootId, number> = {
     cloak: 0,
@@ -374,18 +415,28 @@ export function rpgSheet(db: Db, opts: SheetOptions): RpgSheet {
     tooth: 0,
     lute: 0,
   };
-  const earned = new Map<AchievementId, number>(); // id -> day
-  const earn = (id: AchievementId, t: number) => {
-    if (!earned.has(id)) earned.set(id, days.day(t));
+  /**
+   * Achievements are ladders (a one-off is a ladder of one tier at 1): per achievement, the count so far (never
+   * lowered: what was earned stays earned) and the day each tier was reached.
+   */
+  const ladders = new Map<AchievementId, { def: (typeof ACHIEVEMENTS)[number]; n: number; days: number[] }>(
+    ACHIEVEMENTS.map((a) => [a.id, { def: a, n: 0, days: [] }]),
+  );
+  const reachDay = (id: AchievementId, value: number, day: number) => {
+    const l = ladders.get(id)!;
+    if (value > l.n) l.n = value;
+    while (l.days.length < l.def.tiers.length && l.n >= l.def.tiers[l.days.length]!) l.days.push(day);
   };
-  const earnDay = (id: AchievementId, day: number) => {
-    if (!earned.has(id)) earned.set(id, day);
-  };
+  const reach = (id: AchievementId, value: number, t: number) => reachDay(id, value, days.day(t));
+  const earn = (id: AchievementId, t: number) => reach(id, 1, t);
+  const earnDay = (id: AchievementId, day: number) => reachDay(id, 1, day);
   const bosses = new Map<BossId, { n: number; day: number }>();
   const slay = (id: BossId, t: number) => {
     const b = bosses.get(id);
     if (b) b.n++;
     else bosses.set(id, { n: 1, day: days.day(t) });
+    const ladder = BOSS_LADDER[id];
+    if (ladder) reach(ladder, bosses.get(id)!.n, t);
   };
   let hadBacklog30 = false;
   let hadBacklog365 = false;
@@ -410,7 +461,7 @@ export function rpgSheet(db: Db, opts: SheetOptions): RpgSheet {
         if (zeroDays.has(d)) continue;
         zeroDays.add(d);
         earnDay('inbox_zero', d);
-        if (zeroDays.size >= 7) earnDay('zero_hero', d);
+        reachDay('zero_hero', zeroDays.size, d);
       }
     }
     const oldest = count > 0 ? heap.peek(live) : null;
@@ -451,7 +502,9 @@ export function rpgSheet(db: Db, opts: SheetOptions): RpgSheet {
         levelUps += lvl - maxLevel;
         maxLevel = lvl;
         levelUpDays.add(days.day(e.t));
+        reach('ascendant', maxLevel, e.t);
       }
+      if (xp >= SILLY.leetXp) earn('leet', e.t);
     }
 
     const day = days.day(e.t);
@@ -459,34 +512,61 @@ export function rpgSheet(db: Db, opts: SheetOptions): RpgSheet {
       earn('hello_world', e.t);
       if (it.provider === 'youtube') replyDaysYt.add(day);
       if (it.provider === 'github') replyDaysGh.add(day);
-      if (replyDaysYt.has(day) && replyDaysGh.has(day)) earn('polyglot', e.t);
+      if (replyDaysYt.has(day) && replyDaysGh.has(day) && !polyglotDays.has(day)) {
+        polyglotDays.add(day);
+        reach('polyglot', polyglotDays.size, e.t);
+      }
       // The app-posted reply writes both a state and a reply event for one action: count it once.
       const a = actionIdOf(e);
+      const key = a !== null ? `${it.id}:a${a}` : `e${e.id}`;
       const set = repliesPerThread.get(it.thread) ?? repliesPerThread.set(it.thread, new Set()).get(it.thread)!;
-      set.add(a !== null ? `${it.id}:a${a}` : `e${e.id}`);
-      if (set.size >= 5) earn('long_conversation', e.t);
+      set.add(key);
+      reach('long_conversation', set.size, e.t);
+      replyActions.add(key);
+      reach('town_crier', replyActions.size, e.t);
+      if (replyActions.size >= SILLY.answerReplies) earn('the_answer', e.t);
+      if (it.provider === 'youtube' && !bulk) {
+        ytReplied.add(it.id);
+        reach('fan_mail', ytReplied.size, e.t);
+      }
       if (it.newcomer && !bulk) {
         newcomersReplied.add(it.id);
         lootTimes.quill = newcomersReplied.size;
-        if (newcomersReplied.size >= 10) earn('welcome_wagon', e.t);
+        reach('welcome_wagon', newcomersReplied.size, e.t);
       }
-      if (afterActivity) earn('monk', e.t);
-      if (it.provider === 'youtube' && age >= 30 * DAY_MS) lootTimes.lute++;
+      if (afterActivity) reach('monk', ++monks, e.t);
+      if (it.provider === 'youtube' && age >= 30 * DAY_MS) {
+        lootTimes.lute++;
+        ballads.add(it.id);
+        reach('minstrel', ballads.size, e.t);
+      }
     }
     if ((res === 'done' || res === 'legacy') && it.kind === 'todo') {
       todosDone.add(it.id);
-      if (todosDone.size >= 50) earn('rubber_duck', e.t);
+      reach('rubber_duck', todosDone.size, e.t);
+      if (/duck/i.test(it.title)) earn('quack', e.t);
     }
     if (!dealt) return;
     markGood(e.t);
+    dealtItems.add(it.id);
+    reach('veteran', dealtItems.size, e.t);
+    if (it.provider === 'github' && it.kind === 'pr') reach('reviewer', prsDealt.add(it.id).size, e.t);
+    if (it.provider === 'github' && it.kind === 'issue') reach('bug_wrangler', issuesDealt.add(it.id).size, e.t);
+    if (it.undone) earn('off_by_one', e.t);
+    if (res === 'done' && ++it.dones >= SILLY.groundhogDones) earn('groundhog', e.t);
+    const key = days.key(day);
+    if (key.endsWith('-10-31')) earn('spooky', e.t);
+    if (key.endsWith('-02-29')) earn('leap_day', e.t);
     if (age >= 90 * DAY_MS) {
       lanternDays.add(day);
       lanterns++;
+      reach('necromancer', old90.add(it.id).size, e.t);
     }
     if (age >= 365 * DAY_MS) {
-      earn('archaeologist', e.t);
+      reach('archaeologist', old365.add(it.id).size, e.t);
       slay('elder_wyrm', e.t);
     }
+    if (age >= SILLY.necromancyDays * DAY_MS) earn('necromancy', e.t);
     if (it.provider === 'github' && it.comments >= 20) slay('hydra', e.t);
     if (it.fallbacks >= 2) slay('lich', e.t);
     if (it.visible && count >= ANCIENT_ONE_MIN_INBOX) {
@@ -495,11 +575,17 @@ export function rpgSheet(db: Db, opts: SheetOptions): RpgSheet {
     }
     if (afterFallback) {
       audited.add(it.id);
-      if (audited.size >= 10) earn('auditor', e.t);
+      reach('auditor', audited.size, e.t);
     }
     if (res !== 'reply') {
-      if (it.snoozes >= 3) lootTimes.hourglass++;
-      if (afterActivity?.trigger === 'merged' && afterActivity.bucket === 'waiting_on_merge') lootTimes.tooth++;
+      if (it.snoozes >= 3) {
+        lootTimes.hourglass++;
+        reach('second_wind', snoozedOften.add(it.id).size, e.t);
+      }
+      if (afterActivity?.trigger === 'merged' && afterActivity.bucket === 'waiting_on_merge') {
+        lootTimes.tooth++;
+        reach('mimic_hunter', mimics.add(it.id).size, e.t);
+      }
     }
   };
 
@@ -517,7 +603,8 @@ export function rpgSheet(db: Db, opts: SheetOptions): RpgSheet {
         if (e.kind === 'undo' && e.source === 'user') {
           undoCount = undoActions.size > 0 ? Math.min(undoActions.size, undoCount + 1) : undoCount;
           lootTimes.ring = undoCount;
-          if (undoCount >= 10) earn('ctrl_z_adept', e.t);
+          reach('ctrl_z_adept', undoCount, e.t);
+          it.undone = true;
         } else if (e.kind === 'snooze' && e.source === 'auto' && !e.to) {
           if (e.meta.cause === 'fallback') {
             it.fallbacks++;
@@ -544,20 +631,28 @@ export function rpgSheet(db: Db, opts: SheetOptions): RpgSheet {
   /* ---- after the replay: weekends off, the campfire, today's decoration ---- */
   if (activeDays.size > 0) {
     const first = Math.min(...activeDays);
+    let weekends = 0;
     for (let d = first + 1; d + 1 < today; d++) {
-      if (weekday(d) === 6 && !activeDays.has(d) && !activeDays.has(d + 1)) {
-        earnDay('rest', d + 1);
-        break;
-      }
+      if (weekday(d) === 6 && !activeDays.has(d) && !activeDays.has(d + 1)) reachDay('rest', ++weekends, d + 1);
     }
   }
+  let goodDays = 0;
   const fire = campfire({
     good: (d) => goodCamp.has(d) || goodPrevCamp.has(d) || (workCamp.has(d) && zeroCamp.has(d)),
     work: (d) => workCamp.has(d),
     days: [...goodCamp, ...goodPrevCamp, ...workCamp],
     today: camp(nowMs),
     decidedThrough: camp(nowMs - CAMPFIRE.graceMs) - 1,
+    // Campfire days share the day numbering of `days` (shifted by the rollover), so they date tiers directly.
+    onGood: (run, d) => {
+      reachDay('keeper', run, d);
+      reachDay('steady_hand', ++goodDays, d);
+    },
   });
+  // Trophy Case counts every other tier, reached on the day the n-th of them was.
+  const tierDays = [...ladders.values()].filter((l) => l.def.id !== 'trophy_case').flatMap((l) => l.days);
+  tierDays.sort((a, b) => a - b);
+  tierDays.forEach((d, i) => reachDay('trophy_case', i + 1, d));
 
   const level = levelForXp(xp);
   lootTimes.cloak = zeroDays.size;
@@ -572,22 +667,6 @@ export function rpgSheet(db: Db, opts: SheetOptions): RpgSheet {
     else if (it.bestRes === 'done' || it.bestRes === 'legacy') tally.dones++;
     else if (it.bestRes === 'dismiss') tally.dismissals++;
   }
-  const progressOf = (id: AchievementId): number => {
-    switch (id) {
-      case 'zero_hero':
-        return zeroDays.size;
-      case 'welcome_wagon':
-        return newcomersReplied.size;
-      case 'auditor':
-        return audited.size;
-      case 'rubber_duck':
-        return todosDone.size;
-      case 'ctrl_z_adept':
-        return undoCount;
-      default:
-        return 0;
-    }
-  };
   const chosen = opts.chosenTitle ?? null;
   const levelTitle = titleFor(level);
   return {
@@ -607,16 +686,21 @@ export function rpgSheet(db: Db, opts: SheetOptions): RpgSheet {
     campfire: { ...fire, notice: fire.notice ? { kind: fire.notice.kind, day: days.key(fire.notice.day) } : null },
     accent: level >= 15 ? 'amber' : level >= 10 ? 'phosphor' : 'default',
     achievements: ACHIEVEMENTS.map((a) => {
-      const day = earned.get(a.id);
-      const shown = !a.hidden || day !== undefined;
+      const l = ladders.get(a.id)!;
+      const tier = l.days.length;
+      const shown = !a.hidden || tier > 0;
+      const done = tier >= a.tiers.length;
+      const next = a.tiers[tier];
       return {
         id: a.id,
         name: shown ? a.name : null,
-        description: shown ? a.description : null,
+        description: shown ? describeTier(a, done ? tier : tier + 1) : null,
         hidden: a.hidden,
-        earned: day !== undefined,
-        earnedOn: day !== undefined ? days.key(day) : null,
-        progress: a.of && shown ? { n: Math.min(a.of, progressOf(a.id)), of: a.of } : null,
+        earned: tier > 0,
+        tier,
+        tiers: a.tiers.length,
+        earnedOn: tier > 0 ? days.key(l.days[tier - 1]!) : null,
+        progress: shown && a.tiers.length > 1 && next !== undefined ? { n: Math.min(next, l.n), of: next } : null,
       };
     }),
     bosses: BOSSES.map((b) => {
@@ -648,9 +732,14 @@ const LANTERN_KEYS_KEPT = 7;
  * What is new on the sheet since `seen`, and what `seen` becomes. Pure: the caller stores the result. A null `seen`
  * (never claimed since the mode was switched on) gives only the arrival line, and marks everything earned so far as
  * seen, so nothing from the past is replayed. A level lost to an undo is not announced again when it comes back.
+ *
+ * A `seen` from an older rules version (before the slower curve and the ladders) is migrated: it gets one quiet
+ * "rebalanced" line with the level as it now is, everything earned so far is marked seen, and the stored level is set
+ * to the new (usually lower) one, so the next level-up is announced normally and nothing earlier is replayed.
  */
 export function planClaim(sheet: RpgSheet, seen: RpgSeen | null): { news: RpgNews; seen: RpgSeen } {
   const earnedAch = sheet.achievements.filter((a) => a.earned);
+  const earnedKeys = earnedAch.flatMap((a) => Array.from({ length: a.tier }, (_, i) => tierKey(a.id, i + 1)));
   const fallen = sheet.bosses.filter((b) => b.defeated > 0);
   const lootDef = new Map(LOOT.map((l) => [l.id, l]));
   const loudLoot = sheet.loot
@@ -659,21 +748,38 @@ export function planClaim(sheet: RpgSheet, seen: RpgSeen | null): { news: RpgNew
   if (sheet.today.lantern) loudLoot.push({ key: `lantern:${sheet.day}`, id: 'lantern' });
   const notice = sheet.campfire.notice;
   const noticeKey = notice ? `camp:${notice.kind}:${notice.day}` : null;
-  const news: RpgNews = { arrive: null, levelUp: null, achievements: [], bosses: [], loot: [], campfire: null };
+  const news: RpgNews = {
+    arrive: null,
+    rebalanced: null,
+    levelUp: null,
+    achievements: [],
+    bosses: [],
+    loot: [],
+    campfire: null,
+  };
+  const everything = (level: number, old: RpgSeen | null): RpgSeen => ({
+    v: RPG_SEEN_VERSION,
+    level,
+    achievements: earnedKeys,
+    bosses: [...new Set([...(old?.bosses ?? []), ...fallen.map((b) => b.id)])],
+    loot: [...new Set([...(old?.loot ?? []), ...loudLoot.map((l) => l.key), ...(noticeKey ? [noticeKey] : [])])],
+  });
   if (!seen) {
     news.arrive = { level: sheet.level, title: sheet.levelTitle };
-    return {
-      news,
-      seen: {
-        level: sheet.level,
-        achievements: earnedAch.map((a) => a.id),
-        bosses: fallen.map((b) => b.id),
-        loot: [...loudLoot.map((l) => l.key), ...(noticeKey ? [noticeKey] : [])],
-      },
-    };
+    return { news, seen: everything(sheet.level, null) };
+  }
+  if ((seen.v ?? 1) < RPG_SEEN_VERSION) {
+    news.rebalanced = { level: sheet.level, title: sheet.levelTitle };
+    return { news, seen: everything(sheet.level, seen) };
   }
   if (sheet.level > seen.level) news.levelUp = { from: seen.level, to: sheet.level, title: sheet.levelTitle };
-  for (const a of earnedAch) if (!seen.achievements.includes(a.id)) news.achievements.push({ id: a.id, name: a.name! });
+  for (const a of earnedAch) {
+    // Only the highest new tier is worth a word; the ones below it are marked seen with it.
+    const fresh = Array.from({ length: a.tier }, (_, i) => tierKey(a.id, i + 1)).some(
+      (k) => !seen.achievements.includes(k),
+    );
+    if (fresh) news.achievements.push({ id: a.id, name: achievementName(a), tier: a.tier });
+  }
   for (const b of fallen) if (!seen.bosses.includes(b.id)) news.bosses.push({ id: b.id, name: b.name, line: b.line });
   for (const l of loudLoot) {
     if (seen.loot.includes(l.key)) continue;
@@ -697,12 +803,18 @@ export function planClaim(sheet: RpgSheet, seen: RpgSeen | null): { news: RpgNew
   return {
     news,
     seen: {
+      v: RPG_SEEN_VERSION,
       level: Math.max(seen.level, sheet.level),
-      achievements: [...new Set([...seen.achievements, ...news.achievements.map((a) => a.id)])],
+      achievements: [...new Set([...seen.achievements, ...earnedKeys])],
       bosses: [...new Set([...seen.bosses, ...news.bosses.map((b) => b.id)])],
       loot: [...new Set(loot)],
     },
   };
+}
+
+/** "Rubber Duck III" for a ladder, the plain name for a one-off. */
+function achievementName(a: RpgSheet['achievements'][number]): string {
+  return a.tiers > 1 ? `${a.name} ${roman(a.tier)}` : a.name!;
 }
 
 /**

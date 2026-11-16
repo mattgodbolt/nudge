@@ -211,6 +211,22 @@ describe('reply (api mode)', () => {
     expect(calls('/api/triage')).toHaveLength(1);
   });
 
+  it("the hand-off toast's Undo undoes that hand-off, not a later action", async () => {
+    let next = 40;
+    fetchMock.mockImplementation((url: string) => {
+      if (url === '/api/triage') return json({ actionId: next++, changes: [], counts: counts(1, 1) });
+      if (/\/api\/triage\/\d+\/undo$/.test(url)) return json({ actionId: 1, changes: [], counts: counts(1, 1) });
+      return json({ error: 'nope', code: 'x' }, 404);
+    });
+    handoff(inbox.items[0]!, 'hello'); // action 40
+    await flush();
+    const toast = toasts.items.find((t) => t.message.includes('marked replied'))!;
+    await inbox.triage('done', ['c2']); // action 41
+    toast.action!.run();
+    await vi.waitFor(() => expect(calls('/api/triage/40/undo')).toHaveLength(1));
+    expect(calls('/api/triage/41/undo')).toHaveLength(0);
+  });
+
   it('hand-off mode goes through the server reply route', async () => {
     settings.capabilities = { canPost: true, postMode: 'handoff' };
     replyResponse = () => json({ mode: 'handoff', url: 'u', actionId: 5 });

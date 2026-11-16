@@ -41,6 +41,31 @@ describe('checkRequest behind tailscale serve', () => {
   });
 });
 
+// Characterisation of today's behaviour, not a statement that it is right (docs/review/server.md 1.2). A request whose
+// Host is loopback skips the Tailscale user check, whatever proxy headers it carries. That is safe only if
+// `tailscale serve` always rewrites Host to the backend's own address; if it forwards the client's Host, a tailnet device
+// outside NUDGE_ALLOWED_USERS could send `Host: 127.0.0.1:4517` and be treated as local. Not yet confirmed against a
+// live tailnet. If it turns out to forward Host, these expectations flip to 'bad_host' (mirroring the Cloudflare
+// defence below) and this comment goes.
+describe('characterisation: loopback Host arriving through tailscale serve (unconfirmed risk)', () => {
+  const o = { ...base, allowedUsers: ['matt@example.com'] };
+  const loop = { host: '127.0.0.1:4517' };
+  it.each([
+    ['an unlisted Tailscale login', { 'tailscale-user-login': 'stranger@example.com' }],
+    ['a Tailscale display name only', { 'tailscale-user-name': 'Stranger' }],
+    ['X-Forwarded-For', { 'x-forwarded-for': '100.64.0.7' }],
+    ['X-Forwarded-Host', { 'x-forwarded-host': NAME }],
+  ])('is accepted today with %s', (_name, extra) => {
+    expect(checkRequest('GET', { ...loop, ...extra }, o)).toBeNull();
+    expect(checkRequest('POST', { ...loop, ...extra, ...post }, o)).toBeNull();
+  });
+  it('while the same caller using the tailnet name is refused', () => {
+    expect(checkRequest('GET', { host: NAME, 'tailscale-user-login': 'stranger@example.com' }, o)?.body.code).toBe(
+      'bad_user',
+    );
+  });
+});
+
 describe('checkExposure', () => {
   const ok = { host: '127.0.0.1', allowedHosts: [], allowedUsers: [] };
   it('accepts the default loopback setup silently', () => {

@@ -14,7 +14,8 @@
   import { ui } from '../lib/stores/ui.svelte';
   import { ago, formatNumber, pluralize } from '../lib/format';
   import { suggestStatus } from '../lib/stores/suggestStatus.svelte';
-  import { isSuggestionFilter, SUGGESTION_FILTER_OPTIONS } from '../lib/suggestions';
+  import { SUGGESTION_FILTER_OPTIONS } from '../lib/suggestions';
+  import { clearedQuery, filtersFromQuery, hasFilters } from '../lib/filters';
   import InboxRow from '../components/InboxRow.svelte';
   import ThreadView from '../components/ThreadView.svelte';
   import GithubThread from '../components/GithubThread.svelte';
@@ -52,38 +53,25 @@
       : inbox.selectedIndex,
   );
   const title = $derived({ inbox: 'Inbox', done: 'Done', all: 'All', snoozed: 'Snoozed' }[view]);
-  const sourceId = $derived(router.query.source ? Number(router.query.source) : undefined);
-  const videoId = $derived(router.query.video || undefined);
-  const q = $derived(router.query.q || '');
-  const feedId = $derived(router.query.feed ? Number(router.query.feed) : undefined);
+  // The URL is the source of truth for view + filters (lib/filters.ts says which query keys are filters).
+  const filters = $derived(filtersFromQuery(router.query));
+  const sourceId = $derived(filters.sourceId);
+  const videoId = $derived(filters.videoId);
+  const q = $derived(filters.q ?? '');
+  const feedId = $derived(filters.feedId);
   const feed = $derived(feedId !== undefined ? feeds.get(feedId) : undefined);
-  const repo = $derived(router.query.repo || undefined);
-  const kind = $derived<'pr' | 'issue' | 'todo' | undefined>(
-    router.query.kind === 'pr' || router.query.kind === 'issue' || router.query.kind === 'todo'
-      ? router.query.kind
-      : undefined,
-  );
-  const AUDIENCES = ['outside', 'team', 'contributors', 'bots'] as const;
-  const audience = $derived(AUDIENCES.find((a) => a === router.query.who));
-  const suggestion = $derived(isSuggestionFilter(router.query.sug) ? router.query.sug : undefined);
+  const repo = $derived(filters.repo);
+  const kind = $derived(filters.kind);
+  const audience = $derived(filters.audience);
+  const suggestion = $derived(filters.suggestion);
   const source = $derived(sourceId !== undefined ? sources.get(sourceId) : undefined);
   // The filter is offered once suggestions exist (a key is set), and stays while one is applied so it can be cleared.
   const showSuggestionFilter = $derived(!!suggestStatus.value?.enabled || suggestion !== undefined);
 
-  // URL is the source of truth for view + filters.
   $effect(() => {
-    const filters = {
-      sourceId: Number.isFinite(sourceId) ? sourceId : undefined,
-      videoId,
-      feedId: Number.isFinite(feedId) ? feedId : undefined,
-      repo,
-      kind,
-      audience,
-      suggestion,
-      q: q || undefined,
-    };
+    const f = filters;
     const c = router.query.c;
-    untrack(() => void inbox.configure(view, filters, c));
+    untrack(() => void inbox.configure(view, f, c));
   });
 
   // Keymap: list scope bindings + scope stack while mounted.
@@ -102,17 +90,23 @@
 
   // Selection drives the thread pane, prefetch, and the deep link.
   const selected = $derived(inbox.selected);
+  // Only YouTube comments have a thread to fetch; GitHub items render from the list row alone.
+  const yt = (i: { item: { provider: string }; comment: { threadId: string } } | null | undefined) =>
+    i?.item.provider === 'youtube' ? i.comment.threadId : undefined;
+  // Keyed on ids, not on the row object: a live refresh or a suggestion replaces the row, and that is no reason to
+  // show the thread again.
+  const selectedThread = $derived(yt(selected) ?? null);
+  const selectedComment = $derived(selected?.comment.id);
   $effect(() => {
-    const s = selected;
-    // Only YouTube comments have a thread to fetch; GitHub items render from the list row alone.
-    const yt = (i: { item: { provider: string }; comment: { threadId: string } } | undefined) =>
-      i?.item.provider === 'youtube' ? i.comment.threadId : undefined;
-    untrack(() => void thread.show(s && yt(s) ? s.comment.threadId : null, s?.comment.id));
-    if (s) {
-      const i = inbox.selectedIndex;
-      thread.prefetch(yt(inbox.items[i + 1]));
-      thread.prefetch(yt(inbox.items[i - 1]));
-    }
+    const t = selectedThread;
+    const c = selectedComment;
+    untrack(() => void thread.show(t, c));
+  });
+  $effect(() => {
+    if (!selected) return;
+    const i = inbox.selectedIndex;
+    thread.prefetch(yt(inbox.items[i + 1]));
+    thread.prefetch(yt(inbox.items[i - 1]));
   });
   // On a phone the thread pane replaces the list (and hides the nav). With nothing left to show it would be a blank
   // screen with no way out, so fall back to the list, which carries the empty state.
@@ -133,8 +127,13 @@
   let searchInput: HTMLInputElement | undefined = $state();
   let searchText = $state(router.query.q ?? '');
   let searchTimer: ReturnType<typeof setTimeout> | undefined;
+  // Follow the URL (back/forward, a link, Clear filters), but not our own debounced write of the box's text: that is
+  // trimmed, and adopting it would eat a space typed just before the pause ("foo " -> "foo", then "foobar").
   $effect(() => {
-    searchText = q;
+    const next = q;
+    untrack(() => {
+      if (next !== searchText.trim()) searchText = next;
+    });
   });
   // Phone only: the search box hides behind a magnifier in the header until asked for (or while it has text).
   let searchOpen = $state(false);
@@ -188,7 +187,7 @@
   }
 
   const tile = $derived(phone.value);
-  const filtered = $derived(!!(sourceId || videoId || q || suggestion));
+  const filtered = $derived(hasFilters(filters));
   const noSources = $derived(sources.loaded && sources.list.length === 0 && feeds.loaded && feeds.list.length === 0);
   const filterVideoTitle = $derived(
     videoId ? (inbox.items.find((i) => i.video.id === videoId)?.video.title ?? videoId) : null,
@@ -241,7 +240,7 @@
           aria-label="Search"
           data-testid="search"
         />
-        {#if !searchText}<Kbd label="/" />{/if}
+        {#if !searchText}<Kbd id="search.focus" />{/if}
       </label>
       {#if feed}<span class="chip" data-testid="feed-chip"
           >{feed.owner}<button
@@ -360,7 +359,7 @@
 
     {#if inbox.pendingCount > 0}
       <button class="pill" onclick={() => void inbox.showPending()} data-testid="new-pill">
-        {inbox.pendingCount} new · press <Kbd label="." /> to show
+        {inbox.pendingCount} new · press <Kbd id="inbox.show-new" /> to show
       </button>
     {/if}
 
@@ -388,13 +387,8 @@
         </EmptyState>
       {:else if filtered}
         <EmptyState title="Nothing matches" body="No comments for the current filters.">
-          <button
-            class="btn"
-            onclick={() =>
-              router.setQuery(
-                { source: undefined, video: undefined, q: undefined, sug: undefined, c: undefined },
-                { replace: false },
-              )}>Clear filters <Kbd label="g" /><Kbd label="c" /></button
+          <button class="btn" onclick={() => router.setQuery(clearedQuery(), { replace: false })}
+            >Clear filters <Kbd id="filter.clear" /></button
           >
         </EmptyState>
       {:else if view === 'snoozed'}
@@ -466,6 +460,7 @@
     onpointerdown={startDrag}
     onpointermove={drag}
     onpointerup={() => (dragging = false)}
+    onpointercancel={() => (dragging = false)}
     class:dragging
   ></div>
 

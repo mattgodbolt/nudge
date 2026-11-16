@@ -11,6 +11,13 @@ export class HttpError extends Error {
   }
 }
 
+/**
+ * Where work a route starts but does not wait for (snooze context, bucketing, a best-effort GitHub fetch) reports a
+ * failure. Not `req.log`: the app runs Fastify with its logger off, so that would say nothing at all.
+ */
+export const logBackground = (msg: string, err?: unknown): void =>
+  console.warn(msg, err instanceof Error ? err.message : (err ?? ''));
+
 export const bad = (message: string) => new HttpError(400, message, 'bad_request');
 export const notFound = (what: string) => new HttpError(404, `${what} not found`, 'not_found');
 

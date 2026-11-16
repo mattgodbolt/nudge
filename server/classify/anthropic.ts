@@ -6,7 +6,7 @@ const TIMEOUT_MS = 30_000;
 const MAX_ATTEMPTS = 4;
 
 /** Bump with every edit to SYSTEM, the tool schema or renderItem: the eval cache is keyed on it. */
-export const PROMPT_VERSION = 'p0-9';
+export const PROMPT_VERSION = 'p0-10';
 
 export const DEFAULT_SYSTEM = `You triage the inbox of Matt Godbolt, creator of Compiler Explorer, who also runs a YouTube channel about C++, compilers, CPUs and retro computing, and maintains many open-source repositories. For each item decide what Matt needs to do, by calling record_verdict.
 
@@ -42,15 +42,17 @@ const TOOL = {
 };
 
 export const esc = (s: string): string => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+/** For a value inside an attribute's double quotes: also escapes the quotes, so the value cannot end the attribute. */
+export const escAttr = (s: string): string => esc(s).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 export const clip = (s: string, n: number): string => (s.length > n ? s.slice(0, n) + '…' : s);
 
 /**
- * The user turn. Every untrusted string is entity-escaped, so nothing a commenter writes can close a tag or open a
- * new one; the system prompt tells the model to treat the whole block as data. The ground-truth `ownReply` is never
+ * The user turn. Every untrusted string is entity-escaped (attribute values quote-escaped too), so nothing a commenter
+ * writes can close a tag or an attribute, or open a new one; the system prompt tells the model to treat the whole block as data. The ground-truth `ownReply` is never
  * included.
  */
 export function renderItem(item: EvalItem): string {
-  const lines = [`<item provider="${item.provider}" kind="${esc(item.kind)}">`];
+  const lines = [`<item provider="${item.provider}" kind="${escAttr(item.kind)}">`];
   lines.push(`<container>${esc(clip(item.container, 140))}</container>`);
   if (item.ownChannel !== undefined) {
     lines.push(`<channel own="${item.ownChannel}">${esc(clip(item.channel ?? '', 80))}</channel>`);
@@ -60,7 +62,7 @@ export function renderItem(item: EvalItem): string {
   if (item.github) {
     const g = item.github;
     lines.push(
-      `<github author_type="${esc(g.authorType ?? '')}" association="${esc(g.association ?? '')}" comments="${g.comments}" draft="${g.draft}" labels="${esc(g.labels.join(', '))}"/>`,
+      `<github author_type="${escAttr(g.authorType ?? '')}" association="${escAttr(g.association ?? '')}" comments="${g.comments}" draft="${g.draft}" labels="${escAttr(g.labels.join(', '))}"/>`,
     );
     // Only when known, so an item without it renders exactly as in the eval runs the prompt version was measured on.
     if (g.lastCommenter) {
@@ -147,9 +149,21 @@ const PRICES: Record<string, { input: number; cacheWrite: number; cacheRead: num
   'claude-haiku-5-5': { input: 0.1, cacheWrite: 0.125, cacheRead: 0.01, output: 0.5 },
   'claude-sonnet-5-5': { input: 2, cacheWrite: 2.5, cacheRead: 0.1, output: 10 },
 };
+/**
+ * What a model with no entry above is charged at. The settings accept any model id, and spend drives the daily cap, so
+ * an unknown id (a typo, a bigger model, a model released later) must never count as free. This is above every
+ * current list price, so the cap bites early rather than late.
+ */
+const UNKNOWN_PRICE = { input: 10, cacheWrite: 12.5, cacheRead: 1, output: 50 };
+/** A known id, optionally followed by a dated snapshot suffix ("claude-haiku-5-5-20261101"). */
+function priceOf(model: string): (typeof PRICES)[string] {
+  const exact = PRICES[model];
+  if (exact) return exact;
+  const dated = /^(.+)-\d{8}$/.exec(model);
+  return (dated && PRICES[dated[1]!]) || UNKNOWN_PRICE;
+}
 export function costMicros(model: string, u: Usage): number {
-  const p = PRICES[model];
-  if (!p) return 0;
+  const p = priceOf(model);
   return Math.round(
     u.inputTokens * p.input +
       u.cacheWriteTokens * p.cacheWrite +

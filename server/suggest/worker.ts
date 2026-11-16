@@ -15,8 +15,16 @@ import {
 import type { Classifier } from '../classify/anthropic.js';
 import type { EvalItem } from '../classify/types.js';
 
-/** Hard ceiling on estimated spend per UTC day. A constant on purpose: a runaway loop must not be fixable by a setting. */
+/**
+ * Hard ceiling on estimated spend per UTC day, across suggestions, the snooze calls and the assistant (the ledger in
+ * db/spend.ts). A constant on purpose: a runaway loop must not be fixable by a setting.
+ */
 export const DAILY_CAP_USD = 2;
+
+/** Has today's model spend, from every caller, reached the cap? */
+export function overDailyCap(repo: Pick<Repo, 'spend'>, cap: number = DAILY_CAP_USD): boolean {
+  return repo.spend.todayUsd() >= cap;
+}
 const CONCURRENCY = 2;
 /**
  * Most items one pass classifies. A drain runs passes back to back until a pass finds nothing left to do, so this only
@@ -148,8 +156,6 @@ export function createSuggestWorker(deps: SuggestWorkerDeps): SuggestWorker {
   let backoffStep = 0;
   let rejectedKey: string | null = null;
   let capLoggedFor = '';
-  /** Spend this process has made today, in case replacing a suggestion row dropped an earlier cost from the table. */
-  let memSpend = { day: '', usd: 0 };
   /** Items the model answered badly for, by the fingerprint it failed on: not retried until the item changes. */
   const failed = new Map<string, string>();
   /** Recent comments fetched in this process (also kept in the suggestion row once it is saved). */
@@ -165,17 +171,8 @@ export function createSuggestWorker(deps: SuggestWorkerDeps): SuggestWorker {
 
   const dayOf = (d: Date): string => d.toISOString().slice(0, 10);
   const dayStart = (d: Date): string => `${dayOf(d)}T00:00:00.000Z`;
-  function spentToday(): number {
-    const d = now();
-    const table = repo.suggestions.spentSince(dayStart(d));
-    // The small snooze calls (bucketing, nudge drafts) draw on the same daily cap.
-    const snooze = repo.usage.today('snooze_ai.cost_micros') / 1e6;
-    return Math.max(table, memSpend.day === dayOf(d) ? memSpend.usd : 0) + snooze;
-  }
-  function addSpend(usd: number): void {
-    const day = dayOf(now());
-    memSpend = memSpend.day === day ? { day, usd: memSpend.usd + usd } : { day, usd };
-  }
+  /** Today's spend from the shared ledger: suggestions, the snooze calls and the assistant all draw on one cap. */
+  const spentToday = (): number => repo.spend.todayUsd();
 
   /**
    * When thread fetches may resume (epoch ms), or 0 if they may go ahead now: GitHub said wait, or the last response
@@ -233,7 +230,7 @@ export function createSuggestWorker(deps: SuggestWorkerDeps): SuggestWorker {
     clearTimeout(timer);
     // Never wake inside a pause: a notification during a back-off must not cut it short.
     const wait = Math.max(ms, backoffUntil - now().getTime() + 50, 0);
-    timer = setTimeout(() => void drain(), wait);
+    timer = setTimeout(() => void drain().catch((e) => log('background run failed', e)), wait);
     timer.unref?.();
   }
 
@@ -270,8 +267,9 @@ export function createSuggestWorker(deps: SuggestWorkerDeps): SuggestWorker {
       return 'saved';
     }
     const { result, usage } = await clf.classify(item, notes);
-    const costUsd = costMicros(clf.model, usage) / 1e6;
-    addSpend(costUsd);
+    const micros = costMicros(clf.model, usage);
+    repo.spend.add('suggest', micros);
+    const costUsd = micros / 1e6;
     repo.suggestions.save({
       itemId: item.id,
       stateKey: key,
@@ -515,32 +513,41 @@ export function createSuggestWorker(deps: SuggestWorkerDeps): SuggestWorker {
       return;
     }
     running = (async () => {
-      do {
-        rerun = false;
-        const all = backfillWanted;
-        backfillWanted = false;
-        const ids = [...pending];
-        pending.clear();
-        const res = all ? await runUntilDone() : ids.length > 0 ? await runUntilDone(ids) : null;
-        // A pause dropped the work it interrupted: look at everything again when it ends.
-        if (res?.stopped === 'backoff' || res?.stopped === 'cap') backfillWanted = true;
-        // Items waiting on GitHub's budget: come back when it resets (a pause for those only).
-        if (res && !res.stopped && deferred.size > 0) {
-          const until = githubBlockedUntil();
-          if (until > 0) {
-            paused = { reason: 'rate-limit', until: new Date(until).toISOString() };
-            backfillWanted = true;
-            schedule(until - now().getTime() + 50);
-            log(`${deferred.size} items wait for GitHub's rate limit to reset; resuming then`);
-          }
-        }
-        emitStatus(true);
-      } while (rerun && !stopped);
+      try {
+        await drainLoop();
+      } catch (e) {
+        // Each pass guards itself; this is for what runs between passes. Nothing may escape a timer callback.
+        log('background run failed', e);
+      }
     })().finally(() => {
       running = null;
       emitStatus(true);
     });
     await running;
+  }
+
+  async function drainLoop(): Promise<void> {
+    do {
+      rerun = false;
+      const all = backfillWanted;
+      backfillWanted = false;
+      const ids = [...pending];
+      pending.clear();
+      const res = all ? await runUntilDone() : ids.length > 0 ? await runUntilDone(ids) : null;
+      // A pause dropped the work it interrupted: look at everything again when it ends.
+      if (res?.stopped === 'backoff' || res?.stopped === 'cap') backfillWanted = true;
+      // Items waiting on GitHub's budget: come back when it resets (a pause for those only).
+      if (res && !res.stopped && deferred.size > 0) {
+        const until = githubBlockedUntil();
+        if (until > 0) {
+          paused = { reason: 'rate-limit', until: new Date(until).toISOString() };
+          backfillWanted = true;
+          schedule(until - now().getTime() + 50);
+          log(`${deferred.size} items wait for GitHub's rate limit to reset; resuming then`);
+        }
+      }
+      emitStatus(true);
+    } while (rerun && !stopped);
   }
 
   return {

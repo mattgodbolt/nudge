@@ -26,6 +26,11 @@ export interface InboxQuery {
    */
   order?: T.InboxOrder;
   q?: string;
+  /**
+   * Only these items (at most 500), still subject to the view and every filter: an id missing from the answer no
+   * longer belongs in the list. The client uses it to update rows it has loaded when the server says they changed.
+   */
+  ids?: string[];
   cursor?: string;
   limit?: number;
 }
@@ -72,7 +77,7 @@ export const CLIENT_HEADER = 'X-Nudge';
  * REST surface (all JSON, under /api). Documented here as the contract:
  *
  * GET    /api/bootstrap                         -> Bootstrap
- * GET    /api/inbox?view&sourceId&videoId&q&cursor&limit -> InboxPage
+ * GET    /api/inbox?view&sourceId&videoId&q&ids&cursor&limit -> InboxPage (ids: repeated, see InboxQuery.ids)
  * GET    /api/threads/:threadId?focus=commentId -> ThreadDetail
  * POST   /api/triage {commentIds, to:'done'|'dismissed'|'replied'|'inbox'} -> TriageResult
  *          ('dismissed' = "no action needed": state 'done' with doneReason 'no_action')

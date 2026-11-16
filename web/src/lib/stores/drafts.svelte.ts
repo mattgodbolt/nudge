@@ -1,5 +1,6 @@
 import { api } from '../api';
 import { inbox } from './inbox.svelte';
+import { toasts } from './toasts.svelte';
 
 const DEBOUNCE_MS = 500;
 
@@ -8,6 +9,8 @@ class DraftStore {
   bodies = $state<Record<string, string>>({});
   #timers = new Map<string, ReturnType<typeof setTimeout>>();
   #loaded = new Set<string>();
+  /** Drafts whose last save failed: told once, until a save works again. */
+  #unsaved = new Set<string>();
 
   /** Load the server draft once (resolves to the current body, '' when none). */
   async load(id: string): Promise<string> {
@@ -44,8 +47,15 @@ class DraftStore {
     try {
       if (body.trim()) await api.putDraft(id, body);
       else await api.deleteDraft(id);
-    } catch {
-      /* best effort; the local mirror still has it */
+      this.#unsaved.delete(id);
+    } catch (e) {
+      // The text is still here, but only in this tab: a reload would lose it, so say so (once, not per keystroke).
+      if (!this.#unsaved.has(id) && body.trim()) {
+        this.#unsaved.add(id);
+        toasts.error(
+          `Couldn't save the draft (${e instanceof Error ? e.message : 'network error'}): it is only in this tab`,
+        );
+      }
     }
   }
 

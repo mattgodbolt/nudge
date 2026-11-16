@@ -78,3 +78,15 @@ describe('inbox order', () => {
     expect(repo.listInbox({ view: 'inbox', order: 'source', cursor }).items).toHaveLength(4);
   });
 });
+
+describe('inbox by ids', () => {
+  it('returns just those ids that still match the view and filters, so a client can patch rows it has loaded', () => {
+    const ids = [githubItemId('org', 'app', 1), githubItemId('org', 'app', 3), 'no-such-item'];
+    const titles = (q: Parameters<Repo['listInbox']>[0]) => repo.listInbox(q).items.map((i) => i.item.title);
+    expect(titles({ view: 'inbox', ids })).toEqual(['PR 3', 'PR 1']);
+    repo.triage([githubItemId('org', 'app', 3)], 'done');
+    expect(titles({ view: 'inbox', ids })).toEqual(['PR 1']);
+    expect(titles({ view: 'done', ids })).toEqual(['PR 3']);
+    expect(titles({ view: 'inbox', ids, kind: 'issue' })).toEqual([]);
+  });
+});

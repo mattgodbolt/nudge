@@ -430,14 +430,19 @@ export interface RpgSettingsDTO {
 /* ---------------- Adventure mode (cosmetic only; see docs/RPG.md) ---------------- */
 export interface RpgAchievementDTO {
   id: string;
-  /** Null while a hidden achievement is unearned: the Hall shows "???". */
+  /** The base name (the Hall adds the tier's numeral). Null while a hidden achievement is unearned: "???". */
   name: string | null;
+  /** What the next tier takes, or the top tier's once all are earned. Null while hidden. */
   description: string | null;
   hidden: boolean;
+  /** At least one tier earned. */
   earned: boolean;
-  /** The day it was earned (YYYY-MM-DD in the browser's time zone), when known. */
+  /** Tiers earned (0 = none) out of `tiers`; a one-off has a single tier. */
+  tier: number;
+  tiers: number;
+  /** The day the current tier was earned (YYYY-MM-DD in the browser's time zone), when known. */
   earnedOn: string | null;
-  /** For count achievements: how far along (shown in the Hall only). */
+  /** For a ladder: how far towards the next tier (shown in the Hall only). Null for one-offs and finished ladders. */
   progress: { n: number; of: number } | null;
 }
 export interface RpgBossDTO {
@@ -499,8 +504,14 @@ export interface RpgSheet {
 export interface RpgNews {
   /** First switch-on: "You arrive as a Level N ...". Nothing earlier is replayed. */
   arrive: { level: number; title: string } | null;
+  /**
+   * The game was rebalanced since the last claim (docs/RPG.md, "Rebalancing"): one quiet line with the level now, in
+   * place of anything else this once. Nothing earned before is replayed.
+   */
+  rebalanced: { level: number; title: string } | null;
   levelUp: { from: number; to: number; title: string } | null;
-  achievements: { id: string; name: string }[];
+  /** `name` carries the tier's numeral for a ladder ("Rubber Duck II"); only the highest new tier is listed. */
+  achievements: { id: string; name: string; tier: number }[];
   bosses: { id: string; name: string; line: string }[];
   loot: { id: string; name: string; line: string }[];
   /** A missed day, the first time it is noticed. */

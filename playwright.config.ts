@@ -31,7 +31,7 @@ export default defineConfig({
     {
       name: 'handoff',
       testIgnore:
-        /(inbox|reply-api|snooze|snooze-activity|github|assistant|suggestions|notes|backlog|update|adventure|insights)\.spec\.ts/,
+        /(inbox|reply-api|snooze|snooze-activity|github|assistant|suggestions|notes|backlog|update|adventure|insights|live)\.spec\.ts/,
       use: { ...use, baseURL: `${base(4518)}` },
     },
     {
@@ -94,6 +94,12 @@ export default defineConfig({
       name: 'insights',
       testMatch: /insights\.spec\.ts/,
       use: { ...use, baseURL: `${base(4530)}` },
+    },
+    {
+      // Live updates: items are finished "on another device" through the API while the page is mid-list or reading.
+      name: 'live',
+      testMatch: /live\.spec\.ts/,
+      use: { ...use, baseURL: `${base(4531)}` },
     },
     {
       name: 'github',
@@ -171,6 +177,12 @@ export default defineConfig({
     {
       command: 'npm run demo:e2e:insights',
       url: `${base(4530)}/api/bootstrap`,
+      reuseExistingServer: false,
+      timeout: 120000,
+    },
+    {
+      command: 'npm run demo:e2e:live',
+      url: `${base(4531)}/api/bootstrap`,
       reuseExistingServer: false,
       timeout: 120000,
     },

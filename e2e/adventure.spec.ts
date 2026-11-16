@@ -74,7 +74,7 @@ test('the chip shows the level and title, and the first visit says where you arr
   await expect(chip).toContainText('Lv 1');
   await expect(page.getByTestId('rpg-chip-title')).toHaveText('Inbox Peasant');
   await expect(page.getByTestId('toast').filter({ hasText: 'You arrive as a Level 1 Inbox Peasant.' })).toBeVisible();
-  await expect(chip).toHaveAttribute('title', /0 XP · 100 to level 2/);
+  await expect(chip).toHaveAttribute('title', /0 XP · 300 to level 2/);
   await shot(page, 'rpg-chip-desktop');
   // Nothing about XP anywhere in the list.
   await expect(page.getByTestId('inbox-row').first()).not.toContainText('XP');
@@ -90,10 +90,16 @@ test('the Hall of Heroes sits at the bottom of Stats, and the palette goes there
   await expect(hall).toBeVisible();
   await expect(page.getByTestId('hall-title')).toHaveText('Lv 1 · Inbox Peasant');
   await expect(hall.getByTestId('hall-boss')).toHaveCount(4);
-  await expect(hall.getByTestId('hall-achievement')).toHaveCount(16);
-  // Hidden ones are "???" until earned; unearned ones are greyed silhouettes.
-  await expect(hall.getByTestId('hall-achievement').filter({ hasText: '???' })).toHaveCount(4);
+  await expect(hall.getByTestId('hall-achievement')).toHaveCount(40);
+  // Hidden ones are "???" until earned; unearned ones are greyed silhouettes, a ladder's showing tier I.
+  await expect(hall.getByTestId('hall-achievement').filter({ hasText: '???' })).toHaveCount(12);
   await expect(hall.locator('svg.sil').first()).toBeVisible();
+  const duck = hall.locator('[data-testid=hall-achievement][data-id=rubber_duck]');
+  await expect(duck).toHaveAttribute('data-tier', '0');
+  await expect(duck).toContainText('Completed 10 todos.');
+  await expect(duck.getByTestId('hall-achievement-progress')).toHaveText('0 of 10');
+  await expect(duck.locator('svg.sil [data-numeral]')).toHaveAttribute('data-numeral', 'I');
+  await expect(hall.getByTestId('hall-achievement-count')).toHaveText(/^0 of 40 · 0 of \d{3} tiers$/);
   await expect(hall.getByTestId('hall-loot')).toHaveCount(10);
   // The chip is a link to the same place.
   await openInbox(page);
@@ -110,7 +116,7 @@ test('enough triage brings one level-up toast, which takes no focus and dings on
   await page.getByText('Nudge', { exact: true }).click();
   await page.locator('body').focus();
   const focusedBefore = await page.evaluate(() => document.activeElement?.tagName);
-  await doneOneByOne(request, 13);
+  await doneOneByOne(request, 38); // 304 XP: level 2 needs 300
   expect(await sheet(request)).toMatchObject({ level: 2 });
 
   const ding = page.getByTestId('toast').filter({ hasText: /^Ding! Level 2: Apprentice of the Unread\./ });
@@ -137,11 +143,38 @@ test('with the sound switched off, a level-up makes no audio call at all', async
   await page.getByText('Nudge', { exact: true }).click();
   await page.keyboard.press('Shift');
   const before = await sheet(request);
-  await doneOneByOne(request, Math.ceil((400 - before.xp) / 8));
+  await doneOneByOne(request, Math.ceil((910 - before.xp) / 8)); // level 3 needs 910
   await expect(page.getByTestId('toast').filter({ hasText: /^Ding! Level 3/ })).toBeVisible();
   expect(await audio(page)).toEqual({ made: 0, oscillators: 0 });
   // Back on for the rest.
   expect((await request.put('/api/settings', { headers: H, data: { rpg: { sound: true } } })).ok()).toBe(true);
+});
+
+test('a ladder shows its tier, the numeral on the badge and progress to the next tier', async ({ page }) => {
+  await page.goto('/stats');
+  const hall = page.getByTestId('hall');
+  // Over a hundred done by now: Veteran of the Queue I, on the way to II at 500.
+  const vet = hall.locator('[data-testid=hall-achievement][data-id=veteran]');
+  await expect(vet).toHaveAttribute('data-tier', '1');
+  await expect(vet.locator('strong')).toHaveText('Veteran of the Queue I');
+  await expect(vet).toContainText('Next: Dealt with 500 items, done or replied.');
+  await expect(vet.getByTestId('hall-achievement-progress')).toHaveText(/^1\d\d of 500$/);
+  await expect(vet.getByTestId('hall-achievement-tier')).toHaveText(/^I of VI · earned /);
+  await expect(vet.locator('svg:not(.sil) [data-numeral]')).toHaveAttribute('data-numeral', 'I');
+  await expect(vet.locator('svg circle[data-ring]')).toHaveAttribute('data-ring', 'bronze');
+  // A one-off has no numeral.
+  const first = hall.locator('[data-testid=hall-achievement][data-id=first_blood]');
+  await expect(first).toHaveAttribute('data-earned', 'true');
+  await expect(first.locator('[data-numeral]')).toHaveCount(0);
+  await expect(hall.getByTestId('hall-achievement-count')).not.toHaveText(/^0 of/);
+  if (SHOTS) {
+    for (const scheme of ['light', 'dark'] as const) {
+      await page.emulateMedia({ colorScheme: scheme });
+      await hall.locator('h3', { hasText: 'Achievements' }).scrollIntoViewIfNeeded();
+      await shot(page, `rpg-hall-desktop-${scheme}`);
+    }
+    await page.emulateMedia({ colorScheme: null });
+  }
 });
 
 test.describe('a missed campfire day', () => {
@@ -206,6 +239,14 @@ test.describe('on a phone', () => {
     await expect(page).toHaveURL(/\/stats$/);
     await expect(page.getByTestId('hall')).toBeInViewport();
     await shot(page, 'rpg-hall-phone');
+    if (SHOTS) {
+      for (const scheme of ['light', 'dark'] as const) {
+        await page.emulateMedia({ colorScheme: scheme });
+        await page.getByTestId('hall').locator('h3', { hasText: 'Achievements' }).scrollIntoViewIfNeeded();
+        await shot(page, `rpg-hall-phone-${scheme}`);
+      }
+      await page.emulateMedia({ colorScheme: null });
+    }
     const overflow = await page.evaluate(() => {
       const doc = document.documentElement.scrollWidth - document.documentElement.clientWidth;
       const hall = document.querySelector('[data-testid=hall]')!;

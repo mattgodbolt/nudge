@@ -26,9 +26,13 @@
   let failed = $state<string | null>(null);
   let loading = $state(false);
 
+  // Through deriveds, so the fetch follows the values: the parent passes fields of a row object that every list
+  // refresh replaces, and reading the props directly would refetch on each one.
+  const wantedId = $derived(itemId);
+  const commentCount = $derived(comments);
   $effect(() => {
-    const id = itemId;
-    void comments;
+    const id = wantedId;
+    void commentCount;
     let live = true;
     loading = true;
     failed = null;

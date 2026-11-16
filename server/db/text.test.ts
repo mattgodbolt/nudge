@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import { htmlToPlain } from './text.js';
-import { tierFor, tierInfo, unitsPerDay } from './tiers-lite.js';
 
 describe('htmlToPlain', () => {
   it('turns br into newlines and strips tags', () => {
@@ -22,27 +21,5 @@ describe('htmlToPlain', () => {
   it('handles empty input and emoji', () => {
     expect(htmlToPlain('')).toBe('');
     expect(htmlToPlain('great 🎉')).toBe('great 🎉');
-  });
-});
-
-describe('tiers-lite', () => {
-  const now = new Date('2025-06-01T00:00:00Z');
-  const ago = (days: number) => new Date(now.getTime() - days * 86_400_000).toISOString();
-  it('maps age to tier and interval', () => {
-    expect(tierFor(ago(1), null, now)).toMatchObject({ tier: 'hot', intervalMin: 10, deepEveryMin: 360 });
-    expect(tierFor(ago(2.9), null, now).tier).toBe('hot');
-    expect(tierFor(ago(3), null, now)).toMatchObject({ tier: 'warm', intervalMin: 60 });
-    expect(tierFor(ago(30), null, now)).toMatchObject({ tier: 'cold', intervalMin: 720 });
-    expect(tierFor(ago(365), null, now)).toMatchObject({ tier: 'frozen', intervalMin: 2880 });
-  });
-  it('override wins and paused does not poll', () => {
-    expect(tierFor(ago(1), 'frozen', now).tier).toBe('frozen');
-    const p = tierFor(ago(1), 'paused', now);
-    expect(p.intervalMin).toBeNull();
-    expect(unitsPerDay(p)).toBe(0);
-    expect(unitsPerDay(tierInfo('hot'))).toBe(144);
-  });
-  it('treats unknown publish date as warm', () => {
-    expect(tierFor(null, null, now).tier).toBe('warm');
   });
 });

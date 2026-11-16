@@ -62,3 +62,27 @@ describe('scheduler', () => {
     await expect(scheduler.tick()).resolves.toBeUndefined();
   });
 });
+
+describe('scheduler safety net', () => {
+  it('logs a tick that throws before the engine runs, instead of rejecting, and keeps ticking', async () => {
+    let broken = true;
+    const logged: string[] = [];
+    const run = vi.fn(async () => ({}));
+    const scheduler = createScheduler({
+      repo: {} as never,
+      engine: { run, status: () => ({ running: false }) } as unknown as SyncEngine,
+      quota: { canPoll: () => true } as unknown as QuotaTracker,
+      getSettings: () => {
+        if (broken) throw new Error('database is locked');
+        return { pollEnabled: true } as StoredSettings;
+      },
+      hasApiKey: () => true,
+      log: (m) => logged.push(m),
+    });
+    await expect(scheduler.tick()).resolves.toBeUndefined();
+    expect(logged).toEqual(['scheduler tick failed']);
+    broken = false;
+    await scheduler.tick();
+    expect(run).toHaveBeenCalledTimes(1);
+  });
+});

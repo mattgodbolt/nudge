@@ -42,6 +42,11 @@ export function handoff(item: InboxItem, body: string): void {
   if (win) win.opener = null;
   drafts.hold(id);
   const viaApi = settings.capabilities.postMode === 'api';
+  // Replaced by this action's own undo once the server confirms it; until then (or if nothing changed) there is none.
+  let undo = async () => {
+    toasts.push({ message: 'Nothing to undo', timeoutMs: 2000 });
+    return false;
+  };
   void inbox
     .applyOptimistic(
       [id],
@@ -51,7 +56,7 @@ export function handoff(item: InboxItem, body: string): void {
         const r = await api.reply(id, text);
         return { actionId: r.actionId };
       },
-      { message: null },
+      { message: null, onUndoable: (u) => (undo = u) },
     )
     .then(async (ok) => {
       if (!ok) {
@@ -64,7 +69,7 @@ export function handoff(item: InboxItem, body: string): void {
         message: `${didCopy ? 'Copied' : 'Copy failed'}${win ? ' and opened on YouTube' : ''} · marked replied · z to undo`,
         kind: didCopy ? 'success' : 'error',
         action: win
-          ? { label: 'Undo', run: () => void inbox.undo() }
+          ? { label: 'Undo', run: () => void undo() }
           : { label: 'Open', run: () => window.open(url, '_blank') },
       });
     });

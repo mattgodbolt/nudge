@@ -12,10 +12,14 @@
   $effect(() => {
     const d = days;
     failed = false;
+    // Only the answer for the window still chosen: 7 → 30 → 7 must not end on a late 30-day answer.
     api
       .usage(d)
-      .then((r) => (dto = r))
+      .then((r) => {
+        if (d === days) dto = r;
+      })
       .catch((e) => {
+        if (d !== days) return;
         failed = true;
         toasts.error(e instanceof Error ? e.message : 'Could not load usage');
       });

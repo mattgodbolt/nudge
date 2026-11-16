@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { StatsDTO, StatsTotals } from '../../../shared/types';
+  import { onMount } from 'svelte';
   import { api } from '../lib/api';
   import { formatDuration, formatNumber } from '../lib/format';
   import { toasts } from '../lib/stores/toasts.svelte';
@@ -17,11 +18,15 @@
   const totals = $derived<StatsTotals | null>(stats ? (scope === 'mine' ? stats.mine : stats.totals) : null);
   const incomplete = $derived(totals ? totals.videos - totals.videosWithDetails : 0);
 
+  /** Why the totals could not be loaded; shown in place of them (an empty page would read as "nothing tracked"). */
+  let loadError = $state<string | null>(null);
   async function load() {
+    loading = true;
+    loadError = null;
     try {
       stats = await api.stats();
     } catch (e) {
-      toasts.error(e instanceof Error ? e.message : 'Could not load stats');
+      loadError = e instanceof Error ? e.message : 'Could not load stats';
     } finally {
       loading = false;
     }
@@ -36,9 +41,7 @@
       refreshing = false;
     }
   }
-  $effect(() => {
-    void load();
-  });
+  onMount(() => void load());
 
   const hours = (s: number) => formatNumber(Math.round(s / 3600));
 </script>
@@ -64,6 +67,10 @@
 
   {#if loading}
     <p class="meta muted">Loading…</p>
+  {:else if loadError && !stats}
+    <EmptyState title="Couldn't load the totals" body={loadError}>
+      <button class="btn" onclick={() => void load()}>Retry</button>
+    </EmptyState>
   {:else if !stats || !totals || stats.totals.videos === 0}
     <EmptyState title="Nothing tracked yet" body="Add a channel, playlist or video and its totals will show up here." />
   {:else}

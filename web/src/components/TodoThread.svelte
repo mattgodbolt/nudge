@@ -4,7 +4,7 @@
   import { usage } from '../lib/usage';
   import { stateLabel } from '../lib/itemState';
   import { decisions } from '../lib/decisions';
-  import { relativeTime } from '../lib/format';
+  import { ago } from '../lib/format';
   import { phone } from '../lib/phone.svelte';
   import { formatSnoozeTime, recentlyWoken } from '../lib/snooze';
   import { inbox } from '../lib/stores/inbox.svelte';
@@ -12,6 +12,7 @@
   import ItemActions from './ItemActions.svelte';
   import SnoozeNote from './SnoozeNote.svelte';
   import Icon from './Icon.svelte';
+  import Kbd from './Kbd.svelte';
 
   let { item, now }: { item: InboxItem; now: number } = $props();
   /** "Done", "Dismissed" ... once the item is dealt with; empty while it is in the inbox. */
@@ -19,9 +20,11 @@
   // Each thread is mounted once per open (the parent keys on it), so this counts opens, not renders.
   usage.count('view.todo_thread');
   // Opened now, closed when this thread unmounts or another item takes its place; dwell is measured in between.
+  // Keyed on the id, not the row object, which a list refresh replaces: that would close and reopen the record.
+  const itemId = $derived(item.comment.id);
   $effect(() =>
     decisions.open(
-      item.comment.id,
+      itemId,
       untrack(() => inbox.viewName),
     ),
   );
@@ -44,7 +47,7 @@
     >
     <div class="vt">
       <span class="title" data-testid="todo-title">{it.title}</span>
-      <div class="meta faint">Todo · added {relativeTime(item.comment.publishedAt, now)} ago</div>
+      <div class="meta faint">Todo · added {ago(item.comment.publishedAt, now)}</div>
       <SnoozeNote {item} />
       {#if item.snoozedUntil || woke || stateText}
         <div class="tags">
@@ -75,8 +78,8 @@
     </article>
     <p class="faint meta hint">
       <span class="keys-only"
-        ><kbd class="mono">e</kbd> marks it done, <kbd class="mono">s</kbd> snoozes it. Press
-        <kbd class="mono">c</kbd> and say “snooze this till Monday” to do it by voice.</span
+        ><Kbd id="triage.done" /> marks it done, <Kbd id="snooze.open" /> snoozes it. Press
+        <Kbd id="assistant.open" /> and say “snooze this till Monday” to do it by voice.</span
       >
       <span class="touch-only">Use the buttons above, or tap the mic and say “snooze this till Monday”.</span>
     </p>

@@ -84,6 +84,21 @@ test('switching the range refetches, keeps the frame, and is remembered', async 
   await expect(scope).toContainText(`Times are ${tz}`);
 });
 
+test('when a new range fails to load over the old one, it says the numbers are still the old range', async ({
+  page,
+}) => {
+  await openStats(page);
+  const scope = page.getByTestId('insights-section').locator('.scope');
+  await expect(scope).toContainText('The last 30 days');
+  await page.route(
+    (url) => url.pathname === '/api/insights' && url.searchParams.get('range') === '7d',
+    (route) => route.fulfill({ status: 500, json: { error: 'boom', code: 'internal' } }),
+  );
+  await page.getByTestId('insights-range-7d').click();
+  await expect(page.getByTestId('insights-failed')).toContainText('Could not load');
+  await expect(page.getByTestId('insights-failed')).toContainText('the last 30 days');
+});
+
 test('every chart has a table view, cells answer a tap, and item links open the item', async ({ page }) => {
   await openStats(page);
   const arrivals = page.getByTestId('insight-arrivals');

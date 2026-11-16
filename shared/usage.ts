@@ -76,7 +76,7 @@ export const SERVER_USAGE_KEYS = [
   'assistant.cost_micros', // micro-dollars
   'snooze_ai.call', // the small model calls around snoozing (bucketing a reason, drafting a nudge)
   'snooze_ai.fail',
-  'snooze_ai.cost_micros', // micro-dollars; counts toward the same daily cost cap as suggestions
+  'snooze_ai.cost_micros', // micro-dollars, for the usage page only (the cost cap reads server/db/spend.ts)
 ] as const;
 
 export type ServerUsageKey = (typeof SERVER_USAGE_KEYS)[number];

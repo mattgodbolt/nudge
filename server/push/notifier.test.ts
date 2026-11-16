@@ -283,7 +283,9 @@ describe('GitHub arrivals', () => {
     const old = ghItem(1, { createdAt: ago(30 * 24 * HOUR) });
     env.repo.upsertGithubItems(feedId, [old]);
     env.repo.triage([old.id], 'done');
-    const r = env.repo.upsertGithubItems(feedId, [{ ...old, comments: 2 }]);
+    const r = env.repo.upsertGithubItems(feedId, [
+      { ...old, comments: 2, lastCommenter: 'carol', lastCommenterIsMe: false },
+    ]);
     arrive(r.reopened);
     await n.flush();
     expect(sent[0]!.payload.title).toBe('Activity on org/app#1');

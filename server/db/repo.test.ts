@@ -70,6 +70,14 @@ beforeEach(() => {
   sourceId = setup();
 });
 
+describe('polling tiers shown and budgeted', () => {
+  it('shows and budgets a video with no publish date as the engine polls it (cold, twice a day)', () => {
+    expect(repo.getVideoSyncRow('vid1')!.publishedAt).toBeNull();
+    expect(repo.listVideos(sourceId)[0]!.tier).toBe('cold');
+    expect(repo.listSources().find((s) => s.id === sourceId)!.projectedUnitsPerDay).toBe(2);
+  });
+});
+
 describe('db', () => {
   it('applies migrations once and sets user_version', () => {
     const db = openDb(':memory:');

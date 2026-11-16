@@ -1,4 +1,5 @@
 import type { Binding } from './keymap.svelte';
+import { clearedQuery, filtersFromQuery, hasFilters } from '../filters';
 import { resync } from '../resync.svelte';
 import { router } from '../router.svelte';
 import { assistant } from '../stores/assistant.svelte';
@@ -12,11 +13,11 @@ function open(url: string) {
   window.open(url, '_blank', 'noopener');
 }
 
-/** App-wide bindings; registered once from App.svelte. */
 /** Replying and marking replied only make sense for YouTube comments. */
 const isYoutube = (i: { item: { provider: string } } | undefined | null): boolean =>
   !!i && i.item.provider === 'youtube';
 
+/** App-wide bindings; registered once from App.svelte. */
 export function appBindings(): Binding[] {
   return [
     {
@@ -26,6 +27,7 @@ export function appBindings(): Binding[] {
       group: 'App',
       description: 'Command palette',
       global: true,
+      inInputs: true,
       palette: false,
       run: () => {
         ui.helpOpen = false;
@@ -143,9 +145,10 @@ export function appBindings(): Binding[] {
       group: 'App',
       description: 'Deep sync current video',
       run: () => {
-        const v = inbox.selected?.video.id;
-        if (!v) return void toasts.push({ message: 'Select a comment first', timeoutMs: 2500 });
-        void sync.run({ scope: 'video', id: v, deep: true }, 'Deep sync started');
+        // GitHub items and todos carry a stand-in video; there is nothing on YouTube to sync for them.
+        const sel = inbox.selected;
+        if (!isYoutube(sel)) return void toasts.push({ message: 'Select a YouTube comment first', timeoutMs: 2500 });
+        void sync.run({ scope: 'video', id: sel!.video.id, deep: true }, 'Deep sync started');
       },
     },
   ];
@@ -306,7 +309,8 @@ export function inboxBindings(): Binding[] {
       keys: ['V'],
       group: 'Reply',
       description: 'Open video on YouTube (or the repository on GitHub)',
-      when: () => !!inbox.selected,
+      // A todo has neither; its stand-in video id would open a YouTube page for nothing.
+      when: () => isYoutube(inbox.selected) || !!inbox.selected?.item.containerUrl,
       run: () => {
         const sel = inbox.selected!;
         open(
@@ -353,9 +357,8 @@ export function inboxBindings(): Binding[] {
       keys: ['g c'],
       group: 'Go to',
       description: 'Clear filters',
-      when: () => !!(router.query.source || router.query.video || router.query.q),
-      run: () =>
-        router.setQuery({ source: undefined, video: undefined, q: undefined, c: undefined }, { replace: false }),
+      when: () => hasFilters(filtersFromQuery(router.query)),
+      run: () => router.setQuery(clearedQuery(), { replace: false }),
     }),
     // Thread pane focus: j/k scroll a YouTube conversation instead of moving the list. A GitHub item has nothing to
     // scroll (its description is short), so there j/k keep moving through the list: otherwise, after `e` on one item,

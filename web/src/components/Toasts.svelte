@@ -3,9 +3,15 @@
   import { fly } from 'svelte/transition';
 </script>
 
+<!-- One polite live region for the stack; an error is an alert of its own (no per-toast status: read twice). -->
 <div class="stack" aria-live="polite">
   {#each toasts.items as t (t.id)}
-    <div class="toast {t.kind}" data-testid="toast" role="status" transition:fly={{ y: 12, duration: 120 }}>
+    <div
+      class="toast {t.kind}"
+      data-testid="toast"
+      role={t.kind === 'error' ? 'alert' : undefined}
+      transition:fly={{ y: 12, duration: 120 }}
+    >
       <span class="msg">{t.message}</span>
       {#if t.action}
         <button

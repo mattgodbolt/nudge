@@ -94,6 +94,7 @@
         group: 'Reply',
         description: 'Send reply',
         palette: false,
+        inInputs: true,
         run: doSend,
       },
       {
@@ -103,6 +104,7 @@
         group: 'Reply',
         description: 'Copy reply only',
         palette: false,
+        inInputs: true,
         run: () => body.trim() && copyOnly(body),
       },
       {
@@ -166,7 +168,7 @@
   {:else}
     <button class="closed" onclick={() => ui.openComposer()}>
       <span class="muted">Reply…</span>
-      <Kbd label="r" />
+      <Kbd id="reply.open" />
     </button>
   {/if}
 </div>

@@ -1,6 +1,6 @@
 # Adventure mode: a cosmetic RPG layer for triage
 
-Status: built (2026-11-16), on by default. Server: `server/db/rpg.ts` (reads only), `server/routes/rpg.ts`, with the
+Status: built (2026-11-16), on by default; rebalanced the same month (slower curve, achievement ladders: §3, §5). Server: `server/db/rpg.ts` (reads only), `server/routes/rpg.ts`, with the
 inbox replay in `server/db/replay.ts` and the history helpers in `server/db/history.ts` (both shared with Insights). Shared
 catalogue and level maths: `shared/rpg.ts`. Web: `web/src/lib/rpg.ts`, `web/src/lib/levelSound.ts`,
 `web/src/lib/stores/rpg.svelte.ts`, and the `Rpg*` / `HallOfHeroes` components.
@@ -65,12 +65,28 @@ XP is never spent and never decays. Undo is the only thing that lowers it, and a
 not announced again when it comes back).
 
 **Ages.** Patience measures time in Nudge (`first_seen_at`). Everything else that asks "how old" (the lantern, the
-Elder Wyrm, Archaeologist, the Bard's Lute, Backlog Breaker) uses `occurred_at`, when the thing was written.
+Elder Wyrm, Archaeologist, Necromancer, the Bard's Lute, Backlog Breaker) uses `occurred_at`, when the thing was written.
 
 ## 3. Levels
 
-Total XP to reach level _n_ is `100 × (n−1)²`: level 2 needs 100, level 5 needs 1,600, level 10 needs 8,100 and level
-20 needs 36,100. Past 20 the titles come round again "of the Second Age", "of the Third Age" and so on.
+Total XP to reach level _n_ is `300 × (n−1)^1.6`, rounded to the nearest 10 (`LEVEL_CURVE` in `shared/rpg.ts`). The
+first curve (`100 × (n−1)²`) put the owner at level 5 of 20 after his first ten days (1,627 XP, inflated by a one-off
+backlog cleanup), so the game felt half over. On this one those 1,627 XP are level 3. At a steady few dozen XP a day,
+level 10 comes after a few months and level 20 after well over a year. Past 20 the titles come round again "of the
+Second Age", "of the Third Age" and so on, and the curve carries on.
+
+| Lv  | Total XP | Lv  | Total XP | Lv  | Total XP |
+| --- | -------- | --- | -------- | --- | -------- |
+| 1   | 0        | 11  | 11,940   | 21  | 36,210   |
+| 2   | 300      | 12  | 13,910   | 22  | 39,140   |
+| 3   | 910      | 13  | 15,990   | 23  | 42,170   |
+| 4   | 1,740    | 14  | 18,170   | 24  | 45,280   |
+| 5   | 2,760    | 15  | 20,460   | 25  | 48,470   |
+| 6   | 3,940    | 16  | 22,850   | 26  | 51,740   |
+| 7   | 5,270    | 17  | 25,330   | 27  | 55,090   |
+| 8   | 6,750    | 18  | 27,920   | 28  | 58,520   |
+| 9   | 8,360    | 19  | 30,590   | 29  | 62,030   |
+| 10  | 10,090   | 20  | 33,350   | 30  | 65,610   |
 
 | Lv  | Title                         | Lv  | Title                                       |
 | --- | ----------------------------- | --- | ------------------------------------------- |
@@ -135,25 +151,73 @@ line the first time. Only a done or reply counts: never a dismissal or a bulk ac
 
 ## 5. Achievements and the campfire
 
-Achievements are earned once each. The Hall shows them all, with progress for the counting ones; the hidden ones
-(Half-Life, Long Conversation, Rest Is a Skill, Ctrl+Z Adept) show as a greyed "???" badge until earned.
+Forty achievements, most of them **ladders**: one card each, with tiers earned at rising counts (Rubber Duck I at 10
+todos, II at 50, III at 200 and so on), 129 tiers in all. The card shows the highest tier earned as a numeral, what the
+next tier takes, a thin progress bar and "II of V · earned Monday". The badge is the same drawing at every tier,
+upgraded: the ring goes bronze, silver, gold, platinum, mithril, adamant, a plaque on the ribbon carries the numeral,
+and from tier IV a star-burst sits behind the medal. An unearned ladder is a grey silhouette marked "I". Counts never go
+down, so a tier once earned stays earned. One-offs keep the plain gold ring and no numeral. Hidden ones show as a greyed
+"???" until their first tier. A claim announces only the highest new tier of each ladder ("Achievement: Rubber Duck
+II.").
 
-1. **First Blood**: your first resolution.
-2. **Hello, World**: your first reply.
-3. **Inbox Zero**: the first day the inbox reached zero.
-4. **Zero Hero**: inbox at zero on 7 separate days (not necessarily consecutive).
-5. **Archaeologist**: deal with something more than a year old.
-6. **Welcome Wagon**: reply to 10 newcomers.
-7. **Patience of the Monk**: an until-activity snooze woke on activity, and your next move was a reply.
-8. **Auditor**: clear 10 "Still waiting" items by done or reply.
-9. **Rubber Duck**: complete 50 todos.
-10. **Backlog Breaker**: there was something 30 days old in the inbox, and later nothing that old was left.
-11. **Ancient Evil Vanquished**: the same for a year.
-12. **Half-Life**: the inbox count halves from an all-time peak of at least 10.
-13. **Polyglot**: reply on YouTube and on GitHub on the same day.
-14. **Long Conversation**: reply 5 times on the same thread.
-15. **Rest Is a Skill**: a whole Saturday and Sunday with no actions at all.
-16. **Ctrl+Z Adept**: 10 undos.
+| Achievement                   | Counts                                                                   | Tiers                                  |
+| ----------------------------- | ------------------------------------------------------------------------ | -------------------------------------- |
+| First Blood                   | your first resolution                                                    | once                                   |
+| Hello, World                  | your first reply                                                         | once                                   |
+| Inbox Zero                    | the first day the inbox reached zero                                     | once                                   |
+| Veteran of the Queue          | items dealt with (done or reply; never a dismissal or a bulk action)     | 100, 500, 1,500, 4,000, 10,000, 25,000 |
+| Town Crier                    | replies                                                                  | 25, 100, 300, 1,000, 3,000             |
+| Rubber Duck                   | todos completed                                                          | 10, 50, 200, 500, 1,000                |
+| Zero Hero                     | days the inbox was at zero (not necessarily consecutive)                 | 7, 30, 100, 250, 500                   |
+| Steady Hand                   | good campfire days in all, in a row or not                               | 10, 50, 150, 365, 730                  |
+| Keeper of the Flame           | the longest campfire run (rest days and all)                             | 7, 30, 100                             |
+| Ascendant                     | the highest level reached                                                | 5, 10, 15, 20, 30, 40                  |
+| Fan Mail                      | YouTube comments replied to                                              | 10, 50, 200, 500                       |
+| Reviewer of Pulls             | GitHub pull requests dealt with                                          | 10, 50, 200, 500, 1,000                |
+| Bug Wrangler                  | GitHub issues dealt with                                                 | 10, 50, 200, 500, 1,000                |
+| Welcome Wagon                 | newcomers replied to                                                     | 5, 25, 100, 250, 500                   |
+| Polyglot                      | days with a reply on YouTube and one on GitHub                           | 1, 10, 50, 150, 365                    |
+| Patience of the Monk          | an until-activity snooze woke on activity and your next move was a reply | 1, 10, 50, 150                         |
+| Auditor                       | "Still waiting" items cleared by done or reply                           | 10, 50, 150, 400, 1,000                |
+| Second Wind                   | things finished after being snoozed three times or more                  | 1, 10, 50, 150                         |
+| Mimic Hunter                  | merge waits that merged and were then marked done                        | 1, 5, 25                               |
+| Minstrel                      | YouTube comments 30 days old or more answered                            | 1, 10, 50                              |
+| Necromancer                   | things 90 days old or more dealt with                                    | 5, 25, 100, 300                        |
+| Archaeologist                 | things more than a year old dealt with (the Elder Wyrm's ladder)         | 1, 10, 50, 150, 500                    |
+| Backlog Breaker               | there was something 30 days old in the inbox, and later nothing that old | once                                   |
+| Ancient Evil Vanquished       | the same for a year                                                      | once                                   |
+| Bane of the Ancient One       | times the Ancient One fell                                               | 1, 10, 50, 150                         |
+| Hydra Hunter                  | times the Hydra fell                                                     | 1, 5, 20, 60                           |
+| Lich-Bane                     | times the Lich fell                                                      | 1, 5, 20, 60                           |
+| Trophy Case                   | tiers earned on every other achievement                                  | 10, 25, 50, 80, 110                    |
+| Half-Life (hidden)            | the inbox halves from an all-time peak of at least 10                    | once                                   |
+| Long Conversation (hidden)    | replies on one thread                                                    | 5, 10, 20, 40                          |
+| Rest Is a Skill (hidden)      | whole weekends with no actions at all                                    | 1, 5, 20                               |
+| Ctrl+Z Adept (hidden)         | undos                                                                    | 10, 50, 200, 500                       |
+| The Answer (hidden)           | your 42nd reply                                                          | once                                   |
+| L33t (hidden)                 | 1,337 XP                                                                 | once                                   |
+| Off-by-One (hidden)           | undo something, then do it after all                                     | once                                   |
+| Groundhog Day (hidden)        | mark the same item done three times (it kept coming back)                | once                                   |
+| Forbidden Necromancy (hidden) | deal with something over three years old                                 | once                                   |
+| Spooky Season (hidden)        | deal with something on 31 October                                        | once                                   |
+| Leap of Faith (hidden)        | deal with something on 29 February                                       | once                                   |
+| Quack (hidden)                | complete a todo with "duck" in its title                                 | once                                   |
+
+None of these counts snoozes, dismissals, speed or how much was done in one day, and Keeper of the Flame stops at 100
+good days: the year-long streak stays on the "never build" list (§1). The silly thresholds are `SILLY` in
+`server/db/rpg.ts`. The level-based loot (phosphor at 10, amber at 15) and the avatar tiers kept their levels: on the
+slower curve they are months away rather than days.
+
+### Rebalancing
+
+The thresholds can change, and since everything is worked out from history the new rules apply to the past at once.
+What has been announced is stored in `seen`, which then no longer lines up: the stored level may be above the new one,
+and an old one-off may now be tier I or II of a ladder. `seen.v` records the rules version (`RPG_SEEN_VERSION` in
+`shared/rpg.ts`; a row without it is version 1). The first claim on a newer version says only _"The dungeon grew.
+Levels were re-forged. You stand at Level 3: Squire of Snooze."_ (no chime), marks everything earned so far as seen, and
+sets the stored level to the new one. So nothing is replayed, a lowered level brings no toast, and the next level-up or
+tier is announced as usual. A tier earned between the last claim and the rebalance gets no toast of its own: it is in
+the Hall. Bump the version whenever a change to the curve or the catalogue would otherwise replay or skip announcements.
 
 **Inbox zero by replay.** Whether the inbox hit zero, and when there was work waiting, is worked out by replaying
 arrivals (`first_seen_at`, in the state the first state event's `from` says, else the current one), state, snooze and
@@ -197,8 +261,8 @@ zone, passed as `?tz=` (`{tz}` for the claim). The rules are constants in `serve
   Hall stacks into one column. Toasts behave as on desktop.
 - **Settings → Appearance.** "Adventure mode (levels, titles, silly loot)" and "Level-up sound", both on by default.
   They live server-side in the `settings` table under `rpg`, as
-  `{ enabled, sound, title, seen: { level, achievements[], bosses[], loot[] } | null, tz, prevTz }`, so phone and
-  desktop agree. `seen.loot` also holds `lantern:<day>` and `camp:<kind>:<day>` keys (the latest few of each).
+  `{ enabled, sound, title, seen: { v, level, achievements[], bosses[], loot[] } | null, tz, prevTz }`, so phone and
+  desktop agree. `seen.achievements` holds the bare id for tier I and `id:k` for tier k. `seen.loot` also holds `lantern:<day>` and `camp:<kind>:<day>` keys (the latest few of each).
   Switching the mode back on clears `seen`, which gives a fresh "You arrive as..." and no replay.
 - **API.** `GET /api/rpg?tz=` returns the sheet (409 `rpg_off` when off, 400 for an unknown zone). `POST
 /api/rpg/claim {tz}` returns the sheet and what is new since the last claim from any device, and records it as

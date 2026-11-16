@@ -36,10 +36,10 @@
     <strong class="line" data-testid="thread-nag-text">{nagText(nag.bucket, nag.days)}</strong>
     {#if item.snoozeWhy}<div class="why faint" data-testid="thread-why">You snoozed this to: {item.snoozeWhy}</div>{/if}
     <div class="choices faint">
-      <span><Kbd label="B" /> snooze again</span>
-      <span><Kbd label="d" /> done</span>
-      <span><Kbd label="n" /> no action needed</span>
-      <span><Kbd label="v" /> open on {item.item.provider === 'github' ? 'GitHub' : 'YouTube'}</span>
+      <span><Kbd id="snooze.again" /> snooze again</span>
+      <span><Kbd id="triage.done" /> done</span>
+      <span><Kbd id="triage.dismiss" /> no action needed</span>
+      <span><Kbd id="open.comment" /> open on {item.item.provider === 'github' ? 'GitHub' : 'YouTube'}</span>
     </div>
     {#if canNudge}
       <div class="nudge">

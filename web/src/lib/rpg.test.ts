@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { RpgNews, RpgSheet } from '../../../shared/types';
 import { statLine } from '../../../shared/rpg';
 import {
+  REBALANCED_LINE,
   TOAST_PARTS,
   campfireLine,
   campfireSummary,
@@ -9,11 +10,20 @@ import {
   chipTooltip,
   dayName,
   newsToast,
+  tierLine,
   xpFraction,
   xpLine,
 } from './rpg';
 
-const none: RpgNews = { arrive: null, levelUp: null, achievements: [], bosses: [], loot: [], campfire: null };
+const none: RpgNews = {
+  arrive: null,
+  rebalanced: null,
+  levelUp: null,
+  achievements: [],
+  bosses: [],
+  loot: [],
+  campfire: null,
+};
 const sheet = (over: Partial<RpgSheet> = {}): RpgSheet => ({
   day: '2026-11-16',
   xp: 1700,
@@ -69,6 +79,15 @@ describe('chip and XP', () => {
   });
 });
 
+describe('achievement tiers', () => {
+  it('reads a ladder tier as "II of V", and a one-off or unearned ladder as nothing', () => {
+    expect(tierLine({ tier: 2, tiers: 5 })).toBe('II of V');
+    expect(tierLine({ tier: 6, tiers: 6 })).toBe('VI of VI');
+    expect(tierLine({ tier: 0, tiers: 5 })).toBeNull();
+    expect(tierLine({ tier: 1, tiers: 1 })).toBeNull();
+  });
+});
+
 describe('days and the campfire', () => {
   it('names a day of the last week by weekday, older ones by date', () => {
     expect(dayName('2026-11-16', '2026-11-16')).toBe('Monday');
@@ -98,6 +117,14 @@ describe('the toast for a claim', () => {
       ding: false,
     });
   });
+  it('says the game was rebalanced once, quietly, with the level as it now is', () => {
+    const t = newsToast({ ...none, rebalanced: { level: 3, title: 'Squire of Snooze' } }, '2026-11-16')!;
+    expect(t).toEqual({
+      message: 'The dungeon grew. Levels were re-forged. You stand at Level 3: Squire of Snooze.',
+      ding: false,
+    });
+    expect(t.message.startsWith(REBALANCED_LINE)).toBe(true);
+  });
   it('dings on a level-up, and folds several levels into one line', () => {
     const one = newsToast({ ...none, levelUp: { from: 6, to: 7, title: 'Ranger of the Backlog' } }, '2026-11-16')!;
     expect(one).toEqual({ message: `Ding! Level 7: Ranger of the Backlog. ${statLine(7)}.`, ding: true });
@@ -109,8 +136,8 @@ describe('the toast for a claim', () => {
       {
         ...none,
         achievements: [
-          { id: 'a', name: 'First Blood' },
-          { id: 'b', name: 'Hello, World' },
+          { id: 'a', name: 'First Blood', tier: 1 },
+          { id: 'b', name: 'Rubber Duck II', tier: 2 },
         ],
         bosses: [{ id: 'elder_wyrm', name: 'The Elder Wyrm', line: 'It had hoarded 400 days of guilt.' }],
         loot: [{ id: 'ring', name: 'Ring of Ctrl+Z', line: 'Time is a flat circle.' }],
@@ -120,7 +147,7 @@ describe('the toast for a claim', () => {
     )!;
     expect(t.ding).toBe(false);
     expect(t.message).toBe(
-      'It had hoarded 400 days of guilt. Achievements: First Blood, Hello, World. Time is a flat circle. ' +
+      'It had hoarded 400 days of guilt. Achievements: First Blood, Rubber Duck II. Time is a flat circle. ' +
         'And 1 more in the Hall of Heroes.',
     );
     expect(TOAST_PARTS).toBe(3);

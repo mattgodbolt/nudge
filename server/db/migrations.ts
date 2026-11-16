@@ -422,4 +422,21 @@ ALTER TABLE items ADD COLUMN snooze_until_activity INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE items ADD COLUMN snoozed_at TEXT;
 ALTER TABLE items ADD COLUMN snooze_wake_cause TEXT CHECK (snooze_wake_cause IS NULL OR snooze_wake_cause IN ('activity','fallback','manual'));
 `,
+  /* 017 llm_spend: the daily model-spend ledger the cost cap reads */ `
+-- Estimated micro-dollars spent on model calls per UTC day and purpose. The cap used to add up the current suggestion
+-- rows (which shrink when a row is replaced or its item deleted) and usage_daily (which "Reset usage data" wipes), and
+-- missed the assistant. This table is only ever added to: nothing in the app deletes from it. Additive only.
+CREATE TABLE llm_spend (
+  day TEXT NOT NULL,
+  purpose TEXT NOT NULL CHECK (purpose IN ('suggest','snooze_ai','assistant')),
+  micros INTEGER NOT NULL,
+  PRIMARY KEY (day, purpose));
+-- What was already recorded, so today's cap does not restart from zero on the day this ships.
+INSERT INTO llm_spend (day, purpose, micros)
+  SELECT substr(created_at, 1, 10), 'suggest', CAST(ROUND(SUM(cost_usd) * 1000000) AS INTEGER)
+    FROM suggestions GROUP BY substr(created_at, 1, 10) HAVING SUM(cost_usd) > 0;
+INSERT INTO llm_spend (day, purpose, micros)
+  SELECT day, CASE key WHEN 'snooze_ai.cost_micros' THEN 'snooze_ai' ELSE 'assistant' END, count
+    FROM usage_daily WHERE key IN ('snooze_ai.cost_micros', 'assistant.cost_micros') AND count > 0;
+`,
 ];

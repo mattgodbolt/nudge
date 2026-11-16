@@ -144,7 +144,8 @@
       bind('enter', ['Enter'], enter),
       // Skipping the reason costs nothing; Tab is the way in to it from the keyboard.
       bind('why', ['Tab'], () => whyInput?.focus()),
-      ...['1', '2', '3', '4', '5', '6', '7'].map((k, i) => bind(`n${k}`, [k], () => choose(i))),
+      // One digit per row, the same numbers the rows show (slot + 1).
+      ...Array.from({ length: ACTIVITY + 1 }, (_, i) => bind(`n${i + 1}`, [String(i + 1)], () => choose(i))),
       // Letters pick why it is parked; u also wakes it early on activity. None of them snoozes by itself.
       ...SNOOZE_BUCKETS.map((b) => bind(`bucket.${b}`, [BUCKETS[b].key], () => pickBucket(b))),
       bind('wake', ['u'], () => (wake = !wake)),
@@ -204,7 +205,7 @@
           onclick={() => choose(CUSTOM)}
         >
           <span class="grow">Pick date &amp; time…</span>
-          <Kbd label="6" />
+          <Kbd label={String(CUSTOM + 1)} />
         </button>
         {#if customOpen}
           <div class="custom">
@@ -240,7 +241,7 @@
         >
           <span class="grow">Until activity</span>
           <span class="when faint" data-testid="snooze-activity-days">or {fallbackDays}d</span>
-          <Kbd label="7" />
+          <Kbd label={String(ACTIVITY + 1)} />
         </button>
       </div>
       <div class="reasons" role="group" aria-label="Why it is parked (optional)" data-testid="snooze-reasons">

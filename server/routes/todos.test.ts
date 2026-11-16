@@ -78,6 +78,32 @@ const seedComment = () => {
   return 'gh:o/r#1';
 };
 
+describe('POST /api/assistant and the daily spend cap', () => {
+  it('records what each command cost in the ledger the cap reads', async () => {
+    key();
+    command = async () => ({
+      actions: [{ type: 'add_todo', title: 'Ring the plumber', notes: '', due: null }],
+      reply: '',
+      tokens: { inputTokens: 1_000_000, cacheReadTokens: 0, cacheWriteTokens: 0, outputTokens: 0 },
+    });
+    await post({ text: 'ring plumber' });
+    expect(env.repo.spend.todayUsd()).toBeCloseTo(0.1); // a million Haiku input tokens
+  });
+
+  it('does not call the model once the day is spent, and keeps the words as a todo', async () => {
+    key();
+    env.repo.spend.add('suggest', 2_000_000);
+    const res = await post({ text: 'ring the plumber' });
+    expect(res.statusCode).toBe(201);
+    expect(calls).toEqual([]);
+    expect(res.json()).toMatchObject({
+      fallback: 'failed',
+      error: 'The daily limit on model spending has been reached',
+      outcomes: [{ type: 'add_todo', title: 'ring the plumber' }],
+    });
+  });
+});
+
 describe('POST /api/assistant', () => {
   it('with no key, keeps the words as a todo in the inbox', async () => {
     const res = await post({ text: '  ring the plumber\nabout the leak ' });

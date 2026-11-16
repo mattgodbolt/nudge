@@ -87,11 +87,25 @@ function qs(params: Record<string, string | number | undefined | null>): string 
 
 export const api = {
   bootstrap: () => request<T.Bootstrap>('GET', '/api/bootstrap'),
-  inbox: (q: InboxQuery) =>
-    request<InboxPage>(
-      'GET',
-      `/api/inbox${qs({ view: q.view, sourceId: q.sourceId, videoId: q.videoId, feedId: q.feedId, repo: q.repo, order: q.order, kind: q.kind, audience: q.audience, suggestion: q.suggestion, q: q.q, cursor: q.cursor, limit: q.limit })}`,
-    ),
+  inbox: (q: InboxQuery) => {
+    const query = qs({
+      view: q.view,
+      sourceId: q.sourceId,
+      videoId: q.videoId,
+      feedId: q.feedId,
+      repo: q.repo,
+      order: q.order,
+      kind: q.kind,
+      audience: q.audience,
+      suggestion: q.suggestion,
+      q: q.q,
+      cursor: q.cursor,
+      limit: q.limit,
+    });
+    // Repeated rather than joined: nothing promises an id has no comma.
+    const ids = q.ids?.map((id) => `ids=${encodeURIComponent(id)}`).join('&');
+    return request<InboxPage>('GET', `/api/inbox${query}${ids ? `${query ? '&' : '?'}${ids}` : ''}`);
+  },
   thread: (id: string, focus?: string) =>
     request<T.ThreadDetail>('GET', `/api/threads/${encodeURIComponent(id)}${qs({ focus })}`),
   githubDiscussion: (itemId: string) =>

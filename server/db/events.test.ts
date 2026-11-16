@@ -717,8 +717,9 @@ describe('migration 009 (item_events)', () => {
         .prepare(
           // Later migrations add tables (usage_daily, suggestions, notes), drop the label tables, and add two items columns (snooze_why, done_reason), and rebuild
           // mute_rules to allow the 'owner' kind (its rows are checked in migrations.test.ts).
-          // Migration 016 adds four more (snooze_bucket, snooze_until_activity, snoozed_at, snooze_wake_cause).
-          "SELECT name, replace(replace(replace(replace(replace(replace(sql, ', snooze_why TEXT', ''), ', done_reason TEXT CHECK (done_reason IS NULL OR done_reason IN (''no_action''))', ''), ', snooze_bucket TEXT CHECK (snooze_bucket IS NULL OR snooze_bucket IN (''waiting_on_them'',''waiting_on_merge'',''in_flight'',''lower_priority''))', ''), ', snooze_until_activity INTEGER NOT NULL DEFAULT 0', ''), ', snoozed_at TEXT', ''), ', snooze_wake_cause TEXT CHECK (snooze_wake_cause IS NULL OR snooze_wake_cause IN (''activity'',''fallback'',''manual''))', '') AS sql FROM sqlite_master WHERE name != 'item_events' AND name != 'mute_rules' AND name NOT LIKE 'idx_item_events%' AND name NOT LIKE '%usage_daily%' AND name NOT LIKE '%suggestions%' AND name NOT LIKE '%notes%' AND name NOT LIKE '%labels%' ORDER BY name",
+          // Migration 016 adds four more (snooze_bucket, snooze_until_activity, snoozed_at, snooze_wake_cause), and 017
+          // the llm_spend table.
+          "SELECT name, replace(replace(replace(replace(replace(replace(sql, ', snooze_why TEXT', ''), ', done_reason TEXT CHECK (done_reason IS NULL OR done_reason IN (''no_action''))', ''), ', snooze_bucket TEXT CHECK (snooze_bucket IS NULL OR snooze_bucket IN (''waiting_on_them'',''waiting_on_merge'',''in_flight'',''lower_priority''))', ''), ', snooze_until_activity INTEGER NOT NULL DEFAULT 0', ''), ', snoozed_at TEXT', ''), ', snooze_wake_cause TEXT CHECK (snooze_wake_cause IS NULL OR snooze_wake_cause IN (''activity'',''fallback'',''manual''))', '') AS sql FROM sqlite_master WHERE name != 'item_events' AND name != 'mute_rules' AND name NOT LIKE 'idx_item_events%' AND name NOT LIKE '%usage_daily%' AND name NOT LIKE '%suggestions%' AND name NOT LIKE '%notes%' AND name NOT LIKE '%labels%' AND name NOT LIKE '%llm_spend%' ORDER BY name",
         )
         .all();
     const before = tables();

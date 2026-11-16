@@ -13,6 +13,8 @@ import { decisions } from '../decisions';
 class AppStore {
   ready = $state(false);
   error = $state<string | null>(null);
+  /** boot() runs again on every resync, reconnect and watchdog; the view it opened on is one view, counted once. */
+  #viewCounted = false;
 
   async boot(): Promise<void> {
     try {
@@ -28,7 +30,10 @@ class AppStore {
       theme.adopt(b.settings.theme);
       usage.start({ demo: b.settings.demo, automated: isAutomated() });
       decisions.start({ demo: b.settings.demo, automated: isAutomated() });
-      usage.count(`view.${router.route}`);
+      if (!this.#viewCounted) {
+        this.#viewCounted = true;
+        usage.count(`view.${router.route}`);
+      }
       this.error = null;
     } catch (e) {
       this.error = e instanceof Error ? e.message : 'Could not reach the Nudge server';

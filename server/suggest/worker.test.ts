@@ -429,6 +429,25 @@ describe('suggestion worker', () => {
       expect(seen).toHaveLength(seenBefore);
     });
 
+    it('still counts what a replaced or deleted suggestion cost, after a restart', async () => {
+      usage = { ...NO_USAGE, inputTokens: 1_000_000 }; // $0.10 each
+      await worker({ dailyCapUsd: 0.25 }).runOnce(); // two items, $0.20
+      // Both items change, so their rows are replaced; one is then deleted with its item.
+      db.prepare('DELETE FROM suggestions').run();
+      repo.upsertGithubItems(feedId, [pr(7)]);
+      // A fresh process: $0.20 was spent today whatever the suggestions table now says, so one more call reaches the cap.
+      const res = await worker({ dailyCapUsd: 0.25 }).runOnce([id(7)]);
+      expect(res).toMatchObject({ modelCalls: 1 });
+      expect(await worker({ dailyCapUsd: 0.25 }).runOnce()).toMatchObject({ modelCalls: 0, stopped: 'cap' });
+    });
+
+    it('shares the cap with the assistant and the snooze calls', async () => {
+      usage = { ...NO_USAGE, inputTokens: 1_000_000 };
+      repo.spend.add('assistant', 100_000);
+      repo.spend.add('snooze_ai', 100_000);
+      expect(await worker({ dailyCapUsd: 0.15 }).runOnce()).toMatchObject({ modelCalls: 0, stopped: 'cap' });
+    });
+
     it('does not apply to rules, which cost nothing', async () => {
       repo.upsertGithubItems(feedId, [pr(5, { author: 'renovate[bot]', authorType: 'Bot' })]);
       const res = await worker({ dailyCapUsd: 0 }).runOnce([id(5)]);
@@ -713,6 +732,40 @@ describe('suggestion worker', () => {
       await w.idle();
       expect(rows()).toHaveLength(3);
       w.stop();
+    });
+
+    it('logs a background pass that throws, never leaving a rejection loose, and keeps working', async () => {
+      const loose: unknown[] = [];
+      const onLoose = (e: unknown) => loose.push(e);
+      process.on('unhandledRejection', onLoose);
+      try {
+        // Progress is read between passes, outside the guard each pass has of its own.
+        const real = repo.suggestions.progress;
+        let broken = true;
+        repo.suggestions.progress = (...a) => {
+          if (broken) throw new Error('database is locked');
+          return real(...a);
+        };
+        const w = worker({ startDelayMs: 10, debounceMs: 10, passCap: 1 });
+        w.start();
+        await vi.advanceTimersByTimeAsync(50);
+        await expect(w.idle()).resolves.toBeUndefined();
+        expect(logs.some((l) => l.includes('background run failed'))).toBe(true);
+        const before = rows().length;
+
+        broken = false;
+        repo.upsertGithubItems(feedId, [pr(7)]);
+        w.kick();
+        await vi.advanceTimersByTimeAsync(50);
+        await w.idle();
+        expect(rows().length).toBeGreaterThan(before);
+        w.stop();
+        // Let any stray rejection reach the process before checking.
+        await vi.advanceTimersByTimeAsync(10);
+        expect(loose).toEqual([]);
+      } finally {
+        process.off('unhandledRejection', onLoose);
+      }
     });
   });
 });

@@ -47,3 +47,32 @@ test('Stats shows the Usage section with mocked data, and demo mode never report
   await page.waitForTimeout(500);
   expect(posts).toEqual([]);
 });
+
+test('switching 7 → 30 → 7 days quickly shows 7 days, whichever answer arrives last', async ({ page }) => {
+  const month = {
+    ...mocked,
+    days: 30,
+    from: day(-29),
+    rows: Array.from({ length: 30 }, (_, i) => ({ day: day(-i), key: 'done.kbd', count: 1 })),
+  };
+  const gate: { open?: () => void } = {};
+  await page.route('**/api/usage?days=*', async (route) => {
+    if (new URL(route.request().url()).searchParams.get('days') === '30') {
+      await new Promise<void>((r) => (gate.open = r));
+      await route.fulfill({ json: month });
+    } else await route.fulfill({ json: mocked });
+  });
+  await page.goto('/stats');
+  const days = page.getByTestId('usage-days').locator('.col');
+  await expect(days).toHaveCount(7);
+  const usage = page.getByTestId('usage-section');
+  await usage.getByRole('button', { name: '30 days' }).click();
+  await expect.poll(() => !!gate.open).toBe(true);
+  await usage.getByRole('button', { name: '7 days' }).click();
+  await expect(days).toHaveCount(7);
+  const answered = page.waitForResponse((r) => r.url().includes('days=30'));
+  gate.open!();
+  await answered;
+  await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => setTimeout(r, 100))));
+  await expect(days).toHaveCount(7);
+});

@@ -22,10 +22,12 @@
   const stateText = $derived(stateLabel(item.comment));
   // Each thread is mounted once per open (the parent keys on it), so this counts opens, not renders.
   usage.count('view.thread');
+  // Read through a derived so the effects below follow the item, not the row object (a list refresh replaces it).
+  const itemId = $derived(item.comment.id);
   // Opened now, closed when this thread unmounts or another item takes its place; dwell is measured in between.
   $effect(() =>
     decisions.open(
-      item.comment.id,
+      itemId,
       untrack(() => inbox.viewName),
     ),
   );
@@ -40,10 +42,16 @@
   const video = $derived(detail?.video ?? null);
   const woke = $derived(!item.snoozedUntil && item.comment.state === 'inbox' && recentlyWoken(item.wokeAt, now));
 
-  // Bring the focused comment into view whenever the thread or focus changes.
+  // Bring the focused comment into view when the thread or focus changes, but not when a live update swaps in a
+  // fresh copy of the same thread: that would yank the reader back from wherever they had scrolled to.
+  let scrolledTo = '';
   $effect(() => {
-    void detail;
-    const cid = item.comment.id;
+    const cid = itemId;
+    const tid = detail?.threadId;
+    if (!tid) return;
+    const key = `${tid}\n${cid}`;
+    if (key === scrolledTo) return;
+    scrolledTo = key;
     void tick().then(() => {
       const el = scroller?.querySelector<HTMLElement>(`[data-comment-id="${CSS.escape(cid)}"]`);
       if (el && scroller) {

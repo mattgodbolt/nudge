@@ -27,7 +27,7 @@ beforeEach(() => {
   const clock = () => new Date(now);
   const db = openDb(':memory:');
   repo = createRepo(db, clock);
-  todos = Array.from({ length: 20 }, (_, i) => repo.addTodo({ title: `todo ${i}`, notes: '', raw: '', dueAt: null }));
+  todos = Array.from({ length: 60 }, (_, i) => repo.addTodo({ title: `todo ${i}`, notes: '', raw: '', dueAt: null }));
   now += 60_000;
   const bus = makeBus();
   app = buildApp({
@@ -78,15 +78,15 @@ describe('POST /api/rpg/claim', () => {
   it('hands out the arrival once, then each level-up once, whichever device asks', async () => {
     expect((await claim()).news.arrive).toEqual({ level: 1, title: 'Inbox Peasant' });
     expect((await claim()).news.arrive).toBeNull();
-    for (const id of todos.slice(0, 19)) {
-      repo.triage([id], 'done'); // a todo pays 5: 95 XP is not a level yet
+    for (const id of todos.slice(0, 59)) {
+      repo.triage([id], 'done'); // a todo pays 5: 295 XP is not a level yet
       now += 1000;
     }
     expect((await claim()).news.levelUp).toBeNull();
-    repo.triage([todos[19]!], 'done');
+    repo.triage([todos[59]!], 'done');
     now += 1000;
     const c = await claim('America/New_York');
-    expect(c.sheet).toMatchObject({ xp: 100, level: 2 });
+    expect(c.sheet).toMatchObject({ xp: 300, level: 2 });
     expect(c.news.levelUp).toEqual({ from: 1, to: 2, title: 'Apprentice of the Unread' });
     expect((await claim()).news.levelUp).toBeNull();
   });
@@ -101,6 +101,33 @@ describe('POST /api/rpg/claim', () => {
     expect(c.news.arrive).not.toBeNull();
     expect(c.news.achievements).toEqual([]);
     expect((await claim()).news.achievements).toEqual([]);
+  });
+
+  it('migrates what was announced under the old rules: one quiet rebalance line, no level toast, nothing replayed', async () => {
+    for (const id of todos.slice(0, 50)) repo.triage([id], 'done'); // 250 XP: level 1 now, level 2 under the old curve
+    now += 1000;
+    // As stored before the rebalance: no version, a higher level, and Rubber Duck (then 50 todos) announced.
+    const r = repo.getSettings().rpg;
+    repo.updateSettings({
+      rpg: { ...r, seen: { level: 2, achievements: ['first_blood', 'rubber_duck'], bosses: [], loot: [] } },
+    });
+    const c = await claim();
+    expect(c.sheet.level).toBe(1);
+    expect(c.news).toMatchObject({
+      arrive: null,
+      rebalanced: { level: 1, title: 'Inbox Peasant' },
+      levelUp: null,
+      achievements: [],
+    });
+    // Rubber Duck II (50 todos) is the old Rubber Duck: earned, and marked seen without a word.
+    expect(c.sheet.achievements.find((a) => a.id === 'rubber_duck')).toMatchObject({ tier: 2, earned: true });
+    expect(repo.getSettings().rpg.seen).toMatchObject({ v: 2, level: 1 });
+    expect(repo.getSettings().rpg.seen!.achievements).toEqual(expect.arrayContaining(['rubber_duck', 'rubber_duck:2']));
+    // Said once only, and the next level-up is announced as usual.
+    expect((await claim()).news).toMatchObject({ rebalanced: null, levelUp: null, achievements: [] });
+    for (const id of todos.slice(50, 60)) repo.triage([id], 'done');
+    now += 1000;
+    expect((await claim()).news).toMatchObject({ rebalanced: null, levelUp: { from: 1, to: 2 } });
   });
 
   it('remembers the zone, and the one before it when it changes', async () => {

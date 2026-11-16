@@ -1,7 +1,7 @@
 // Adventure mode's words: the chip label, the XP bar, the toast for a claim and the campfire's line. Pure, so they are
 // tested on their own (rpg.test.ts). Nothing in the inbox, keys or snooze code may import this (rpg-boundary.test.ts).
-import type { RpgCampfireNotice, RpgNews, RpgSheet } from '../../../shared/types';
-import { statLine } from '../../../shared/rpg';
+import type { RpgAchievementDTO, RpgCampfireNotice, RpgNews, RpgSheet } from '../../../shared/types';
+import { roman, statLine } from '../../../shared/rpg';
 
 export const chipLabel = (s: Pick<RpgSheet, 'level' | 'title'>) => `Lv ${s.level} · ${s.title}`;
 
@@ -57,6 +57,15 @@ export function chipTooltip(s: RpgSheet): string {
   return lines.join('\n');
 }
 
+/** Said once, on the first claim after the game was rebalanced (docs/RPG.md, "Rebalancing"). */
+export const REBALANCED_LINE = 'The dungeon grew. Levels were re-forged.';
+
+/** A ladder's tier as the Hall shows it: "II of V". A one-off has none. */
+export function tierLine(a: Pick<RpgAchievementDTO, 'tier' | 'tiers'>): string | null {
+  if (a.tiers <= 1 || a.tier <= 0) return null;
+  return `${roman(a.tier)} of ${roman(a.tiers)}`;
+}
+
 /** At most this many things in one toast; the rest are in the Hall. */
 export const TOAST_PARTS = 3;
 
@@ -68,6 +77,10 @@ export function newsToast(news: RpgNews, todayKey: string): { message: string; d
   if (news.arrive) {
     const { level, title } = news.arrive;
     return { message: `You arrive as a Level ${level} ${title}.`, ding: false };
+  }
+  if (news.rebalanced) {
+    const { level, title } = news.rebalanced;
+    return { message: `${REBALANCED_LINE} You stand at Level ${level}: ${title}.`, ding: false };
   }
   const parts: string[] = [];
   const up = news.levelUp;

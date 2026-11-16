@@ -1,6 +1,7 @@
 // Server-internal interfaces shared by the db / sync / http chunks.
 // Owned by the lead; implementers must conform to these and ask before changing them.
 import type { UsageStore } from './db/usage.js';
+import type { SpendStore } from './db/spend.js';
 import type { Insights, InsightsRange } from '../shared/insights.js';
 import type { SuggestionStore } from './db/suggestions.js';
 import type { NoteStore } from './db/notes.js';
@@ -143,8 +144,14 @@ export interface StoredSettings {
   rpg: RpgStored;
 }
 export interface RpgSeen {
+  /**
+   * The rules version this was recorded under (shared/rpg.ts RPG_SEEN_VERSION); absent = 1, from before ladders and
+   * the slower curve. An older version is migrated on the next claim (server/db/rpg.ts planClaim).
+   */
+  v?: number;
   /** Highest level announced (a level lost to undo is not announced again). */
   level: number;
+  /** Achievement tiers announced: the bare id for tier I, "id:k" for tier k (shared/rpg.ts tierKey). */
   achievements: string[];
   bosses: string[];
   /** Lines announced: 'ring', 'tooth', 'lute', 'lantern:YYYY-MM-DD' per day, 'camp:<kind>:YYYY-MM-DD' per miss. */
@@ -303,6 +310,8 @@ export interface Repo {
   close(): void;
   /** Internal feature-use counters (migration 010). */
   usage: UsageStore;
+  /** Model spend per day, the only figure the daily cost cap reads (migration 017). */
+  spend: SpendStore;
   /** LLM suggestions (migration 011). */
   suggestions: SuggestionStore;
   /** What the owner has told the assistant (migration 012). */

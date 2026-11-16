@@ -111,6 +111,7 @@ export function connectEvents(): () => void {
       });
     }
     es.onopen = () => {
+      sync.streamDown = false;
       if (wasDown) {
         wasDown = false;
         void app.boot();
@@ -119,6 +120,7 @@ export function connectEvents(): () => void {
     };
     es.onerror = () => {
       wasDown = true;
+      sync.streamDown = true;
     };
   };
   open();

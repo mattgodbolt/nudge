@@ -1,6 +1,7 @@
 // Regression tests for partial-failure handling: resumable scans, reply retries, quota mid-scan, backoff.
 import { describe, expect, it } from 'vitest';
 import { YtError } from '../contracts.js';
+import { createSyncEngine } from './engine.js';
 import { OWN, comment, makeEnv, thread, ytVideo } from './test-helpers.js';
 
 const HOUR = 3_600_000;
@@ -322,6 +323,37 @@ describe('failure backoff for background polls', () => {
     env.repo.updateSettings({ apiKey: 'good' });
     env.clock.advance(11 * 60_000);
     await env.engine.run({ trigger: 'poll', scope: 'all' });
+    expect(env.yt.calls.some((c) => c.startsWith('threads:feed'))).toBe(true);
+  });
+
+  it('resumes polling when a key from the environment or key file is fixed, not only one typed in Settings', async () => {
+    const { env } = feedEnv();
+    // The key does not come from Settings at all (YOUTUBE_API_KEY or ~/.nudge-key): Settings stays empty throughout.
+    let fileKey = 'bad';
+    const engine = createSyncEngine({
+      repo: env.repo,
+      yt: env.yt,
+      quota: env.quota,
+      bus: env.bus,
+      clock: env.clock.now,
+      currentKey: () => fileKey,
+    });
+    const orig = env.yt.listCommentThreads.bind(env.yt);
+    env.yt.listCommentThreads = async (p) => {
+      if (fileKey === 'bad') {
+        env.yt.calls.push('threads:rejected');
+        throw new YtError('keyInvalid', 'API key not valid', 400);
+      }
+      return orig(p);
+    };
+    await engine.run({ trigger: 'poll', scope: 'all' });
+    env.clock.advance(11 * 60_000);
+    await engine.run({ trigger: 'poll', scope: 'all' });
+    expect(env.yt.count('threads:rejected')).toBe(1); // blocked while the key is unchanged
+
+    fileKey = 'good';
+    env.clock.advance(11 * 60_000);
+    await engine.run({ trigger: 'poll', scope: 'all' });
     expect(env.yt.calls.some((c) => c.startsWith('threads:feed'))).toBe(true);
   });
 });

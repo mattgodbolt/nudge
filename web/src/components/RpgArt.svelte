@@ -1,8 +1,10 @@
 <script lang="ts">
   // Adventure mode's little pictures: the character (six tiers), loot, bosses and achievement badges. Original flat
   // drawings on a 32×32 grid, coloured only from theme variables so they work in light and dark. Purely decorative
-  // unless given a label. `silhouette` greys a drawing out (not earned yet).
-  import type { AvatarTier } from '../../../shared/rpg';
+  // unless given a label. `silhouette` greys a drawing out (not earned yet). A badge on a ladder (`tiers` > 1) is
+  // drawn as an upgrade of the same medal: its ring goes bronze, silver, gold, platinum, mithril, adamant, it carries
+  // the tier's numeral, and the top tiers get a star-burst behind them.
+  import { roman, type AvatarTier } from '../../../shared/rpg';
 
   type Kind = 'avatar' | 'loot' | 'boss' | 'badge';
   let {
@@ -11,8 +13,23 @@
     size = 32,
     label = null,
     silhouette = false,
-  }: { kind: Kind; id: string; size?: number; label?: string | null; silhouette?: boolean } = $props();
+    tier: badgeTier = 0,
+    tiers = 1,
+  }: {
+    kind: Kind;
+    id: string;
+    size?: number;
+    label?: string | null;
+    silhouette?: boolean;
+    /** Badges: the tier earned (0 = none: drawn as tier I, greyed) out of `tiers`. */
+    tier?: number;
+    tiers?: number;
+  } = $props();
   const tier = $derived(id as AvatarTier);
+  const METALS = ['bronze', 'silver', 'gold', 'platinum', 'mithril', 'adamant'];
+  const ladder = $derived(kind === 'badge' && tiers > 1);
+  const shownTier = $derived(Math.max(1, Math.min(tiers, badgeTier)));
+  const ring = $derived(ladder ? `var(--rpg-${METALS[Math.min(METALS.length, shownTier) - 1]})` : 'var(--rpg-gold)');
   const HYDRA_HEADS = [
     { x: 7, y: 8 },
     { x: 16, y: 6 },
@@ -250,13 +267,29 @@
       {/if}
     {:else}
       <!-- An achievement badge: a medal on a ribbon, with a glyph. -->
+      {#if ladder && shownTier >= 4}
+        <path
+          d="M16 -0.5 L18.2 3.6 L22.8 1.3 L22.6 6.3 L27.6 6.1 L25.2 10.6 L29.5 13 L25.2 15.4 L27.6 19.9 L22.6 19.7 L22.8 24.7 L18.2 22.4 L16 26.5 L13.8 22.4 L9.2 24.7 L9.4 19.7 L4.4 19.9 L6.8 15.4 L2.5 13 L6.8 10.6 L4.4 6.1 L9.4 6.3 L9.2 1.3 L13.8 3.6 Z"
+          fill={ring}
+          stroke="var(--rpg-o)"
+          stroke-width="0.9"
+          opacity="0.85"
+        />
+      {/if}
       <path
         d="M10 18 L7 30 L11 28 L13 31 L15 21 Z M22 18 L25 30 L21 28 L19 31 L17 21 Z"
         fill="var(--rpg-red)"
         stroke="var(--rpg-o)"
         stroke-width="1.1"
       />
-      <circle cx="16" cy="13" r="11" fill="var(--rpg-gold)" stroke="var(--rpg-o)" />
+      <circle
+        cx="16"
+        cy="13"
+        r="11"
+        fill={ring}
+        stroke="var(--rpg-o)"
+        data-ring={ladder ? METALS[shownTier - 1] : 'gold'}
+      />
       <circle cx="16" cy="13" r="8.2" fill="var(--rpg-paper)" stroke="var(--rpg-o)" stroke-width="1" />
       <g class="glyph" fill="none" stroke="var(--rpg-o)" stroke-width="1.5">
         {#if id === 'first_blood'}
@@ -278,10 +311,118 @@
           <path d="M16 8 V18 M11 13 H21 M12.5 9.5 L19.5 16.5 M19.5 9.5 L12.5 16.5" stroke-width="1" />
         {:else if id === 'monk'}
           <path d="M20.5 10.5 A5 5 0 1 0 21 14.5" stroke-width="2.2" />
+        {:else if id === 'groundhog'}
+          <path d="M20.5 10.5 A5 5 0 1 0 21 14.5" stroke-width="1.8" />
+          <path d="M21.2 7.4 L20.6 10.8 L17.4 10" stroke-width="1.5" />
+        {:else if id === 'veteran'}
+          <path d="M11 18 L20.5 8.5 M21 18 L11.5 8.5" stroke-width="1.7" />
+          <path d="M12.3 14.3 L14.7 16.7 M19.7 14.3 L17.3 16.7" stroke-width="1.5" />
+        {:else if id === 'town_crier'}
+          <path d="M12 16.5 Q12 9 16 8.4 Q20 9 20 16.5 Z" fill="var(--rpg-gold)" stroke-width="1.1" />
+          <path d="M10.8 16.5 H21.2" stroke-width="1.4" />
+          <circle cx="16" cy="18.4" r="1.1" fill="var(--rpg-o)" stroke="none" />
+        {:else if id === 'fan_mail'}
+          <rect x="10.5" y="9.3" width="11" height="7.6" rx="0.8" fill="var(--rpg-cloth)" stroke-width="1.1" />
+          <path d="M10.7 9.6 L16 13.8 L21.3 9.6" stroke-width="1.1" />
+        {:else if id === 'reviewer'}
+          <circle cx="12.5" cy="9.5" r="1.6" stroke-width="1.2" />
+          <circle cx="12.5" cy="17" r="1.6" stroke-width="1.2" />
+          <circle cx="19.5" cy="17" r="1.6" stroke-width="1.2" />
+          <path
+            d="M12.5 11.1 V15.4 M19.5 15.4 V11.8 Q19.5 9.5 17.3 9.5 H15.3 M16.6 8.2 L15.2 9.5 L16.6 10.8"
+            stroke-width="1.2"
+          />
+        {:else if id === 'bug_wrangler'}
+          <path
+            d="M12.8 12.2 L10.6 11 M12.6 14.6 H10.2 M12.8 16.6 L10.8 18 M19.2 12.2 L21.4 11 M19.4 14.6 H21.8 M19.2 16.6 L21.2 18"
+            stroke-width="1"
+          />
+          <ellipse cx="16" cy="14.4" rx="3.3" ry="4.2" fill="var(--rpg-red)" stroke-width="1.1" />
+          <circle cx="16" cy="9.3" r="1.7" fill="var(--rpg-o)" stroke="none" />
+          <path d="M16 10.8 V18.4" stroke-width="0.7" />
+        {:else if id === 'necromancer' || id === 'necromancy'}
+          <path
+            d="M11.5 12.8 Q11.5 8 16 8 Q20.5 8 20.5 12.8 Q20.5 15.3 19 15.9 V18.4 H13 V15.9 Q11.5 15.3 11.5 12.8 Z"
+            fill="var(--rpg-bone)"
+            stroke-width="1.1"
+          />
+          <circle cx="14.2" cy="12.8" r="1.3" fill="var(--rpg-o)" stroke="none" />
+          <circle cx="17.8" cy="12.8" r="1.3" fill="var(--rpg-o)" stroke="none" />
+          {#if id === 'necromancy'}
+            <circle cx="14.2" cy="12.8" r="0.5" fill="#4ade80" stroke="none" />
+            <circle cx="17.8" cy="12.8" r="0.5" fill="#4ade80" stroke="none" />
+          {/if}
+          <path d="M15 16.6 V18.4 M17 16.6 V18.4" stroke-width="0.7" />
+        {:else if id === 'second_wind'}
+          <path
+            d="M12.5 8 H19.5 Q19.5 11.5 16 13.2 Q19.5 15 19.5 18.5 H12.5 Q12.5 15 16 13.2 Q12.5 11.5 12.5 8 Z"
+            fill="var(--rpg-gold)"
+            stroke-width="1.1"
+          />
+          <path d="M11.5 8 H20.5 M11.5 18.5 H20.5" stroke-width="1.5" />
+        {:else if id === 'mimic_hunter'}
+          <path
+            d="M12 8.5 Q16 6.6 20 8.5 Q20.5 12.4 18.2 14 L17 19 Q16 19.6 15 19 L13.8 14 Q11.5 12.4 12 8.5 Z"
+            fill="var(--rpg-bone)"
+            stroke-width="1.1"
+          />
+        {:else if id === 'minstrel'}
+          <circle cx="13.6" cy="17" r="2" fill="var(--rpg-o)" stroke="none" />
+          <path d="M15.4 17 V8.4 L20.4 9.8 V12.2 L15.4 10.8" fill="var(--rpg-o)" stroke-width="1.1" />
+        {:else if id === 'ancient_bane'}
+          <path d="M10.8 19.5 Q10.8 8 16 7.4 Q21.2 8 21.2 19.5 Z" fill="var(--rpg-steel)" stroke-width="1.1" />
+          <ellipse cx="16" cy="13.4" rx="3" ry="3.4" fill="#1c1917" stroke-width="0.9" />
+          <circle cx="14.9" cy="13" r="0.7" fill="var(--rpg-gold)" stroke="none" />
+          <circle cx="17.1" cy="13" r="0.7" fill="var(--rpg-gold)" stroke="none" />
+        {:else if id === 'hydra_hunter'}
+          <path d="M13 18.5 Q11 14.5 11.5 10.5 M16 18.5 V9.8 M19 18.5 Q21 14.5 20.5 10.5" stroke-width="1.7" />
+          <circle cx="11.5" cy="9.6" r="1.6" fill="var(--rpg-green)" stroke-width="1" />
+          <circle cx="16" cy="8.6" r="1.6" fill="var(--rpg-green)" stroke-width="1" />
+          <circle cx="20.5" cy="9.6" r="1.6" fill="var(--rpg-green)" stroke-width="1" />
+        {:else if id === 'lich_bane'}
+          <path
+            d="M11 16.5 L11.5 9.5 L13.8 12 L16 8.4 L18.2 12 L20.5 9.5 L21 16.5 Z"
+            fill="var(--rpg-gold)"
+            stroke-width="1.1"
+          />
+          <circle cx="16" cy="14" r="0.9" fill="var(--rpg-red)" stroke="none" />
+        {:else if id === 'keeper'}
+          <path
+            d="M16 7.4 Q20.6 11.8 20.1 15.4 A4.1 4.1 0 0 1 11.9 15.4 Q11.9 12.9 13.9 11.4 Q13.9 13.9 15.5 13.9 Q14.5 10.4 16 7.4 Z"
+            fill="var(--rpg-gold)"
+            stroke="var(--rpg-red)"
+            stroke-width="1.1"
+          />
+        {:else if id === 'steady_hand'}
+          <path d="M11.4 13.4 L14.8 16.8 L20.8 9.4" stroke-width="2.2" />
+        {:else if id === 'ascendant'}
+          <path d="M11.5 13 L16 8.5 L20.5 13 M11.5 17.6 L16 13.1 L20.5 17.6" stroke-width="1.9" />
+        {:else if id === 'trophy_case'}
+          <path d="M12 8.4 H20 V11 Q20 15 16 15.4 Q12 15 12 11 Z" fill="var(--rpg-gold)" stroke-width="1.1" />
+          <path
+            d="M12 9.4 Q9.8 9.7 10.5 11.9 Q11 12.9 12.4 12.9 M20 9.4 Q22.2 9.7 21.5 11.9 Q21 12.9 19.6 12.9 M16 15.4 V17.4 M13.4 18.4 H18.6"
+            stroke-width="1.1"
+          />
+        {:else if id === 'spooky'}
+          <ellipse cx="16" cy="14.3" rx="5.4" ry="4.3" fill="#ea7a2c" stroke-width="1.1" />
+          <path d="M16 10 V18.6 M13.2 10.6 Q12 14.3 13.2 18.1 M18.8 10.6 Q20 14.3 18.8 18.1" stroke-width="0.7" />
+          <path d="M16 10 Q16.4 7.6 18.2 7.2" stroke="var(--rpg-green)" stroke-width="1.4" />
+        {:else if id === 'the_answer' || id === 'leet' || id === 'off_by_one' || id === 'leap_day'}
+          <text
+            x="16"
+            y={id === 'leet' ? 14.9 : 15.6}
+            text-anchor="middle"
+            font-size={id === 'leet' ? 5 : 7}
+            font-weight="700"
+            font-family="ui-monospace, monospace"
+            fill="var(--rpg-o)"
+            stroke="none"
+            >{id === 'the_answer' ? '42' : id === 'leet' ? '1337' : id === 'off_by_one' ? '±1' : '29'}</text
+          >
         {:else if id === 'auditor'}
           <circle cx="14.8" cy="11.8" r="3.6" />
           <path d="M17.4 14.4 L21 18" stroke-width="2.2" />
-        {:else if id === 'rubber_duck'}
+        {:else if id === 'rubber_duck' || id === 'quack'}
           <path
             d="M10.5 15 Q10.5 18.5 15 18.5 H19 Q22 18.5 21.5 14.5 L18.5 14 Q19.5 9 16 8.5 Q12.8 8.5 13 12 Q13.4 14 14.8 14.5 Z"
             fill="var(--rpg-gold)"
@@ -316,6 +457,30 @@
           <circle cx="16" cy="17.8" r="1.1" fill="var(--rpg-o)" stroke="none" />
         {/if}
       </g>
+      {#if ladder}
+        <!-- The tier's numeral on a little plaque over the ribbon. -->
+        <rect
+          x="10.4"
+          y="23.2"
+          width="11.2"
+          height="7.6"
+          rx="1.8"
+          fill="var(--rpg-paper)"
+          stroke="var(--rpg-o)"
+          stroke-width="1"
+        />
+        <text
+          class="numeral"
+          x="16"
+          y="29.1"
+          text-anchor="middle"
+          font-size="6"
+          font-weight="700"
+          fill="var(--rpg-o)"
+          stroke="none"
+          data-numeral={roman(shownTier)}>{roman(shownTier)}</text
+        >
+      {/if}
     {/if}
   </g>
 </svg>
@@ -334,6 +499,12 @@
     --rpg-violet: color-mix(in srgb, #7c3aed 78%, var(--text-muted));
     --rpg-steel: color-mix(in srgb, var(--text-muted) 55%, var(--bg-elev));
     --rpg-brown: color-mix(in srgb, #a16207 70%, var(--bg-elev));
+    /* Badge rings by tier. Fixed metals: they read as upgrades in both themes, outlined by --rpg-o. */
+    --rpg-bronze: #c47f3d;
+    --rpg-silver: #b8c2ce;
+    --rpg-platinum: #8fd0e2;
+    --rpg-mithril: #a78bfa;
+    --rpg-adamant: #f0627f;
     flex: none;
     display: block;
     overflow: visible;
@@ -351,7 +522,15 @@
     --rpg-violet: var(--bg-hover);
     --rpg-steel: var(--bg-hover);
     --rpg-brown: var(--bg-hover);
+    --rpg-bronze: var(--bg-hover);
+    --rpg-silver: var(--bg-hover);
+    --rpg-platinum: var(--bg-hover);
+    --rpg-mithril: var(--bg-hover);
+    --rpg-adamant: var(--bg-hover);
     opacity: 0.8;
+  }
+  .numeral {
+    font-family: system-ui, sans-serif;
   }
   .art.sil :global([fill^='#']),
   .art.sil :global([stroke^='#']) {

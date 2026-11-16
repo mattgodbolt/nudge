@@ -1,13 +1,15 @@
 <script lang="ts">
   // The Hall of Heroes: Adventure mode's character sheet, at the bottom of Stats. Everything here is after the fact;
   // nothing in it is shown anywhere a decision about an item is made.
-  import { tierFor } from '../../../shared/rpg';
+  import { roman, tierFor } from '../../../shared/rpg';
   import { rpg } from '../lib/stores/rpg.svelte';
-  import { campfireLine, campfireSummary, chipLabel, dayName, xpFraction, xpLine } from '../lib/rpg';
+  import { campfireLine, campfireSummary, chipLabel, dayName, tierLine, xpFraction, xpLine } from '../lib/rpg';
   import RpgArt from './RpgArt.svelte';
 
   const s = $derived(rpg.sheet);
   const earnedCount = $derived(s ? s.achievements.filter((a) => a.earned).length : 0);
+  const tiersEarned = $derived(s ? s.achievements.reduce((n, a) => n + a.tier, 0) : 0);
+  const tiersAll = $derived(s ? s.achievements.reduce((n, a) => n + a.tiers, 0) : 0);
 </script>
 
 {#if rpg.enabled}
@@ -75,24 +77,50 @@
         {/each}
       </ul>
 
-      <h3>Achievements <span class="meta muted">{earnedCount} of {s.achievements.length}</span></h3>
+      <h3>
+        Achievements
+        <span class="meta muted" data-testid="hall-achievement-count"
+          >{earnedCount} of {s.achievements.length} · {tiersEarned} of {tiersAll} tiers</span
+        >
+      </h3>
       <ul class="grid badges">
         {#each s.achievements as a (a.id)}
-          <li class="card" class:dim={!a.earned} data-testid="hall-achievement" data-earned={a.earned}>
+          {@const ladder = a.tiers > 1}
+          {@const done = a.tier >= a.tiers}
+          <li
+            class="card"
+            class:dim={!a.earned}
+            data-testid="hall-achievement"
+            data-id={a.id}
+            data-earned={a.earned}
+            data-tier={a.tier}
+          >
             <RpgArt
               kind="badge"
               id={a.name ? a.id : 'unknown'}
               size={40}
               silhouette={!a.earned}
-              label={a.name ?? 'Hidden'}
+              tier={a.tier}
+              tiers={a.name ? a.tiers : 1}
+              label={a.name ? (ladder && a.tier > 0 ? `${a.name} ${roman(a.tier)}` : a.name) : 'Hidden'}
             />
             <div class="cap">
-              <strong>{a.name ?? '???'}</strong>
-              <span class="meta muted">{a.description ?? 'A secret, for now.'}</span>
+              <strong>{a.name ?? '???'}{a.name && ladder && a.tier > 0 ? ` ${roman(a.tier)}` : ''}</strong>
+              <span class="meta muted"
+                >{a.name && ladder && a.earned && !done ? 'Next: ' : ''}{a.description ?? 'A secret, for now.'}</span
+              >
+              {#if a.progress}
+                <span class="progress" aria-hidden="true"
+                  ><span class="fill" style="width: {(a.progress.n / a.progress.of) * 100}%"></span></span
+                >
+                <span class="meta muted" data-testid="hall-achievement-progress"
+                  >{a.progress.n.toLocaleString('en-US')} of {a.progress.of.toLocaleString('en-US')}</span
+                >
+              {/if}
               {#if a.earned && a.earnedOn}
-                <span class="meta">Earned {dayName(a.earnedOn, s.day)}</span>
-              {:else if a.progress}
-                <span class="meta muted">{a.progress.n} of {a.progress.of}</span>
+                <span class="meta" data-testid="hall-achievement-tier"
+                  >{`${ladder ? `${tierLine(a)} · earned` : 'Earned'} ${dayName(a.earnedOn, s.day)}`}</span
+                >
               {/if}
             </div>
           </li>
@@ -220,6 +248,18 @@
   }
   .card.dim strong {
     color: var(--text-muted);
+  }
+  .progress {
+    display: block;
+    height: 3px;
+    margin: 2px 0 1px;
+    border-radius: 2px;
+    background: var(--border);
+    overflow: hidden;
+    max-width: 160px;
+  }
+  .progress .fill {
+    background: var(--text-muted);
   }
   .cap {
     display: flex;

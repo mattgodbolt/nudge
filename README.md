@@ -182,7 +182,7 @@ Notes:
 | `x`, `J`/`K`                             | multi-select                                                    | `* a` `* n` | select all / none                   |
 | `Shift+U`                                | move back to inbox                                              | `v` / `V`   | open comment / video on YouTube     |
 | `Shift+N` / `S`                          | sync now / deep-sync video                                      | `/`         | search                              |
-| `b`                                      | snooze… (`1`-`4` presets, `5` a time, `6` until activity)       | `Ctrl+K`    | command palette                     |
+| `b`                                      | snooze… (`1`-`5` presets, `6` a time, `7` until activity)       | `Ctrl+K`    | command palette                     |
 | `g i`, `g d`, `g a`, `g s`, `g t`, `g ,` | go to Inbox, Done, All, Sources, Stats, Settings                | `c`         | tell Nudge… (todos, voice commands) |
 | `g z`                                    | go to Snoozed                                                   |             |                                     |
 | `Shift+O`                                | cycle sort order                                                |             |                                     |
@@ -200,7 +200,7 @@ Snoozing hides a comment until the time you pick; it returns to the top of the I
 shows for a day), and `z` undoes it. In the Snoozed view `Shift+U` unsnoozes.
 
 **Snooze until activity.** Usually you are waiting for something to happen, not for a date. In the snooze menu (`b`),
-**Until activity** (`6`) parks the item until someone other than you acts on it, with a fallback date so it can never
+**Until activity** (`7`) parks the item until someone other than you acts on it, with a fallback date so it can never
 be forgotten. Pick why it is parked with one key or tap, optionally with the words you already type in the why field:
 `w` waiting on them, `m` waiting on merge / CI, `f` in flight (you are on it), `l` lower priority. The fallback comes
 from the bucket (waiting on them 7 days, waiting on merge 3, in flight 7, lower priority 30; each is a number in
@@ -221,7 +221,7 @@ fast path is unchanged: `b`, a time key, done.
 - **Free-text reasons.** A reason typed in the field (or said to Tell Nudge, which also understands "snooze until they
   reply") with no bucket is filed afterwards by the small model, never holding up the snooze; the event records that the
   bucket was assigned automatically. No key, no call. These calls and the nudge drafts draw on the same daily cost cap as
-  suggestions.
+  suggestions and the assistant.
 - **The Snoozed view** is in sections by bucket ("Waiting on them (4)", oldest age on the right) and each row says how long
   ago it was parked.
 - **Learning data.** Every snooze event carries its bucket and whether it waited on activity; the wake event says why it
@@ -369,8 +369,8 @@ repositories, so you can triage them with the same keys (`e` done, `b` snooze, `
 
 Nudge is an installable web app (PWA) that can send Web Push notifications, with no native app involved.
 
-A tab that has been in the background catches up on its own when you return to it (and reloads itself if a newer
-version was deployed meanwhile). You can also refresh by hand: the circular-arrow button in the header, `Shift+R`, or
+A tab that has been in the background catches up on its own when you return to it. If a newer version was deployed
+meanwhile it shows the "New version available" bar rather than reloading, so nothing half-typed is lost. You can also refresh by hand: the circular-arrow button in the header, `Shift+R`, or
 pull the list down on a touch screen.
 
 1. On the phone (connected to your tailnet), open the HTTPS address in Chrome. Menu → **Install app**, or use the
@@ -410,7 +410,8 @@ Nudge counts which of its own features you use and how, so you can see what earn
 - **Where to look:** the Usage section at the bottom of Stats (top features, keyboard vs button vs touch, per-day use,
   assistant spend, devices, and features you never used). It also shows what happened to items, read from the event log
   at view time, clearly labelled as such.
-- **Reset:** Settings > Usage data > Reset usage data deletes every counter (and only the counters).
+- **Reset:** Settings > Usage data > Reset usage data deletes every counter (and only the counters). The daily
+  model-spend figure the cost cap reads lives in its own table (`llm_spend`) and is not reset.
 
 ## Habit context (private, local)
 

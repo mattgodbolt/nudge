@@ -1,7 +1,7 @@
 import { BUCKETS, SNOOZE_BUCKETS, isSnoozeBucket } from '../../shared/snooze.js';
 import type { LlmTokens, SnoozeAi } from '../contracts.js';
 import { LlmError } from '../contracts.js';
-import { clip, esc } from './anthropic.js';
+import { clip, esc, escAttr } from './anthropic.js';
 
 const API = 'https://api.anthropic.com/v1/messages';
 const TIMEOUT_MS = 20_000;
@@ -82,7 +82,7 @@ export function createSnoozeAi(opts: { fetchImpl?: typeof fetch } = {}): SnoozeA
         messages: [
           {
             role: 'user',
-            content: `<item kind="${esc(kind)}">\n${title ? `<title>${esc(clip(title, 200))}</title>\n` : ''}<why>${esc(clip(why, 200))}</why>\n</item>`,
+            content: `<item kind="${escAttr(kind)}">\n${title ? `<title>${esc(clip(title, 200))}</title>\n` : ''}<why>${esc(clip(why, 200))}</why>\n</item>`,
           },
         ],
       });
@@ -94,9 +94,9 @@ export function createSnoozeAi(opts: { fetchImpl?: typeof fetch } = {}): SnoozeA
 
     async nudge(input, apiKey, model) {
       const lines = [
-        `<item kind="${input.kind}">`,
+        `<item kind="${escAttr(input.kind)}">`,
         `<title>${esc(clip(input.title, 200))}</title>`,
-        `<snoozed bucket="${input.bucket ? esc(BUCKETS[input.bucket].label) : 'none'}" days_without_activity="${input.days}"/>`,
+        `<snoozed bucket="${input.bucket ? escAttr(BUCKETS[input.bucket].label) : 'none'}" days_without_activity="${input.days}"/>`,
         ...(input.why ? [`<matt_note>${esc(clip(input.why, 200))}</matt_note>`] : []),
         `<description>${esc(clip(input.body, 800))}</description>`,
         '</item>',

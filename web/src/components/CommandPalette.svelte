@@ -148,6 +148,7 @@
         role="combobox"
         aria-expanded="true"
         aria-controls="pal-list"
+        aria-activedescendant={results.length ? `pal-opt-${active}` : undefined}
         autocomplete="off"
         spellcheck="false"
       />
@@ -157,6 +158,7 @@
             class="opt"
             class:active={i === active}
             data-pal-index={i}
+            id="pal-opt-{i}"
             role="option"
             aria-selected={i === active}
             onmousemove={() => (active = i)}

@@ -33,6 +33,7 @@
     "demo:e2e:activity": "NUDGE_DEMO=1 NUDGE_DEMO_GITHUB=1 NUDGE_DEMO_COMMENTS=1 NUDGE_DB=:memory: NUDGE_PORT=$((4528+${E2E_PORT_OFFSET:-0})) NUDGE_DEMO_CLOCK=fixed tsx server/index.ts",
     "demo:e2e:insights": "NUDGE_DEMO=1 NUDGE_DEMO_GITHUB=1 NUDGE_DEMO_HISTORY=1 NUDGE_DB=:memory: NUDGE_PORT=$((4530+${E2E_PORT_OFFSET:-0})) NUDGE_DEMO_CLOCK=fixed tsx server/index.ts",
     "demo:e2e:adventure": "NUDGE_DEMO=1 NUDGE_DB=:memory: NUDGE_PORT=$((4529+${E2E_PORT_OFFSET:-0})) NUDGE_DEMO_CLOCK=fixed tsx server/index.ts",
+    "demo:e2e:live": "NUDGE_DEMO=1 NUDGE_DB=:memory: NUDGE_PORT=$((4531+${E2E_PORT_OFFSET:-0})) NUDGE_DEMO_CLOCK=fixed tsx server/index.ts",
     "demo:e2e:update": "NUDGE_DEMO=1 NUDGE_DEMO_BUILD_ID=/assets/index-e2e-newer.js NUDGE_DB=:memory: NUDGE_PORT=$((4527+${E2E_PORT_OFFSET:-0})) NUDGE_DEMO_CLOCK=fixed tsx server/index.ts",
     "demo:e2e:api": "NUDGE_DEMO=1 NUDGE_DEMO_POST=api NUDGE_DB=:memory: NUDGE_PORT=$((4519+${E2E_PORT_OFFSET:-0})) NUDGE_DEMO_CLOCK=fixed tsx server/index.ts",
     "test": "vitest run",

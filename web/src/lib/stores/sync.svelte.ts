@@ -15,6 +15,8 @@ class SyncStore {
   });
   quota = $state<QuotaDTO | null>(null);
   now = $state(Date.now());
+  /** The live event stream is down (the browser is retrying it): the page is not hearing about changes. */
+  streamDown = $state(false);
 
   constructor() {
     if (typeof window !== 'undefined') setInterval(() => (this.now = Date.now()), 30_000);

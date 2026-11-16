@@ -25,9 +25,11 @@
   // Each thread is mounted once per open (the parent keys on it), so this counts opens, not renders.
   usage.count('view.github_thread');
   // Opened now, closed when this thread unmounts or another item takes its place; dwell is measured in between.
+  // Keyed on the id, not the row object, which a list refresh replaces: that would close and reopen the record.
+  const itemId = $derived(item.comment.id);
   $effect(() =>
     decisions.open(
-      item.comment.id,
+      itemId,
       untrack(() => inbox.viewName),
     ),
   );

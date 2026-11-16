@@ -1,6 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Keymap, ariaShortcut, keyLabels } from './keymap.svelte';
 import { appBindings, inboxBindings } from './bindings';
+import type { InboxItem } from '../../../../shared/types';
+import { inbox } from '../stores/inbox.svelte';
+import { sync } from '../stores/sync.svelte';
 
 function key(k: string, init: KeyboardEventInit = {}, target?: HTMLElement) {
   const e = new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true, ...init });
@@ -127,7 +130,7 @@ describe('keymap', () => {
 
   it('ignores single keys in editable targets but allows modifiers and Escape', () => {
     const single = bind(['e']);
-    const send = bind(['$mod+Enter']);
+    const send = bind(['$mod+Enter'], vi.fn(), { inInputs: true });
     const esc = bind(['Escape']);
     const ta = document.createElement('textarea');
     document.body.append(ta);
@@ -138,6 +141,28 @@ describe('keymap', () => {
     km.handle(key('Escape', {}, ta));
     expect(esc).toHaveBeenCalledTimes(1);
     ta.remove();
+  });
+
+  it('leaves Ctrl/Cmd+Z in a text field to the field (undo typing, not the last triage)', () => {
+    const undo = bind(['z', '$mod+z']);
+    const palette = bind(['$mod+k'], vi.fn(), { inInputs: true });
+    const input = document.createElement('input');
+    document.body.append(input);
+    const e = key('z', { ctrlKey: true }, input);
+    expect(km.handle(e)).toBe(false);
+    expect(e.defaultPrevented).toBe(false);
+    expect(undo).not.toHaveBeenCalled();
+    // Bindings that opt in still work from a field, and the same key works outside one.
+    km.handle(key('k', { ctrlKey: true }, input));
+    expect(palette).toHaveBeenCalledTimes(1);
+    km.handle(key('z', { ctrlKey: true }, document.body));
+    expect(undo).toHaveBeenCalledTimes(1);
+    input.remove();
+  });
+
+  it('only the palette and composer keys reach into text fields', () => {
+    const ids = [...appBindings(), ...inboxBindings()].filter((b) => b.inInputs).map((b) => b.id);
+    expect(ids).toEqual(['palette.open']);
   });
 
   it('respects when() and unregisters', () => {
@@ -241,5 +266,32 @@ describe('snooze bindings', () => {
   });
   it('binding ids are unique', () => {
     expect(new Set(all.map((b) => b.id)).size).toBe(all.length);
+  });
+});
+
+describe('YouTube-only keys on other kinds of item', () => {
+  const todo = {
+    item: { provider: 'todo', containerUrl: null },
+    comment: { id: 'todo:1', permalink: '' },
+    video: { id: 'todo' },
+  } as unknown as InboxItem;
+  beforeEach(() => {
+    inbox.items = [todo];
+    inbox.selectedId = 'todo:1';
+  });
+  afterEach(() => inbox.reset());
+
+  it('V does not open a made-up YouTube video for a todo', () => {
+    const v = inboxBindings().find((b) => b.id === 'open.video')!;
+    expect(v.when!()).toBe(false);
+  });
+
+  it('S does not start a deep sync of a made-up video for a todo', () => {
+    const run = vi.spyOn(sync, 'run').mockResolvedValue();
+    appBindings()
+      .find((b) => b.id === 'sync.deep')!
+      .run();
+    expect(run).not.toHaveBeenCalled();
+    run.mockRestore();
   });
 });

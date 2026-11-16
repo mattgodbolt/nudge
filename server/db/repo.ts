@@ -41,10 +41,11 @@ import { createFeedsRepo, parseData } from './feeds.js';
 import { wakeOnActivity } from './wake.js';
 import { createTodosRepo } from './todos.js';
 import { createUsage } from './usage.js';
+import { createSpend } from './spend.js';
 import { createNotes } from './notes.js';
 import { createSuggestions, suggestionDto } from './suggestions.js';
 import { htmlToPlain } from './text.js';
-import { tierFor, unitsPerDay } from './tiers-lite.js';
+import { tierFor, unitsPerDay } from '../sync/tiers.js';
 
 type Row = Record<string, any>;
 
@@ -1115,6 +1116,10 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
       const clause = bySuggestion[q.suggestion];
       if (clause) where.push(clause);
     }
+    if (q.ids) {
+      where.push('i.id IN (SELECT value FROM json_each(@ids))');
+      args.ids = JSON.stringify(q.ids);
+    }
     if (q.q && q.q.trim()) {
       const fts = ftsQuery(q.q);
       if (!fts) return { items: [], nextCursor: null, total: 0 };
@@ -1879,6 +1884,7 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
     ...todos,
     close: () => void db.close(),
     usage: createUsage(db, clock),
+    spend: createSpend(db, clock),
     suggestions: createSuggestions(db, clock),
     notes: createNotes(db, clock),
     clientEvents: createClientEvents(db),

@@ -10,7 +10,7 @@ import type {
   SuggestionDTO,
   TriageTarget,
 } from '../../../../shared/types';
-import type { InboxPage, SuggestionFilter } from '../../../../shared/api';
+import type { InboxPage } from '../../../../shared/api';
 import { DEFAULT_SNOOZE_DAYS, SNOOZE_BUCKETS, fallbackDate } from '../../../../shared/snooze';
 import { api } from '../api';
 import { settings } from './settings.svelte';
@@ -19,18 +19,9 @@ import { toasts } from './toasts.svelte';
 import { usage } from '../usage';
 import { decisions } from '../decisions';
 import { formatSnoozeTime } from '../snooze';
+import { FILTER_KEYS, sameFilters, type InboxFilters } from '../filters';
 
-export interface InboxFilters {
-  sourceId?: number;
-  videoId?: string;
-  feedId?: number;
-  repo?: string;
-  kind?: 'pr' | 'issue' | 'todo';
-  audience?: 'outside' | 'team' | 'contributors' | 'bots' | 'people';
-  /** Only items with this current suggestion (or, 'none', no suggestion yet). */
-  suggestion?: SuggestionFilter;
-  q?: string;
-}
+export type { InboxFilters };
 
 /** One item's optimistic transition. The same shape serves triage, snooze and their undo. */
 export interface Change {
@@ -51,6 +42,10 @@ interface CommitResult {
 }
 
 const PAGE = 100;
+/** Ids per request when re-reading changed rows (the server takes up to 500; this keeps the URL short). */
+const PATCH_CHUNK = 100;
+/** How far a deep link may page in to reach its item. */
+const REVEAL_MAX = 5000;
 
 export function emptyCounts(): Counts {
   return { inbox: 0, done: 0, all: 0, snoozed: 0, bySource: {}, byFeed: {}, byRepo: {}, todos: 0 };
@@ -176,7 +171,26 @@ export class InboxStore {
   #undoStack: UndoEntry[] = [];
   /** Mirrors the undo stack length so the UI can enable/disable Undo. */
   undoDepth = $state(0);
-  #inflight = new Set<string>();
+  /**
+   * Ids with an action of ours (triage, snooze or undo) on its way to the server, counted since an undo can overlap
+   * the request it undoes. Until it lands, what the server says about them is out of date, so refreshes keep ours.
+   */
+  #inflight = new Map<string, number>();
+  #busy(id: string): boolean {
+    return (this.#inflight.get(id) ?? 0) > 0;
+  }
+  #hold(changes: Change[]) {
+    for (const c of changes)
+      this.#inflight.set(c.before.comment.id, (this.#inflight.get(c.before.comment.id) ?? 0) + 1);
+  }
+  #release(changes: Change[]) {
+    for (const c of changes) {
+      const id = c.before.comment.id;
+      const n = (this.#inflight.get(id) ?? 0) - 1;
+      if (n > 0) this.#inflight.set(id, n);
+      else this.#inflight.delete(id);
+    }
+  }
 
   /* ---------- loading ---------- */
 
@@ -202,26 +216,16 @@ export class InboxStore {
 
   /** Switch view/filters; reloads only when something actually changed. */
   async configure(view: InboxView, filters: InboxFilters, selectId?: string | null): Promise<void> {
-    const same =
-      this.loaded &&
-      view === this.view &&
-      filters.sourceId === this.filters.sourceId &&
-      filters.videoId === this.filters.videoId &&
-      filters.feedId === this.filters.feedId &&
-      filters.repo === this.filters.repo &&
-      filters.kind === this.filters.kind &&
-      filters.audience === this.filters.audience &&
-      filters.suggestion === this.filters.suggestion &&
-      (filters.q ?? '') === (this.filters.q ?? '');
+    const same = this.loaded && view === this.view && sameFilters(filters, this.filters);
     if (same) {
       if (selectId && this.items.some((i) => i.comment.id === selectId)) this.selectedId = selectId;
+      else if (selectId) void this.#reveal(selectId);
       return;
     }
     const viewChanged = view !== this.view;
     // Counts only: that a search ran or a filter was applied, never what it was.
     if (filters.q && filters.q !== this.filters.q) usage.count('search.run');
-    const filterKeys = ['sourceId', 'videoId', 'feedId', 'repo', 'kind', 'audience', 'suggestion'] as const;
-    if (filterKeys.some((k) => filters[k] !== undefined && filters[k] !== this.filters[k])) {
+    if (FILTER_KEYS.some((k) => filters[k] !== undefined && filters[k] !== this.filters[k])) {
       usage.count('filter.applied');
     }
     this.view = view;
@@ -245,6 +249,7 @@ export class InboxStore {
       this.loaded = true;
       const keep = selectId ?? this.selectedId;
       this.selectedId = page.items.find((i) => i.comment.id === keep)?.comment.id ?? page.items[0]?.comment.id ?? null;
+      if (selectId && this.selectedId !== selectId) void this.#reveal(selectId);
     } catch (e) {
       if (gen !== this.#generation) return;
       this.error = e instanceof Error ? e.message : 'Could not load inbox';
@@ -252,6 +257,31 @@ export class InboxStore {
     } finally {
       if (gen === this.#generation) this.loading = false;
     }
+  }
+
+  /**
+   * A link to an item that is not on the loaded pages (an Insights link, a notification tap, the list sorted oldest
+   * first): if it belongs in this list at all, load pages until it is reached, then select it.
+   */
+  async #reveal(id: string): Promise<void> {
+    const gen = this.#generation;
+    try {
+      const found = await api.inbox({ ...this.#query(), ids: [id], limit: 1 });
+      if (gen !== this.#generation || found.items.length === 0) return;
+    } catch {
+      return;
+    }
+    const has = () => this.items.some((i) => i.comment.id === id);
+    let stalls = 0;
+    while (!has() && this.nextCursor && this.items.length < REVEAL_MAX && stalls < 50 && gen === this.#generation) {
+      const before = this.items.length;
+      await this.loadMore();
+      if (this.items.length === before) {
+        stalls++;
+        await new Promise((r) => setTimeout(r, 50));
+      }
+    }
+    if (gen === this.#generation && has()) this.selectedId = id;
   }
 
   async loadMore(): Promise<void> {
@@ -262,10 +292,7 @@ export class InboxStore {
       const page = await api.inbox(this.#query(this.nextCursor));
       if (gen !== this.#generation) return;
       const have = new Set(this.items.map((i) => i.comment.id));
-      this.items = [
-        ...this.items,
-        ...page.items.filter((i) => !have.has(i.comment.id) && !this.#inflight.has(i.comment.id)),
-      ];
+      this.items = [...this.items, ...page.items.filter((i) => !have.has(i.comment.id) && !this.#busy(i.comment.id))];
       this.nextCursor = page.nextCursor;
       this.total = page.total;
     } catch (e) {
@@ -279,11 +306,22 @@ export class InboxStore {
   #mergeFirstPage(page: InboxPage) {
     // A repeated id would give VirtualList two rows with one key, and two slots drawn on top of each other.
     const seen = new Set<string>();
-    const fresh = page.items.filter((i) => {
-      if (this.#inflight.has(i.comment.id) || seen.has(i.comment.id)) return false;
-      seen.add(i.comment.id);
-      return true;
-    });
+    const local = new Map(this.items.map((i) => [i.comment.id, i]));
+    const fresh: InboxItem[] = [];
+    for (const i of page.items) {
+      const id = i.comment.id;
+      if (seen.has(id)) continue;
+      seen.add(id);
+      // A row with an action of ours in flight keeps our copy (or stays out, if ours removed it).
+      const mine = this.#busy(id) ? local.get(id) : i;
+      if (mine) fresh.push(mine);
+    }
+    // And a row ours brought back (an undo) that the server, not yet told, left out of its page.
+    const extra = [...local].filter(([id]) => this.#busy(id) && !seen.has(id)).map(([, i]) => i);
+    if (extra.length) {
+      fresh.push(...extra);
+      fresh.sort((x, y) => compareItems(x, y, this.order, this.view));
+    }
     const freshIds = new Set(fresh.map((i) => i.comment.id));
     const last = page.nextCursor ? page.items[page.items.length - 1] : undefined;
     // Items beyond the fetched window are kept; everything inside it is replaced by the server's view.
@@ -436,6 +474,8 @@ export class InboxStore {
       reason?: DoneReason | null;
       /** What to record as the decision when it differs from the state ('dismissed'). */
       decision?: string;
+      /** Called once the server confirms, with an undo for exactly this action (for a caller's own toast). */
+      onUndoable?: (undo: () => Promise<boolean>) => void;
     } = {},
   ): Promise<boolean> {
     const wanted = new Set(ids);
@@ -543,7 +583,11 @@ export class InboxStore {
     changes: Change[],
     kind: UndoEntry['kind'],
     request: () => Promise<CommitResult>,
-    opts: { message?: string | null; onError?: (e: unknown) => void } = {},
+    opts: {
+      message?: string | null;
+      onError?: (e: unknown) => void;
+      onUndoable?: (undo: () => Promise<boolean>) => void;
+    } = {},
   ): Promise<boolean> {
     if (changes.length === 0) return false;
     if (changes.length > 1) usage.count('bulk.apply');
@@ -553,7 +597,7 @@ export class InboxStore {
     const prevMulti = this.selectedIds;
     this.#setItems(changes, 'after');
     this.selectedIds = new Set();
-    for (const c of changes) this.#inflight.add(c.before.comment.id);
+    this.#hold(changes);
 
     const promise = request();
     const entry: UndoEntry = { changes, kind, actionId: promise.then((r) => r.actionId) };
@@ -567,11 +611,17 @@ export class InboxStore {
         // Nothing changed server-side: there is nothing to undo.
         this.#undoStack = this.#undoStack.filter((x) => x !== entry);
         this.undoDepth = this.#undoStack.length;
-      } else if (opts.message !== null) {
-        toasts.push({
-          message: `${opts.message ?? 'Done'} · z to undo`,
-          action: { label: 'Undo', run: () => void this.undo() },
-        });
+      } else if (this.#undoStack.includes(entry)) {
+        // (Not when z already undid it while the request was in flight.) A toast's Undo is for its own action: with
+        // several toasts on screen, the newest action is not necessarily the one being clicked.
+        const undo = () => this.undo(entry);
+        opts.onUndoable?.(undo);
+        if (opts.message !== null) {
+          toasts.push({
+            message: `${opts.message ?? 'Done'} · z to undo`,
+            action: { label: 'Undo', run: () => void undo() },
+          });
+        }
       }
       return true;
     } catch (e) {
@@ -585,23 +635,40 @@ export class InboxStore {
       else toasts.error(`Could not update: ${e instanceof Error ? e.message : 'unknown error'}`);
       return false;
     } finally {
-      for (const c of changes) this.#inflight.delete(c.before.comment.id);
+      this.#release(changes);
     }
   }
 
-  async undo(): Promise<boolean> {
-    const entry = this.#undoStack.pop();
+  /** Undo `target` (a toast's own action), or else the newest action. */
+  async undo(target?: UndoEntry): Promise<boolean> {
+    const entry = target ? this.#undoStack.find((x) => x === target) : this.#undoStack.at(-1);
+    this.#undoStack = this.#undoStack.filter((x) => x !== entry);
     this.undoDepth = this.#undoStack.length;
     if (!entry) {
-      toasts.push({ message: 'Nothing to undo', timeoutMs: 2000 });
+      toasts.push({ message: target ? 'Already undone' : 'Nothing to undo', timeoutMs: 2000 });
       return false;
     }
     const prevCounts = $state.snapshot(this.counts) as Counts;
     this.#setItems(entry.changes, 'before');
     const first = entry.changes.find((c) => viewIncludes(this.view, c.before));
     if (first) this.selectedId = first.before.comment.id;
+    this.#hold(entry.changes);
     try {
-      const actionId = await entry.actionId;
+      return await this.#undoOnServer(entry, prevCounts);
+    } finally {
+      this.#release(entry.changes);
+    }
+  }
+
+  async #undoOnServer(entry: UndoEntry, prevCounts: Counts): Promise<boolean> {
+    let actionId: number | null;
+    try {
+      actionId = await entry.actionId;
+    } catch {
+      // The original request failed: #commit has already rolled back and said so, so there is nothing left to undo.
+      return false;
+    }
+    try {
       if (actionId === null) throw new Error('nothing to undo');
       const result = entry.kind === 'snooze' ? await api.undoSnooze(actionId) : await api.undo(actionId);
       this.counts = result.counts;
@@ -649,18 +716,65 @@ export class InboxStore {
     this.items = next;
     this.total = Math.max(0, this.total + (next.length - oldItems.length));
 
-    if (this.selectedId && !next.some((i) => i.comment.id === this.selectedId)) {
-      // Prefer the row that slid into the vacated slot, else the one above.
-      let pick: InboxItem | undefined;
+    this.#keepCursor(oldItems, selIdx);
+  }
+
+  /** After rows left the list: if the cursor's row went, take the row that slid into its slot, else the one above. */
+  #keepCursor(oldItems: InboxItem[], selIdx: number) {
+    const next = this.items;
+    const shown = new Set(next.map((i) => i.comment.id));
+    if (this.selectedId && !shown.has(this.selectedId)) {
+      let pick: string | undefined;
       for (let i = selIdx + 1; i < oldItems.length && !pick; i++) {
-        pick = next.find((n) => n.comment.id === oldItems[i]!.comment.id);
+        if (shown.has(oldItems[i]!.comment.id)) pick = oldItems[i]!.comment.id;
       }
       for (let i = selIdx - 1; i >= 0 && !pick; i--) {
-        pick = next.find((n) => n.comment.id === oldItems[i]!.comment.id);
+        if (shown.has(oldItems[i]!.comment.id)) pick = oldItems[i]!.comment.id;
       }
-      this.selectedId = pick?.comment.id ?? null;
+      this.selectedId = pick ?? null;
     }
     if (this.selectedId === null && next.length) this.selectedId = next[0]!.comment.id;
+  }
+
+  /**
+   * Re-read loaded rows the server says changed, keeping the list where it is: a row that still belongs is replaced
+   * in its slot, one that no longer does (finished on the phone, closed upstream) leaves. Rows with an action of ours
+   * in flight are left to it, and so is the row being replied to.
+   */
+  async #patchRows(ids: string[]) {
+    const gen = this.#generation;
+    const busyAtStart = new Set(ids.filter((id) => this.#busy(id)));
+    const chunks: string[][] = [];
+    for (let i = 0; i < ids.length; i += PATCH_CHUNK) chunks.push(ids.slice(i, i + PATCH_CHUNK));
+    let fresh: Map<string, InboxItem>;
+    try {
+      const pages = await Promise.all(
+        chunks.map((chunk) => api.inbox({ ...this.#query(), ids: chunk, limit: chunk.length })),
+      );
+      fresh = new Map(pages.flatMap((p) => p.items).map((i) => [i.comment.id, i]));
+    } catch {
+      return; // the next event, or a refresh, tries again
+    }
+    if (gen !== this.#generation) return;
+    const asked = new Set(ids);
+    // Busy when asked or now: the server's answer may predate our action landing.
+    const keep = (id: string) =>
+      !asked.has(id) || busyAtStart.has(id) || this.#busy(id) || (this.composing && id === this.selectedId);
+    const oldItems = this.items;
+    const selIdx = this.selectedIndex;
+    const next: InboxItem[] = [];
+    for (const i of oldItems) {
+      const id = i.comment.id;
+      if (keep(id)) next.push(i);
+      else {
+        const f = fresh.get(id);
+        if (f) next.push(f);
+      }
+    }
+    if (next.length === oldItems.length && next.every((i, k) => i === oldItems[k])) return;
+    this.items = next;
+    this.total = Math.max(0, this.total - (oldItems.length - next.length));
+    this.#keepCursor(oldItems, selIdx);
   }
 
   /* ---------- server events ---------- */
@@ -669,15 +783,21 @@ export class InboxStore {
     if (e.type !== 'inbox.changed') return;
     this.counts = e.counts;
     thread.invalidate();
-    const touched = e.changedIds.some((id) => this.items.some((i) => i.comment.id === id));
-    const relevantAdds = this.view === 'done' || this.view === 'snoozed' ? [] : e.addedIds;
-    if (relevantAdds.length === 0 && !touched) return;
-    const atTop = this.selectedIndex <= 0;
-    if (atTop && !this.composing) {
+    const loaded = new Set(this.items.map((i) => i.comment.id));
+    // Rows on screen are updated where they are, wherever the cursor is.
+    const touched = e.changedIds.filter((id) => loaded.has(id));
+    if (touched.length) void this.#patchRows(touched);
+    // New arrivals only ever land in the inbox (and All). In Done and Snoozed an item arrives by changing state
+    // elsewhere, and which changed ids now belong is only known by asking, so there the top is refreshed when it is
+    // safe to and otherwise left for the next look.
+    const settled = this.view === 'done' || this.view === 'snoozed';
+    const incoming = (settled ? e.changedIds : e.addedIds).filter((id) => !loaded.has(id));
+    if (incoming.length === 0) return;
+    if (this.selectedIndex <= 0 && !this.composing) {
       void this.refreshTop();
-    } else if (relevantAdds.length) {
+    } else if (!settled) {
       const next = new Set(this.pending);
-      for (const id of relevantAdds) if (!this.items.some((i) => i.comment.id === id)) next.add(id);
+      for (const id of incoming) next.add(id);
       this.pending = next;
     }
   }

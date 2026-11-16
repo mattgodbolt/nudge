@@ -102,7 +102,7 @@ export const OUTCOME_LABEL: Record<Outcome, string> = {
   legacy: 'Done (before dismissals)',
   upstream: 'Closed elsewhere',
 };
-export const BUCKET_LABEL: Record<string, string> = {
+const BUCKET_LABEL: Record<string, string> = {
   waiting_on_them: 'Waiting on them',
   waiting_on_merge: 'Waiting on merge',
   in_flight: 'In flight',
@@ -125,7 +125,7 @@ export const ACTION_LABEL: Record<string, string> = {
   legacy: 'Done (old)',
 };
 export const TURN_LABEL: Record<string, string> = { matt: 'Your turn', them: 'Their turn', nobody: "Nobody's turn" };
-export const PROVIDER_LABEL: Record<string, string> = { github: 'GitHub', youtube: 'YouTube', todo: 'Todos' };
+const PROVIDER_LABEL: Record<string, string> = { github: 'GitHub', youtube: 'YouTube', todo: 'Todos' };
 export const providerLabel = (p: string) => PROVIDER_LABEL[p] ?? p;
 export const kindLabel = (provider: string, kind: string) =>
   provider === 'other' ? 'Other' : kindWord(provider, kind).replace(/^./, (c) => c.toUpperCase());

@@ -12,7 +12,7 @@ import { setOwnChannelId } from '../sync/own-channels.js';
 import { LOGIN } from './github.js';
 import { bucketInBackground } from './snoozeAi.js';
 import { recordSnoozeContext } from './snoozeContext.js';
-import { HttpError, asObject, bad, bool, buildSettingsDto, int, notFound, oneOf, str } from './util.js';
+import { HttpError, asObject, bad, bool, buildSettingsDto, int, logBackground, notFound, oneOf, str } from './util.js';
 
 const VIEWS = ['inbox', 'done', 'all', 'snoozed'] as const;
 /** Longest "why I snoozed this" kept. */
@@ -145,6 +145,12 @@ export function registerApiRoutes(app: FastifyInstance, deps: AppDeps): void {
     if (q.suggestion) query.suggestion = oneOf(q.suggestion, 'suggestion', SUGGESTION_FILTERS);
     if (q.order) query.order = oneOf(q.order, 'order', ['newest', 'oldest', 'arrived', 'source'] as const);
     if (q.q?.trim()) query.q = q.q.trim();
+    const ids = (req.query as Record<string, string | string[] | undefined>).ids;
+    if (ids !== undefined) {
+      const list = Array.isArray(ids) ? ids : [ids];
+      if (list.length > 500) throw bad('"ids" may name at most 500 items');
+      query.ids = list;
+    }
     if (q.cursor) query.cursor = q.cursor;
     query.limit = q.limit === undefined ? 100 : int(q.limit, 'limit', { min: 1, max: 500 });
     return repo.listInbox(query);
@@ -221,12 +227,9 @@ export function registerApiRoutes(app: FastifyInstance, deps: AppDeps): void {
     // Fire and forget: neither the GitHub lookups nor the bucketing may delay or fail the snooze. Neither rejects.
     if (until !== null && result.actionId !== null) {
       if (deps.githubClient) {
-        void recordSnoozeContext(repo, deps.githubClient, result.actionId, changed, (msg, err) =>
-          req.log.warn({ err }, msg),
-        );
+        void recordSnoozeContext(repo, deps.githubClient, result.actionId, changed, logBackground);
       }
-      if (!bucket && why)
-        void bucketInBackground(deps, result.actionId, changed, (msg, err) => req.log.warn({ err }, msg));
+      if (!bucket && why) void bucketInBackground(deps, result.actionId, changed, logBackground);
     }
     return result;
   });
@@ -469,7 +472,7 @@ export function registerApiRoutes(app: FastifyInstance, deps: AppDeps): void {
     const ownChanged =
       JSON.stringify([...before.ownChannelIds].sort()) !== JSON.stringify([...after.ownChannelIds].sort());
     if (ownChanged) {
-      repo.recomputeOwnership(after.ownChannelIds);
+      // repo.updateSettings has already recomputed which comments are mine.
       // Keep the channel sources' "mine" flag in step with the registered ids.
       for (const src of repo.listSources()) {
         if (src.kind === 'channel' && src.isOwn !== after.ownChannelIds.includes(src.ytId)) {

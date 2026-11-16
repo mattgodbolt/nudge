@@ -56,7 +56,7 @@ async function open(page: Page, row: Row) {
   await expect(page.getByTestId('thread-view')).toBeVisible();
 }
 
-test("b, a reason key and 6 snoozes until activity, with that bucket's fallback; the Snoozed view says so", async ({
+test("b, a reason key and 7 snoozes until activity, with that bucket's fallback; the Snoozed view says so", async ({
   page,
   request,
 }) => {

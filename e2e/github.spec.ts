@@ -281,6 +281,31 @@ test('Shift+M can mute a whole organisation, undoably; the rule reads as an orga
   await expect.poll(() => feedCount(page)).toBe(before);
 });
 
+test('the mute menu closes, and lets go of the keyboard, when its item is finished elsewhere', async ({
+  page,
+  request,
+}) => {
+  await openFeed(page);
+  await rows(page).first().click();
+  const id = (await rows(page).first().getAttribute('data-comment-id'))!;
+  await page.keyboard.press('Shift+M');
+  const menu = page.getByTestId('mute-menu');
+  await expect(menu).toBeVisible();
+
+  const H = { 'x-nudge': '1' };
+  const res = await request.post('/api/triage', { headers: H, data: { commentIds: [id], to: 'done' } });
+  const { actionId } = (await res.json()) as { actionId: number };
+  await expect(page.locator(`[data-testid=inbox-row][data-comment-id="${id}"]`)).toHaveCount(0);
+  await expect(menu).toBeHidden();
+  // The keys work again: before, an invisible menu kept them until Escape.
+  const selected = () => page.locator('[data-testid=inbox-row][aria-selected=true]').getAttribute('data-comment-id');
+  const at = await selected();
+  await page.keyboard.press('j');
+  await expect.poll(selected).not.toBe(at);
+
+  expect((await request.post(`/api/triage/${actionId}/undo`, { headers: H })).ok()).toBe(true);
+});
+
 test('Settings: the token is masked, "my accounts" can be added and removed, and Test reports', async ({ page }) => {
   await page.goto('/settings');
   const card = page.getByTestId('settings-github');

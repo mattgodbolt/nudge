@@ -106,7 +106,7 @@ async function main(): Promise<void> {
     yt = createHttpClient({ getApiKey: () => resolveKey().key, quota });
   }
 
-  const engine = createSyncEngine({ repo, yt, quota, bus });
+  const engine = createSyncEngine({ repo, yt, quota, bus, currentKey: () => resolveKey().key });
   const addSource = createAddSource({ repo, yt, engine });
   const scheduler = createScheduler({
     repo,
@@ -321,6 +321,13 @@ async function main(): Promise<void> {
   process.on('SIGINT', () => void shutdown('SIGINT'));
   process.on('SIGTERM', () => void shutdown('SIGTERM'));
 }
+
+// Every background loop catches its own failures; anything that still escapes is a bug. Say so and exit, so the
+// supervisor (Docker's restart policy) starts a clean process, rather than dying with no word of why.
+process.on('unhandledRejection', (err) => {
+  console.error('Unhandled rejection; exiting:', err);
+  process.exit(1);
+});
 
 main().catch((err) => {
   console.error(err);

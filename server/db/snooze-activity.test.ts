@@ -281,11 +281,14 @@ describe('waking on GitHub activity', () => {
     expect(gh(2).snoozedUntil).toBe(later(DAY));
   });
 
-  it('wakes when the lookup failed (who commented is unknown), as for Done items; and tells poller which items need a lookup', () => {
+  it('stays parked while who commented is unknown (the lookup failed), and wakes once it is known; tells the poller which items need a lookup', () => {
     park(1);
     expect(repo.githubItemMeta([id(1), id(2)]).get(id(1))?.snoozedUntilActivity).toBe(true);
     expect(repo.githubItemMeta([id(1), id(2)]).get(id(2))?.snoozedUntilActivity).toBe(false);
-    expect(repo.upsertGithubItems(feedId, [pr(1, { comments: 1 })]).woken).toEqual([id(1)]);
+    expect(repo.upsertGithubItems(feedId, [pr(1, { comments: 1 })]).woken).toEqual([]);
+    expect(
+      repo.upsertGithubItems(feedId, [pr(1, { comments: 1, lastCommenter: 'carol', lastCommenterIsMe: false })]).woken,
+    ).toEqual([id(1)]);
   });
 
   it('clears the "no activity" mark when someone then comments on an item that already came back', () => {

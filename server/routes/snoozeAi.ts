@@ -3,24 +3,17 @@ import { BUCKETS } from '../../shared/snooze.js';
 import type { AppDeps, LlmTokens } from '../contracts.js';
 import { LlmError } from '../contracts.js';
 import { costMicros } from '../classify/anthropic.js';
-import { DAILY_CAP_USD } from '../suggest/worker.js';
-import { HttpError, notFound } from './util.js';
+import { overDailyCap } from '../suggest/worker.js';
+import { HttpError, logBackground, notFound } from './util.js';
 
 /** Most items one snooze action will have bucketed by the model (a bulk snooze must not become a bulk bill). */
 export const MAX_BUCKET_CALLS = 10;
 
-const dayStart = (d: Date): string => `${d.toISOString().slice(0, 10)}T00:00:00.000Z`;
-
-/**
- * Dollars spent on model calls today, across suggestions and the small snooze calls, so both draw on one daily cap.
- */
-export function spentTodayUsd(deps: AppDeps, now: Date = new Date()): number {
-  return deps.repo.suggestions.spentSince(dayStart(now)) + deps.repo.usage.today('snooze_ai.cost_micros') / 1e6;
-}
-
 function count(deps: AppDeps, model: string, tokens: LlmTokens | null): void {
+  const micros = tokens ? costMicros(model, tokens) : 0;
+  // The cap's ledger first and on its own: an analytics failure must not make a call free.
+  deps.repo.spend.add('snooze_ai', micros);
   try {
-    const micros = tokens ? costMicros(model, tokens) : 0;
     deps.repo.usage.add({
       'snooze_ai.call': 1,
       ...(tokens ? {} : { 'snooze_ai.fail': 1 }),
@@ -40,14 +33,14 @@ export async function bucketInBackground(
   deps: AppDeps,
   actionId: number,
   ids: string[],
-  log: (msg: string, err?: unknown) => void = () => undefined,
+  log: (msg: string, err?: unknown) => void = logBackground,
 ): Promise<void> {
   try {
     const { apiKey, model } = deps.repo.getSettings().llm;
     if (!apiKey || !deps.snoozeAi) return;
     const changed: string[] = [];
     for (const id of ids.slice(0, MAX_BUCKET_CALLS)) {
-      if (spentTodayUsd(deps) >= DAILY_CAP_USD) break;
+      if (overDailyCap(deps.repo)) break;
       const found = deps.repo.getItem(id);
       const why = deps.repo.snoozeReason(id);
       if (!found || !why) continue;
@@ -90,7 +83,7 @@ export function registerSnoozeAiRoutes(app: FastifyInstance, deps: AppDeps): voi
     const { apiKey, model } = deps.repo.getSettings().llm;
     if (!apiKey || !deps.snoozeAi)
       throw new HttpError(424, 'Add an Anthropic key in Settings to draft nudges', 'no_key');
-    if (spentTodayUsd(deps) >= DAILY_CAP_USD) {
+    if (overDailyCap(deps.repo)) {
       throw new HttpError(429, 'The daily limit on model spending has been reached', 'cap');
     }
     const settings = deps.repo.getSettings();
@@ -112,7 +105,7 @@ export function registerSnoozeAiRoutes(app: FastifyInstance, deps: AppDeps): voi
       }));
     } catch (e) {
       // The draft is still useful from the description alone.
-      req.log.warn({ err: e }, 'nudge: could not fetch comments');
+      logBackground('nudge: could not fetch comments', e);
     }
     try {
       const r = await deps.snoozeAi.nudge(

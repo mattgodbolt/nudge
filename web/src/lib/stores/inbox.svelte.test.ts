@@ -201,6 +201,51 @@ describe('InboxStore', () => {
     expect(store.counts.inbox).toBe(4);
   });
 
+  it("a toast's Undo undoes that toast's action, not the newest one", async () => {
+    let next = 20;
+    triageResponse = () => json({ actionId: next++, changes: [], counts: counts(3, 1) });
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+      if (url.startsWith('/api/inbox')) return json({ items: [1, 2, 3, 4].map((n) => item(n)), nextCursor: null });
+      if (url === '/api/triage' && init?.method === 'POST') return triageResponse();
+      if (/\/api\/triage\/\d+\/undo/.test(url)) return json({ actionId: 1, changes: [], counts: counts(3, 1) });
+      return json({ error: 'nope', code: 'x' }, 404);
+    });
+    await store.triage('done', ['c1']); // action 20
+    await store.triage('done', ['c2']); // action 21
+    expect(ids()).toEqual(['c3', 'c4']);
+    const first = toasts.items[0]!;
+    expect(first.message).toContain('Marked done');
+    first.action!.run();
+    await vi.waitFor(() => expect(fetchMock.mock.calls.some((c) => c[0] === '/api/triage/20/undo')).toBe(true));
+    expect(fetchMock.mock.calls.some((c) => c[0] === '/api/triage/21/undo')).toBe(false);
+    expect(ids()).toEqual(['c1', 'c3', 'c4']);
+    // The newer action is still on the stack for z.
+    expect(store.undoDepth).toBe(1);
+    await store.undo();
+    expect(fetchMock.mock.calls.some((c) => c[0] === '/api/triage/21/undo')).toBe(true);
+    expect(ids()).toEqual(['c1', 'c2', 'c3', 'c4']);
+  });
+
+  it('undoing a request that then fails leaves the list as it was before, with one error', async () => {
+    let fail!: () => void;
+    triageResponse = () =>
+      new Promise((res) => {
+        fail = () => res(new Response(JSON.stringify({ error: 'boom', code: 'internal' }), { status: 500 }));
+      });
+    store.move(1); // c2
+    const p = store.triage('done');
+    expect(ids()).toEqual(['c1', 'c3', 'c4']);
+    const u = store.undo();
+    fail();
+    expect(await p).toBe(false);
+    expect(await u).toBe(false);
+    expect(ids()).toEqual(['c1', 'c2', 'c3', 'c4']);
+    expect(store.items.find((i) => i.comment.id === 'c2')!.comment.state).toBe('inbox');
+    expect(store.counts).toMatchObject({ inbox: 4, done: 0 });
+    expect(toasts.items.filter((t) => t.kind === 'error')).toHaveLength(1);
+    expect(fetchMock.mock.calls.some((c) => /undo/.test(c[0]))).toBe(false);
+  });
+
   it('triages the multi-selection as one action', async () => {
     store.toggleSelect('c1');
     store.toggleSelect('c3');
@@ -229,6 +274,39 @@ describe('InboxStore', () => {
     store.selectedIds = new Set(['gone']);
     expect(store.selectedCount).toBe(0);
     expect(store.targetIds()).toEqual(['c1']); // nothing visible selected: the cursor row
+  });
+
+  describe('a deep link (?c=) to an item beyond the first page', () => {
+    const page = (from: number, to: number) => Array.from({ length: to - from + 1 }, (_, k) => item(from + k));
+    beforeEach(() => {
+      // Three pages of three; c9 is on the last. c99 is not in this list at all.
+      fetchMock.mockImplementation((url: string) => {
+        if (!url.startsWith('/api/inbox')) return json({ error: 'nope', code: 'x' }, 404);
+        const u = new URL(url, 'http://x');
+        const asked = u.searchParams.getAll('ids');
+        if (asked.length)
+          return json({ items: page(1, 9).filter((i) => asked.includes(i.comment.id)), nextCursor: null });
+        const cursor = u.searchParams.get('cursor');
+        return cursor === 'p3'
+          ? json({ items: page(7, 9), nextCursor: null, total: 9 })
+          : cursor === 'p2'
+            ? json({ items: page(4, 6), nextCursor: 'p3', total: 9 })
+            : json({ items: page(1, 3), nextCursor: 'p2', total: 9 });
+      });
+    });
+
+    it('loads on until it reaches the item, and selects it', async () => {
+      await store.configure('all', {}, 'c9');
+      await vi.waitFor(() => expect(store.selectedId).toBe('c9'));
+      expect(ids()).toEqual(['c1', 'c2', 'c3', 'c4', 'c5', 'c6', 'c7', 'c8', 'c9']);
+    });
+
+    it('does not page through the whole list for an item that is not in it', async () => {
+      await store.configure('all', {}, 'c99');
+      await new Promise((r) => setTimeout(r, 20));
+      expect(store.selectedId).toBe('c1');
+      expect(ids()).toEqual(['c1', 'c2', 'c3']);
+    });
   });
 
   it('selectAllMatching loads the remaining pages, then selects everything the filter matches', async () => {
@@ -267,6 +345,119 @@ describe('InboxStore', () => {
     expect(store.pendingCount).toBe(1);
     expect(store.counts.inbox).toBe(5);
     expect(ids()).toEqual(['c1', 'c2', 'c3', 'c4']);
+  });
+
+  describe('rows changed elsewhere (another device, a sync, your own reply upstream)', () => {
+    // The server's answer for `ids=`: those that still belong in the inbox, c2 having been finished elsewhere.
+    const serve = (gone: string[], edited: Record<string, string> = {}) =>
+      fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+        if (url === '/api/triage' && init?.method === 'POST') return triageResponse();
+        if (!url.startsWith('/api/inbox')) return json({ error: 'nope', code: 'x' }, 404);
+        const asked = new URL(url, 'http://x').searchParams.getAll('ids');
+        const all = [1, 2, 3, 4].map((n) => item(n));
+        const rows = asked.length ? all.filter((i) => asked.includes(i.comment.id)) : all;
+        const left = rows
+          .filter((i) => !gone.includes(i.comment.id))
+          .map((i) =>
+            edited[i.comment.id] ? { ...i, comment: { ...i.comment, textPlain: edited[i.comment.id]! } } : i,
+          );
+        return json({ items: left, nextCursor: null, total: left.length });
+      });
+    const changed = (changedIds: string[]) =>
+      store.applyServerEvent({ type: 'inbox.changed', counts: counts(3, 1), addedIds: [], changedIds });
+    const inboxUrls = () => fetchMock.mock.calls.map((c) => c[0] as string).filter((u) => u.startsWith('/api/inbox'));
+
+    it('are updated or removed in place wherever the cursor is, and the cursor stays put', async () => {
+      serve(['c2'], { c4: 'edited' });
+      store.move(2); // c3
+      changed(['c2', 'c4', 'not-loaded']);
+      await vi.waitFor(() => expect(ids()).toEqual(['c1', 'c3', 'c4']));
+      expect(store.items[2]!.comment.textPlain).toBe('edited');
+      expect(store.selectedId).toBe('c3');
+      // Only the loaded rows that changed are asked about.
+      expect(inboxUrls().at(-1)).toMatch(/ids=c2&ids=c4$/);
+      expect(store.pendingCount).toBe(0);
+    });
+
+    it('when the row under the cursor is finished elsewhere, the cursor moves to the next row', async () => {
+      serve(['c3']);
+      store.move(2); // c3
+      changed(['c3']);
+      await vi.waitFor(() => expect(ids()).toEqual(['c1', 'c2', 'c4']));
+      expect(store.selectedId).toBe('c4');
+      expect(store.total).toBe(3);
+    });
+
+    it('leaves the row being replied to in place while the composer is open', async () => {
+      serve(['c3', 'c4']);
+      store.move(2); // c3
+      store.composing = true;
+      changed(['c3', 'c4']);
+      await vi.waitFor(() => expect(ids()).toEqual(['c1', 'c2', 'c3']));
+      expect(store.selectedId).toBe('c3');
+    });
+
+    it('does not touch a row whose own action is still in flight', async () => {
+      let release!: () => void;
+      triageResponse = () =>
+        new Promise((res) => {
+          release = () =>
+            res(new Response(JSON.stringify({ actionId: 7, changes: [], counts: counts(3, 1) }), { status: 200 }));
+        });
+      serve([]);
+      store.move(1); // c2
+      const p = store.triage('done');
+      changed(['c2', 'c3']);
+      await vi.waitFor(() => expect(inboxUrls().at(-1)).toMatch(/ids=c3$/));
+      expect(ids()).toEqual(['c1', 'c3', 'c4']);
+      release();
+      await p;
+    });
+
+    it('a late event racing an undo does not drop the row the undo brought back', async () => {
+      await store.triage('done', ['c2']);
+      const resp = (body: unknown) =>
+        new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      const gates: { undo?: () => void; patch?: () => void } = {};
+      fetchMock.mockImplementation((url: string) => {
+        if (/\/api\/triage\/\d+\/undo/.test(url))
+          return new Promise((r) => (gates.undo = () => r(resp({ actionId: 7, changes: [], counts: counts(4, 0) }))));
+        // Asked before the undo lands, the server still has c2 as done: not in the inbox.
+        if (url.includes('ids='))
+          return new Promise((r) => (gates.patch = () => r(resp({ items: [], nextCursor: null, total: 0 }))));
+        return json({ error: 'nope', code: 'x' }, 404);
+      });
+      const u = store.undo();
+      expect(ids()).toContain('c2');
+      changed(['c2']); // the triage's own event, arriving late
+      await vi.waitFor(() => expect(gates.undo && gates.patch).toBeTruthy());
+      gates.undo!();
+      expect(await u).toBe(true);
+      gates.patch!();
+      await new Promise((r) => setTimeout(r, 0));
+      expect(ids()).toContain('c2');
+    });
+  });
+
+  it('a refresh while an undo is on its way keeps the row the undo brought back', async () => {
+    await store.triage('done', ['c2']);
+    const gate: { open?: () => void } = {};
+    fetchMock.mockImplementation((url: string) => {
+      if (/\/api\/triage\/\d+\/undo/.test(url))
+        return new Promise((r) => {
+          gate.open = () =>
+            r(new Response(JSON.stringify({ actionId: 7, changes: [], counts: counts(4, 0) }), { status: 200 }));
+        });
+      // The server has not heard of the undo yet: c2 is still done.
+      if (url.startsWith('/api/inbox')) return json({ items: [1, 3, 4].map((n) => item(n)), nextCursor: null });
+      return json({ error: 'nope', code: 'x' }, 404);
+    });
+    const u = store.undo();
+    await store.refreshTop();
+    expect(ids()).toEqual(['c1', 'c2', 'c3', 'c4']);
+    await vi.waitFor(() => expect(gate.open).toBeDefined());
+    gate.open!();
+    expect(await u).toBe(true);
   });
 
   it('keeps every id once when a refreshed first page repeats one or overlaps the tail', async () => {

@@ -111,7 +111,11 @@ function stubRepo() {
     getVideoSyncRow: (id: string) => (id === 'vid' ? ({ id } as never) : null),
     setVideoTier: (id: string, t: unknown) => ({ id, tierOverride: t }),
     recomputeOwnership: vi.fn(),
-    listInbox: (q: { view: string }) => ({ items: [], nextCursor: null, total: q.view === 'inbox' ? 2 : 0 }),
+    listInbox: (q: { view: string; ids?: string[] }) => ({
+      items: [],
+      nextCursor: null,
+      total: q.ids ? q.ids.length * 100 + Number(q.ids.includes('a,b')) : q.view === 'inbox' ? 2 : 0,
+    }),
     getThread: (id: string) => (id === 't1' ? { threadId: 't1', comments: [...comments.values()] } : null),
     getComment: (id: string) => comments.get(id) ?? null,
     triage: (ids: string[], to: CommentState, reason?: DoneReason | null) => {
@@ -237,6 +241,11 @@ describe('read routes', () => {
     expect(badView.statusCode).toBe(400);
     expect(badView.json().code).toBe('bad_request');
     expect((await get('/api/inbox?limit=0')).statusCode).toBe(400);
+    // ids repeat (an id may hold a comma); one is still a list.
+    expect((await get('/api/inbox?ids=x')).json().total).toBe(100);
+    expect((await get('/api/inbox?ids=a%2Cb&ids=c')).json().total).toBe(201);
+    const many = Array.from({ length: 501 }, (_, i) => `ids=${i}`).join('&');
+    expect((await get(`/api/inbox?${many}`)).statusCode).toBe(400);
   });
   it('threads', async () => {
     expect((await get('/api/threads/t1')).json().threadId).toBe('t1');
@@ -348,13 +357,14 @@ describe('settings', () => {
     const res = await send('PUT', '/api/settings', { ownChannelIds: [OWN], theme: 'dark', apiKey: ' abc ' });
     expect(res.statusCode).toBe(200);
     expect(res.json().theme).toBe('dark');
-    expect(repo.recomputeOwnership).toHaveBeenCalledWith([OWN]);
+    // The repo's updateSettings recomputes ownership itself (own-channels.test.ts, real repo); the route must not repeat it.
+    expect(repo.recomputeOwnership).not.toHaveBeenCalled();
+    expect(repo.getSettings().ownChannelIds).toEqual([OWN]);
     expect(deps.onSettingsChanged).toHaveBeenCalled();
     expect(repo.getSettings().apiKey).toBe('abc');
     expect(events.map((e) => e.type)).toEqual(expect.arrayContaining(['settings.changed', 'inbox.changed']));
-    // unchanged own ids: no second recompute
     await send('PUT', '/api/settings', { ownChannelIds: [OWN] });
-    expect(repo.recomputeOwnership).toHaveBeenCalledTimes(1);
+    expect(repo.recomputeOwnership).not.toHaveBeenCalled();
     expect((await get('/api/settings')).json().ownChannelIds).toEqual([OWN]);
   });
   it('validates', async () => {

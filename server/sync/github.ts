@@ -14,6 +14,7 @@ export interface GithubPollerDeps {
   maxPages?: number;
   /** Per poll, how many "who commented last?" lookups to spend on Done items that gained comments. */
   maxCommenterLookups?: number;
+  log?: (msg: string, err?: unknown) => void;
 }
 
 /**
@@ -38,6 +39,13 @@ export function createGithubPoller(deps: GithubPollerDeps): GithubPoller & { tic
   const { repo, bus, client } = deps;
   let timer: ReturnType<typeof setInterval> | null = null;
   let chain: Promise<void> = Promise.resolve();
+  /**
+   * Feeds whose last poll stopped at the page cap, with the cursor it stopped at. Kept in memory only: after a restart
+   * one poll re-reads its overlap, and the next resumes exactly.
+   */
+  const resumeAt = new Map<number, string>();
+  const log =
+    deps.log ?? ((m: string, e?: unknown) => console.warn(`github: ${m}`, e instanceof Error ? e.message : (e ?? '')));
 
   const announceFeeds = () => bus.emit({ type: 'feeds.changed', feeds: repo.listFeeds(), mutes: repo.listMuteRules() });
 
@@ -59,8 +67,11 @@ export function createGithubPoller(deps: GithubPollerDeps): GithubPoller & { tic
       }
       const scope = feed.kind === 'repo' ? `repo:${feed.owner}` : `${ownerType}:${feed.owner}`;
 
+      // Resuming a window the last poll cut short starts exactly where it stopped: with the overlap, a burst of more
+      // items than the page cap inside 15 minutes would be read again from the same place on every poll.
+      const resuming = feed.cursor !== null && resumeAt.get(feed.id) === feed.cursor;
       const since = feed.cursor
-        ? new Date(Date.parse(feed.cursor) - OVERLAP_MS)
+        ? new Date(Date.parse(feed.cursor) - (resuming ? 0 : OVERLAP_MS))
         : new Date(feed.baselineAt ?? now.toISOString());
       // The first import of "everything" would otherwise drag in years of closed items.
       const openOnly = !feed.cursor && feed.importMode === 'all' ? ' is:open' : '';
@@ -94,19 +105,31 @@ export function createGithubPoller(deps: GithubPollerDeps): GithubPoller & { tic
         if (!m || u.sourceState !== 'open' || u.comments <= m.comments) continue;
         if (!(m.state === 'done' || m.state === 'replied' || m.state === 'resolved' || m.snoozedUntilActivity))
           continue;
+        // Past the cap, or when the lookup fails, the answer stays unknown (lastCommenterIsMe undefined): the upsert
+        // then keeps the old comment count so the next poll asks again, rather than guessing either way.
         if (lookups++ >= maxLookups) break;
-        const who = await client.latestCommenter(u.repo, u.number, u.comments, token).catch(() => null);
-        if (who) {
-          u.lastCommenterIsMe = mine.has(who.toLowerCase());
-          u.lastCommenter = who;
+        let who: string | null;
+        try {
+          who = await client.latestCommenter(u.repo, u.number, u.comments, token);
+        } catch {
+          continue;
         }
+        // No comment to be found (deleted since the count was taken): not mine, as before.
+        u.lastCommenterIsMe = who !== null && mine.has(who.toLowerCase());
+        if (who) u.lastCommenter = who;
       }
 
       const result = repo.upsertGithubItems(feed.id, ups);
+      // Truncated: continue from where the oldest-first results of the busiest kind ended (the other kind's items
+      // are simply read again, harmlessly). Otherwise we are caught up.
+      let cursor = truncated ? stoppedAt.reduce((m, t) => (t < m ? t : m)) : now.toISOString();
+      // Only the overlap was re-read before the page cap stopped it: never step back into it, or a burst inside those
+      // 15 minutes would be read from the same place again and again. Resume from the old cursor instead.
+      if (truncated && feed.cursor && cursor < feed.cursor) cursor = feed.cursor;
+      if (truncated) resumeAt.set(feed.id, cursor);
+      else resumeAt.delete(feed.id);
       repo.recordFeedPoll(feed.id, {
-        // Truncated: continue from where the oldest-first results of the busiest kind ended (the other kind's items
-        // are simply read again, harmlessly). Otherwise we are caught up.
-        cursor: truncated ? stoppedAt.reduce((m, t) => (t < m ? t : m)) : now.toISOString(),
+        cursor,
         ownerType,
         nextPollAt: truncated ? now.toISOString() : new Date(now.getTime() + intervalMs).toISOString(),
         errorCount: 0,
@@ -150,17 +173,32 @@ export function createGithubPoller(deps: GithubPollerDeps): GithubPoller & { tic
 
   const run = (only?: number): Promise<void> => {
     // One poll at a time: GitHub's secondary rate limits dislike parallel searches, and it keeps the cursor simple.
-    chain = chain.then(async () => {
-      const rows = only === undefined ? repo.enabledFeedRows() : [repo.getFeedRow(only)].filter((f) => f?.enabled);
-      for (const f of rows) if (f) await pollFeed(f);
-    });
+    // Each poll handles GitHub's own errors; anything else (the database, the event bus) is logged here and must not
+    // leave the chain rejected, or every later poll would return that rejection without polling.
+    chain = chain
+      .then(async () => {
+        const rows = only === undefined ? repo.enabledFeedRows() : [repo.getFeedRow(only)].filter((f) => f?.enabled);
+        for (const f of rows) {
+          if (!f) continue;
+          try {
+            await pollFeed(f);
+          } catch (e) {
+            log(`polling ${f.owner} failed`, e);
+          }
+        }
+      })
+      .catch((e) => log('poll failed', e));
     return chain;
   };
 
   async function tick(): Promise<void> {
-    const at = clock().toISOString();
-    const due = repo.enabledFeedRows().filter((f) => (f.nextPollAt ?? '') <= at && (f.backoffUntil ?? '') <= at);
-    await Promise.all(due.map((f) => run(f.id)));
+    try {
+      const at = clock().toISOString();
+      const due = repo.enabledFeedRows().filter((f) => (f.nextPollAt ?? '') <= at && (f.backoffUntil ?? '') <= at);
+      await Promise.all(due.map((f) => run(f.id)));
+    } catch (e) {
+      log('tick failed', e);
+    }
   }
 
   return {

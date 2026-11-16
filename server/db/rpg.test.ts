@@ -4,7 +4,17 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { RpgSheet } from '../../shared/types.js';
-import { levelForXp, titleFor, xpForLevel } from '../../shared/rpg.js';
+import {
+  ACHIEVEMENTS,
+  ACHIEVEMENT_STEPS,
+  RPG_SEEN_VERSION,
+  describeTier,
+  levelForXp,
+  roman,
+  tierKey,
+  titleFor,
+  xpForLevel,
+} from '../../shared/rpg.js';
 import { openDb, type Db } from './db.js';
 import { createRepo } from './repo.js';
 import {
@@ -108,15 +118,27 @@ const boss = (s: RpgSheet, id: string) => s.bosses.find((b) => b.id === id)!;
 const loot = (s: RpgSheet, id: string) => s.loot.find((l) => l.id === id)!;
 
 describe('levels and titles', () => {
-  it('follows 100 × (n − 1)² exactly at the thresholds', () => {
-    expect([1, 2, 5, 10, 20].map(xpForLevel)).toEqual([0, 100, 1600, 8100, 36100]);
+  it('follows 300 × (n − 1)^1.6, to the nearest 10, exactly at the thresholds', () => {
+    expect([1, 2, 3, 4, 5, 10, 15, 20, 30].map(xpForLevel)).toEqual([
+      0, 300, 910, 1740, 2760, 10090, 20460, 33350, 65610,
+    ]);
     expect(levelForXp(0)).toBe(1);
-    expect(levelForXp(99)).toBe(1);
-    expect(levelForXp(100)).toBe(2);
-    expect(levelForXp(1599)).toBe(4);
-    expect(levelForXp(1600)).toBe(5);
-    expect(levelForXp(36100)).toBe(20);
-    for (let l = 1; l < 60; l++) expect(levelForXp(xpForLevel(l))).toBe(l);
+    expect(levelForXp(299)).toBe(1);
+    expect(levelForXp(300)).toBe(2);
+    expect(levelForXp(10089)).toBe(9);
+    expect(levelForXp(10090)).toBe(10);
+    expect(levelForXp(33350)).toBe(20);
+    for (let l = 1; l < 120; l++) {
+      expect(levelForXp(xpForLevel(l))).toBe(l);
+      expect(levelForXp(xpForLevel(l + 1) - 1)).toBe(l);
+      expect(xpForLevel(l + 1)).toBeGreaterThan(xpForLevel(l));
+    }
+  });
+  it("puts the owner's first ten days (1,627 XP) at level 3, far from the end", () => {
+    expect(levelForXp(1627)).toBe(3);
+    // A steady few dozen XP a day: level 10 takes months, level 20 well over a year.
+    expect(xpForLevel(10) / 55).toBeGreaterThan(150);
+    expect(xpForLevel(20) / 55).toBeGreaterThan(540);
   });
   it('names levels, and past 20 starts a new age', () => {
     expect(titleFor(1)).toBe('Inbox Peasant');
@@ -131,7 +153,7 @@ describe('XP', () => {
   it('starts an empty database at level 1 with nothing earned', () => {
     const w = world();
     const s = w.sheet();
-    expect(s).toMatchObject({ xp: 0, level: 1, levelTitle: 'Inbox Peasant', levelXp: 0, nextLevelXp: 100 });
+    expect(s).toMatchObject({ xp: 0, level: 1, levelTitle: 'Inbox Peasant', levelXp: 0, nextLevelXp: 300 });
     expect(s.achievements.every((a) => !a.earned)).toBe(true);
     expect(s.bosses.every((b) => b.defeated === 0)).toBe(true);
     expect(s.today).toEqual({ cloak: false, lantern: false, hat: false, flame: false });
@@ -256,7 +278,7 @@ describe('XP', () => {
 
   it('levels up, and puts the wizard hat on for the day it happened only', () => {
     const w = world();
-    for (let i = 0; i < 13; i++) w.done(w.item(`i${i}`, { seenDay: 0 }), at(1, i / 10)); // 104 XP
+    for (let i = 0; i < 38; i++) w.done(w.item(`i${i}`, { seenDay: 0 }), at(1, i / 100)); // 304 XP
     expect(w.sheet(1)).toMatchObject({ level: 2, today: { hat: true } });
     expect(w.sheet(2).today.hat).toBe(false);
     expect(loot(w.sheet(2), 'hat').times).toBe(1);
@@ -416,10 +438,170 @@ describe('achievements', () => {
     // Days 5 and 6 are Saturday and Sunday 7-8 November: nothing happens then; day 7 has an action.
     w.done(w.item('mon', { seenDay: 0 }), at(7));
     const s = w.sheet(8);
-    expect(ach(s, 'rubber_duck').earned).toBe(true);
-    expect(ach(s, 'ctrl_z_adept').earned).toBe(true);
+    expect(ach(s, 'rubber_duck')).toMatchObject({ earned: true, tier: 2, progress: { n: 50, of: 200 } });
+    expect(ach(s, 'ctrl_z_adept')).toMatchObject({ earned: true, tier: 1 });
     expect(ach(s, 'rest')).toMatchObject({ earned: true, earnedOn: '2026-11-08', name: 'Rest Is a Skill' });
     expect(weekday(dayCounter('UTC').day(Date.parse(at(5))))).toBe(6);
+  });
+});
+
+describe('achievement ladders', () => {
+  it('offers about forty cards and well over a hundred tiers, each ladder strictly rising', () => {
+    expect(ACHIEVEMENTS.length).toBe(40);
+    expect(ACHIEVEMENT_STEPS).toBeGreaterThanOrEqual(100);
+    expect(new Set(ACHIEVEMENTS.map((a) => a.id)).size).toBe(ACHIEVEMENTS.length);
+    for (const a of ACHIEVEMENTS) {
+      expect(a.tiers.length, a.id).toBeGreaterThanOrEqual(1);
+      for (let i = 1; i < a.tiers.length; i++) expect(a.tiers[i]!, a.id).toBeGreaterThan(a.tiers[i - 1]!);
+      expect(describeTier(a, 1), a.id).not.toMatch(/\{n\}|\{s\}/);
+    }
+    // The doc's "never build" list stays unbuilt: no speed, no per-day counts, no snooze or dismissal counting, and
+    // the campfire ladder stops well short of a year-long streak.
+    const text = ACHIEVEMENTS.map((a) => `${a.name} ${a.description}`).join(' ');
+    expect(text).not.toMatch(/night owl|speed|per day|in a day|snoozed \{n\}|dismiss/i);
+    expect(Math.max(...ACHIEVEMENTS.find((a) => a.id === 'keeper')!.tiers)).toBeLessThan(365);
+  });
+
+  it('names and keys tiers', () => {
+    expect([1, 2, 3, 4, 5, 6, 9, 14, 40].map(roman)).toEqual(['I', 'II', 'III', 'IV', 'V', 'VI', 'IX', 'XIV', 'XL']);
+    expect(tierKey('rubber_duck', 1)).toBe('rubber_duck');
+    expect(tierKey('rubber_duck', 3)).toBe('rubber_duck:3');
+    const duck = ACHIEVEMENTS.find((a) => a.id === 'rubber_duck')!;
+    expect(describeTier(duck, 1)).toBe('Completed 10 todos.');
+    expect(describeTier(duck, 5)).toBe('Completed 1,000 todos.');
+    const arch = ACHIEVEMENTS.find((a) => a.id === 'archaeologist')!;
+    expect(describeTier(arch, 1)).toBe('Dealt with 1 thing over a year old.');
+  });
+
+  it('climbs Rubber Duck tier by tier, exactly at each boundary, dating each tier', () => {
+    const w = world();
+    const duckAt = (n: number) => {
+      for (let i = 0; i < n; i++) w.done(w.item(`t${n}-${i}`, { provider: 'todo', seenDay: 0 }), at(1, i / 1000));
+    };
+    duckAt(9);
+    expect(ach(w.sheet(3), 'rubber_duck')).toMatchObject({ tier: 0, earned: false, progress: { n: 9, of: 10 } });
+    w.done(w.item('ten', { provider: 'todo', seenDay: 0 }), at(2));
+    expect(ach(w.sheet(3), 'rubber_duck')).toMatchObject({
+      tier: 1,
+      tiers: 5,
+      earned: true,
+      earnedOn: '2026-11-04',
+      description: 'Completed 50 todos.',
+      progress: { n: 10, of: 50 },
+    });
+    duckAt(39);
+    expect(ach(w.sheet(3), 'rubber_duck')).toMatchObject({ tier: 1, progress: { n: 49, of: 50 } });
+    w.done(w.item('fifty', { provider: 'todo', seenDay: 0 }), at(2, 1));
+    expect(ach(w.sheet(3), 'rubber_duck')).toMatchObject({ tier: 2, progress: { n: 50, of: 200 } });
+  });
+
+  it('shows a finished ladder with its top description and no progress', () => {
+    const w = world();
+    for (let i = 0; i < 7; i++) w.done(w.item(`y${i}`, { seenDay: 0, ageDays: 400 }), at(1, i / 10));
+    const s = w.sheet(3);
+    expect(ach(s, 'archaeologist')).toMatchObject({ tier: 1, progress: { n: 7, of: 10 } });
+    expect(ach(s, 'first_blood')).toMatchObject({ tier: 1, tiers: 1, progress: null });
+  });
+
+  it('counts resolutions, replies, PRs and issues, but never dismissals or bulk actions', () => {
+    const w = world();
+    for (let i = 0; i < 100; i++)
+      w.done(w.item(`d${i}`, { seenDay: 0, kind: i < 10 ? 'issue' : 'pr' }), at(1, i / 200));
+    for (let i = 0; i < 30; i++) w.done(w.item(`x${i}`, { seenDay: 0 }), at(2, i / 200), 'no_action');
+    const bulk = w.action();
+    for (let i = 0; i < 30; i++) {
+      w.item(`b${i}`, { seenDay: 0 });
+      w.ev(`b${i}`, at(3), 'state', 'inbox', 'done', 'user', { actionId: bulk, reason: 'done' });
+    }
+    for (let i = 0; i < 25; i++) w.replied(w.item(`r${i}`, { provider: 'youtube', seenDay: 0 }), at(4, i / 100));
+    const s = w.sheet(5);
+    expect(ach(s, 'veteran')).toMatchObject({ tier: 1, progress: { n: 125, of: 500 } });
+    expect(ach(s, 'reviewer')).toMatchObject({ tier: 2, progress: { n: 90, of: 200 } });
+    expect(ach(s, 'bug_wrangler')).toMatchObject({ tier: 1, progress: { n: 10, of: 50 } });
+    expect(ach(s, 'town_crier')).toMatchObject({ tier: 1, progress: { n: 25, of: 100 } });
+    expect(ach(s, 'fan_mail')).toMatchObject({ tier: 1, progress: { n: 25, of: 50 } });
+  });
+
+  it('runs a ladder per boss from the times it fell', () => {
+    const w = world();
+    for (let i = 0; i < 5; i++) w.replied(w.item(`h${i}`, { seenDay: 0, data: { comments: 30 } }), at(1, i / 10));
+    const s = w.sheet(3);
+    expect(boss(s, 'hydra').defeated).toBe(5);
+    expect(ach(s, 'hydra_hunter')).toMatchObject({ tier: 2, progress: { n: 5, of: 20 } });
+    expect(ach(s, 'lich_bane')).toMatchObject({ tier: 0, progress: { n: 0, of: 1 } });
+  });
+
+  it('reaches Ascendant by level and Trophy Case from every other tier', () => {
+    const w = world();
+    // 400 todos = 2,000 XP (level 4), and 400 todos is Rubber Duck III.
+    for (let i = 0; i < 400; i++) w.done(w.item(`t${i}`, { provider: 'todo', seenDay: 0 }), at(1, i / 1000));
+    const s = w.sheet(3);
+    expect(s.level).toBe(4);
+    expect(ach(s, 'ascendant')).toMatchObject({ tier: 0, progress: { n: 4, of: 5 } });
+    const others = s.achievements.filter((a) => a.id !== 'trophy_case').reduce((n, a) => n + a.tier, 0);
+    expect(others).toBeGreaterThanOrEqual(10);
+    expect(others).toBeLessThan(25);
+    expect(ach(s, 'trophy_case')).toMatchObject({ tier: 1, progress: { n: others, of: 25 } });
+  });
+
+  it('counts campfire runs and good days for Keeper of the Flame and Steady Hand', () => {
+    const w = world();
+    w.item('waiting', { seenDay: -1 });
+    for (let d = 0; d < 12; d++) w.done(w.item(`g${d}`, { seenDay: -1 }), at(d));
+    const s = w.sheet(12);
+    expect(ach(s, 'keeper')).toMatchObject({ tier: 1, earnedOn: '2026-11-08', progress: { n: 12, of: 30 } });
+    expect(ach(s, 'steady_hand')).toMatchObject({ tier: 1, earnedOn: '2026-11-11', progress: { n: 12, of: 50 } });
+  });
+
+  it('counts whole weekends off for Rest Is a Skill', () => {
+    const w = world();
+    w.done(w.item('a', { seenDay: -1 }), at(0)); // Monday 2 Nov; then nothing for two weekends
+    w.done(w.item('b', { seenDay: -1 }), at(16)); // Wednesday 18 Nov
+    expect(ach(w.sheet(17), 'rest')).toMatchObject({ tier: 1, progress: { n: 2, of: 5 }, name: 'Rest Is a Skill' });
+  });
+});
+
+describe('the silly hidden ones', () => {
+  it('earns The Answer on the 42nd reply and L33t at 1,337 XP', () => {
+    const w = world();
+    for (let i = 0; i < 41; i++) w.replied(w.item(`r${i}`, { provider: 'youtube', seenDay: 0 }), at(1, i / 100));
+    expect(ach(w.sheet(3), 'the_answer')).toMatchObject({ earned: false, name: null });
+    w.replied(w.item('r41', { provider: 'youtube', seenDay: 0 }), at(2));
+    expect(ach(w.sheet(3), 'the_answer')).toMatchObject({ earned: true, name: 'The Answer' });
+    expect(w.sheet(3).xp).toBe(420);
+    expect(ach(w.sheet(3), 'leet').earned).toBe(false);
+    for (let i = 0; i < 92; i++) w.replied(w.item(`s${i}`, { provider: 'youtube', seenDay: 0 }), at(2, 1 + i / 100));
+    expect(w.sheet(3).xp).toBe(1340);
+    expect(ach(w.sheet(3), 'leet')).toMatchObject({ earned: true, earnedOn: '2026-11-04' });
+  });
+
+  it('earns Off-by-One for redoing an undone thing, and Groundhog Day for a third done', () => {
+    const w = world();
+    const a = w.done(w.item('a', { seenDay: 0 }), at(1));
+    w.undo('a', at(1, 1), a);
+    expect(ach(w.sheet(3), 'off_by_one').earned).toBe(false);
+    w.done('a', at(1, 2));
+    expect(ach(w.sheet(3), 'off_by_one').earned).toBe(true);
+    const g = w.item('g', { seenDay: 0 });
+    for (const d of [1, 2]) {
+      w.done(g, at(d));
+      w.ev(g, at(d, 1), 'state', 'done', 'inbox', 'sync', { reason: 'reopened' });
+    }
+    expect(ach(w.sheet(3), 'groundhog').earned).toBe(false);
+    w.done(g, at(3));
+    expect(ach(w.sheet(4), 'groundhog').earned).toBe(true);
+  });
+
+  it('earns Necromancy, Spooky Season, Leap of Faith and Quack', () => {
+    const w = world();
+    w.done(w.item('ancient', { seenDay: 0, ageDays: 1200 }), at(1));
+    w.done(w.item('pumpkin', { seenDay: -10 }), '2026-10-31T15:00:00.000Z');
+    w.done(w.item('leap', { seenDay: -1000 }), '2028-02-29T15:00:00.000Z');
+    const duck = w.item('duck', { provider: 'todo', seenDay: 0 });
+    w.db.prepare("UPDATE items SET title = 'Buy a rubber DUCK' WHERE id = ?").run(duck);
+    w.done(duck, at(1));
+    const s = w.sheet(0, 'UTC', { now: '2028-03-01T12:00:00.000Z' });
+    for (const id of ['necromancy', 'spooky', 'leap_day', 'quack']) expect(ach(s, id).earned, id).toBe(true);
   });
 });
 
@@ -559,7 +741,7 @@ describe('campfire rules', () => {
 describe('claims (what to announce)', () => {
   const base = () => {
     const w = world();
-    for (let i = 0; i < 12; i++) w.done(w.item(`i${i}`, { seenDay: 0 }), at(1, i / 10)); // 96 XP
+    for (let i = 0; i < 37; i++) w.done(w.item(`i${i}`, { seenDay: 0 }), at(1, i / 100)); // 296 XP
     return w;
   };
 
@@ -577,7 +759,7 @@ describe('claims (what to announce)', () => {
   it('is silent when an undo takes a level away, and does not announce it again when it comes back', () => {
     const w = base();
     const a = w.done(w.item('x', { seenDay: 0 }), at(1, 2));
-    const s1 = planClaim(w.sheet(1), { level: 2, achievements: [], bosses: [], loot: [] }).seen;
+    const s1 = planClaim(w.sheet(1), { v: RPG_SEEN_VERSION, level: 2, achievements: [], bosses: [], loot: [] }).seen;
     w.undo('x', at(1, 3), a);
     expect(w.sheet(1).level).toBe(1);
     const s2 = planClaim(w.sheet(1), s1);
@@ -597,6 +779,81 @@ describe('claims (what to announce)', () => {
     expect(planClaim(w.sheet(1), c1.seen).news).toMatchObject({ achievements: [], bosses: [], loot: [] });
     w.done(w.item('old2', { seenDay: 0, ageDays: 100 }), at(2));
     expect(planClaim(w.sheet(2), c1.seen).news.loot.map((l) => l.id)).toEqual(['lantern']);
+  });
+
+  it('announces only the highest new tier of a ladder, then each later tier once', () => {
+    const w = world();
+    const s0 = planClaim(w.sheet(1), null).seen;
+    for (let i = 0; i < 50; i++) w.done(w.item(`t${i}`, { provider: 'todo', seenDay: 0 }), at(1, i / 100));
+    const c1 = planClaim(w.sheet(1), s0);
+    expect(c1.news.achievements.filter((a) => a.id === 'rubber_duck')).toEqual([
+      { id: 'rubber_duck', name: 'Rubber Duck II', tier: 2 },
+    ]);
+    expect(c1.seen.achievements).toEqual(expect.arrayContaining(['rubber_duck', 'rubber_duck:2']));
+    expect(planClaim(w.sheet(1), c1.seen).news.achievements).toEqual([]);
+  });
+
+  describe('after the rebalance (a seen row from the old rules)', () => {
+    // As the owner's row was stored before ladders: no version, level 5 (old curve), seven one-off achievements.
+    const oldSeen = () => ({
+      level: 5,
+      achievements: ['first_blood', 'hello_world', 'inbox_zero', 'archaeologist', 'rubber_duck', 'polyglot', 'monk'],
+      bosses: ['elder_wyrm'],
+      loot: ['ring', 'camp:forgiven:2026-11-03'],
+    });
+    const played = () => {
+      const w = world();
+      for (let i = 0; i < 60; i++) w.done(w.item(`t${i}`, { provider: 'todo', seenDay: 0 }), at(1, i / 100));
+      w.done(w.item('old', { seenDay: 0, ageDays: 400 }), at(1, 1));
+      const a = w.done(w.item('u', { seenDay: 0 }), at(1, 2));
+      w.undo('u', at(1, 3), a);
+      return w;
+    };
+
+    it('says so once, quietly, with no level toast for the lower level and nothing replayed', () => {
+      const w = played();
+      const sheet = w.sheet(2);
+      expect(sheet.level).toBeLessThan(5);
+      const c = planClaim(sheet, oldSeen());
+      expect(c.news).toEqual({
+        arrive: null,
+        rebalanced: { level: sheet.level, title: sheet.levelTitle },
+        levelUp: null,
+        achievements: [],
+        bosses: [],
+        loot: [],
+        campfire: null,
+      });
+      expect(c.seen.v).toBe(RPG_SEEN_VERSION);
+      expect(c.seen.level).toBe(sheet.level);
+      // Rubber Duck at 50 is tier II now: both tiers are marked seen, as are the new ladders already earned.
+      expect(c.seen.achievements).toEqual(expect.arrayContaining(['rubber_duck', 'rubber_duck:2', 'first_blood']));
+      expect(c.seen.loot).toEqual(expect.arrayContaining(['ring', 'camp:forgiven:2026-11-03']));
+      // Never again.
+      const again = planClaim(sheet, c.seen);
+      expect(again.news).toMatchObject({ rebalanced: null, levelUp: null, achievements: [], bosses: [], loot: [] });
+    });
+
+    it('keeps what was earned where the rule still holds, and announces the next real level and tier', () => {
+      const w = played();
+      const c = planClaim(w.sheet(2), oldSeen());
+      for (const id of ['first_blood', 'archaeologist', 'rubber_duck'])
+        expect(ach(w.sheet(2), id).earned, id).toBe(true);
+      const from = w.sheet(2).level;
+      // Enough more todos for the next level and Rubber Duck III (200).
+      for (let i = 60; i < 260; i++) w.done(w.item(`t${i}`, { provider: 'todo', seenDay: 0 }), at(2, i / 1000));
+      const next = planClaim(w.sheet(3), c.seen);
+      expect(next.news.rebalanced).toBeNull();
+      expect(next.news.levelUp).toMatchObject({ from, to: w.sheet(3).level });
+      expect(next.news.achievements).toContainEqual({ id: 'rubber_duck', name: 'Rubber Duck III', tier: 3 });
+    });
+
+    it('is not triggered by a fresh arrival, which is already on the new rules', () => {
+      const w = played();
+      const first = planClaim(w.sheet(2), null);
+      expect(first.seen.v).toBe(RPG_SEEN_VERSION);
+      expect(planClaim(w.sheet(2), first.seen).news.rebalanced).toBeNull();
+    });
   });
 
   it('mentions a missed campfire day once', () => {

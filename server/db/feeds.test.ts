@@ -123,7 +123,7 @@ describe('closing, reopening and activity', () => {
     const u = fresh(1);
     repo.upsertGithubItems(feedId, [u]);
     repo.triage([u.id], 'done');
-    const r = repo.upsertGithubItems(feedId, [{ ...u, comments: 1 }]);
+    const r = repo.upsertGithubItems(feedId, [{ ...u, comments: 1, lastCommenter: 'carol', lastCommenterIsMe: false }]);
     expect(r.reopened).toEqual([u.id]);
     const row = repo.listInbox({ view: 'inbox' }).items[0]!;
     expect(row.item.reason).toBe('new_activity');
@@ -134,7 +134,7 @@ describe('closing, reopening and activity', () => {
     const u = fresh(1);
     repo.upsertGithubItems(feedId, [u]);
     repo.triage([u.id], 'done');
-    repo.upsertGithubItems(feedId, [{ ...u, comments: 2, lastCommenter: 'dave' }]);
+    repo.upsertGithubItems(feedId, [{ ...u, comments: 2, lastCommenter: 'dave', lastCommenterIsMe: false }]);
     const g = repo.listInbox({ view: 'inbox' }).items[0]!.item.github!;
     expect(g.lastCommenter).toBe('dave');
     expect(g.activitySince).toEqual(expect.any(String));
@@ -144,6 +144,27 @@ describe('closing, reopening and activity', () => {
       lastCommenter: 'dave',
       activitySince: g.activitySince,
     });
+  });
+
+  it('leaves a Done item alone while who commented is unknown, and keeps the old count so the growth is seen again', () => {
+    const u = fresh(1);
+    repo.upsertGithubItems(feedId, [u]);
+    repo.triage([u.id], 'done');
+    // The poller could not look it up (failed, or past its cap): neither "mine" nor "theirs".
+    expect(repo.upsertGithubItems(feedId, [{ ...u, comments: 2 }]).reopened).toEqual([]);
+    expect(state(u.id)).toBe('done');
+    expect(repo.githubItemMeta([u.id]).get(u.id)?.comments).toBe(0);
+    // Next poll it is known.
+    const r = repo.upsertGithubItems(feedId, [{ ...u, comments: 2, lastCommenter: 'dave', lastCommenterIsMe: false }]);
+    expect(r.reopened).toEqual([u.id]);
+    expect(repo.listInbox({ view: 'inbox' }).items[0]!.item.github?.lastCommenter).toBe('dave');
+  });
+
+  it('takes in new comments on an inbox item without asking who wrote them', () => {
+    const u = fresh(1);
+    repo.upsertGithubItems(feedId, [u]);
+    repo.upsertGithubItems(feedId, [{ ...u, comments: 3 }]);
+    expect(repo.githubItemMeta([u.id]).get(u.id)?.comments).toBe(3);
   });
 
   it('exposes no commenter for an item that is merely new', () => {

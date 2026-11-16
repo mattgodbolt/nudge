@@ -49,6 +49,37 @@ test('coming back to a tab that was away resyncs it, but a quick glance does not
   await boot;
 });
 
+test('a resync after a deploy never reloads the page by itself: half-typed text would be lost', async ({ page }) => {
+  // The server now serves a newer build than this page loaded.
+  await page.route(
+    (url) => url.pathname === '/',
+    async (route) => {
+      const res = await route.fetch();
+      const html = (await res.text()).replace(/\/assets\/index-[\w-]+\.js/, '/assets/index-e2e-newer.js');
+      await route.fulfill({ response: res, body: html });
+    },
+  );
+  await page.evaluate(() => ((window as unknown as { __nudgeLoad?: number }).__nudgeLoad = 1));
+  const boot = page.waitForResponse(isBootstrap);
+  await page.getByTestId('refresh').click();
+  await boot;
+  await expect(page.getByTestId('refresh')).toBeEnabled();
+  // A reload would have wiped the mark (and anything typed); the "New version available" prompt is the way to it.
+  expect(await page.evaluate(() => (window as unknown as { __nudgeLoad?: number }).__nudgeLoad)).toBe(1);
+});
+
+test('a broken event stream shows in the sync indicator until it reconnects', async ({ page }) => {
+  // Live updates are what keep the list honest; losing them silently meant the first sign was a failed action.
+  const events = (url: URL) => url.pathname === '/api/events';
+  await page.route(events, (route) => route.abort());
+  await page.goto('/inbox');
+  const indicator = page.getByTestId('sync-indicator');
+  await expect(indicator).toContainText('Reconnecting');
+  await page.unroute(events);
+  // The browser retries the stream on its own every few seconds.
+  await expect(indicator).not.toContainText('Reconnecting', { timeout: 15_000 });
+});
+
 test.describe('on a touch phone', () => {
   test.use({ viewport: { width: 412, height: 800 }, hasTouch: true, isMobile: true });
 

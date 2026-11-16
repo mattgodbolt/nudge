@@ -24,7 +24,6 @@
     tile = false,
     short,
     suggested = false,
-    pressed,
     compact = false,
   }: {
     id: string;
@@ -42,8 +41,6 @@
     short?: string;
     /** The current suggestion points here: a quiet ring, never an action of its own. */
     suggested?: boolean;
-    /** Set for a button that opens a menu: reflected as aria-haspopup / aria-expanded. */
-    pressed?: boolean;
     /** Show `short` instead of the full label on a (non-tile) button, when the toolbar is middling wide. */
     compact?: boolean;
   } = $props();
@@ -68,8 +65,6 @@
   class:tile
   class:suggested
   data-suggested={suggested ? 'true' : undefined}
-  aria-haspopup={pressed === undefined ? undefined : 'dialog'}
-  aria-expanded={pressed}
   {disabled}
   {tabindex}
   onclick={click}

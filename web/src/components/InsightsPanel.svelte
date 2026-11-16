@@ -126,6 +126,12 @@
     </div>
   </header>
 
+  {#if failed && ins}
+    <!-- The new range is highlighted, but these numbers are still the old one's: say so. -->
+    <p class="meta failed" role="alert" data-testid="insights-failed">
+      Could not load that range; still showing {rangeText.charAt(0).toLowerCase() + rangeText.slice(1)}.
+    </p>
+  {/if}
   {#if failed && !ins}
     <p class="meta muted">Insights could not be loaded.</p>
   {:else if !ins}
@@ -975,5 +981,9 @@
   }
   :global(:root[data-theme='dark']) .confusion .ink {
     color: #0b0b0b;
+  }
+  .failed {
+    color: var(--danger);
+    margin: 0 0 8px;
   }
 </style>

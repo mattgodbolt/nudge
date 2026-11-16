@@ -20,6 +20,11 @@ export interface EngineDeps {
   quota: QuotaTracker;
   bus: EventBus;
   clock?: () => Date;
+  /**
+   * The YouTube key in use, wherever it came from (environment, Settings or key file). A rejected key stops background
+   * polls until this changes. Default: the key in Settings.
+   */
+  currentKey?: () => string | null;
 }
 
 export const POLL_BATCH = 25;
@@ -73,6 +78,7 @@ export function createSyncEngine(deps: EngineDeps): SyncEngine {
   const failures = new Map<string, { n: number; until: number }>();
   /** Set when YouTube rejected the key; background polling resumes once the stored key changes or a manual sync runs. */
   let keyBlock: { apiKey: string | null } | null = null;
+  const currentKey = deps.currentKey ?? (() => repo.getSettings().apiKey);
   /** Installed per run: false once the quota says stop. Checked between pages so one video can't blow the budget. */
   let shouldContinue: () => boolean = () => true;
   const checkpoint = (): void => {
@@ -347,7 +353,7 @@ export function createSyncEngine(deps: EngineDeps): SyncEngine {
     const manual = req.trigger !== 'poll';
     if (manual) {
       keyBlock = null;
-    } else if (keyBlock && repo.getSettings().apiKey === keyBlock.apiKey) {
+    } else if (keyBlock && currentKey() === keyBlock.apiKey) {
       return idleSummary(req); // the key was rejected: don't spend units until it changes or the user syncs manually
     }
     const allSources = repo.enabledSourceRows();
@@ -421,7 +427,7 @@ export function createSyncEngine(deps: EngineDeps): SyncEngine {
           return false;
         }
         if (e.reason === 'keyInvalid') {
-          keyBlock = { apiKey: repo.getSettings().apiKey };
+          keyBlock = { apiKey: currentKey() };
           error = e.message;
           return false;
         }

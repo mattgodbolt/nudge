@@ -82,8 +82,6 @@ export interface SuggestionStore {
    * narrows it to those items. At most `scan` items are looked at.
    */
   candidates(opts: { ids?: string[]; scan: number; myLogins: Set<string> }): SuggestionCandidate[];
-  /** Estimated dollars spent on suggestions created at or after `sinceIso`. */
-  spentSince(sinceIso: string): number;
   /**
    * How many inbox items can have a suggestion (the same set `candidates` draws from) and how many of them have a
    * current one: made by a rule, or by the given prompt version.
@@ -267,15 +265,6 @@ export function createSuggestions(db: Db, clock: () => Date = () => new Date()):
     });
   }
 
-  function spentSince(sinceIso: string): number {
-    const r = db
-      .prepare('SELECT COALESCE(SUM(cost_usd), 0) AS s FROM suggestions WHERE created_at >= ?')
-      .get(sinceIso) as {
-      s: number;
-    };
-    return r.s;
-  }
-
   function progress(promptVersion: string): { total: number; done: number } {
     const r = db
       .prepare(
@@ -289,5 +278,5 @@ export function createSuggestions(db: Db, clock: () => Date = () => new Date()):
     return r;
   }
 
-  return { save, get, candidates, spentSince, progress };
+  return { save, get, candidates, progress };
 }

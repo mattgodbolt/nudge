@@ -31,7 +31,7 @@ let nudgeAnswer: () => Promise<{
 let recent: GithubClient['recentComments'];
 
 const id = (n: number) => githubItemId('org', 'app', n);
-const send = (method: 'POST' | 'PUT', url: string, payload?: unknown) =>
+const send = (method: 'POST' | 'PUT' | 'DELETE', url: string, payload?: unknown) =>
   app.inject({ method, url, headers: H, payload: payload as never });
 const snooze = (payload: Record<string, unknown>) => send('POST', '/api/snooze', payload);
 const settle = () => new Promise((r) => setTimeout(r, 20));
@@ -220,6 +220,8 @@ describe('bucketing a free-text why', () => {
     expect(events.at(-1)).toMatchObject({ type: 'inbox.changed', changedIds: [id(1)] });
     expect(env.repo.usage.today('snooze_ai.call')).toBe(1);
     expect(env.repo.usage.today('snooze_ai.cost_micros')).toBeGreaterThan(0);
+    // The cap's own ledger has it too, in the same micro-dollars the usage page shows.
+    expect(env.repo.spend.todayUsd() * 1e6).toBeCloseTo(env.repo.usage.today('snooze_ai.cost_micros'));
   });
 
   it('does nothing when a bucket was chosen, when there is no why, or when the model is unsure', async () => {
@@ -246,10 +248,17 @@ describe('bucketing a free-text why', () => {
     bucketAnswer = async () => {
       throw new LlmError('Anthropic said 500');
     };
-    const res = await snooze({ commentIds: [id(2)], until, why: 'wait for them' });
-    expect(res.statusCode).toBe(200);
-    await vi.waitFor(() => expect(env.repo.usage.today('snooze_ai.fail')).toBe(1));
-    expect(item(2)).toMatchObject({ snoozedUntil: until, snoozeBucket: null });
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    try {
+      const res = await snooze({ commentIds: [id(2)], until, why: 'wait for them' });
+      expect(res.statusCode).toBe(200);
+      await vi.waitFor(() => expect(env.repo.usage.today('snooze_ai.fail')).toBe(1));
+      expect(item(2)).toMatchObject({ snoozedUntil: until, snoozeBucket: null });
+      // Said somewhere the owner can see it in the server log (the request logger is switched off).
+      expect(warn.mock.calls.map((c) => String(c[0]))).toContain('snooze bucketing failed');
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   it('drops the bucket if the snooze was undone or replaced while the model was thinking', async () => {
@@ -278,7 +287,15 @@ describe('bucketing a free-text why', () => {
     expect(bucketCalls).toHaveLength(MAX_BUCKET_CALLS);
 
     bucketCalls.length = 0;
-    env.repo.usage.add({ 'snooze_ai.cost_micros': 3_000_000 }); // $3 today, over the $2 cap
+    env.repo.spend.add('snooze_ai', 3_000_000); // $3 today, over the $2 cap
+    await snooze({ commentIds: [id(1)], until: new Date(Date.now() + 2 * DAY).toISOString(), why: 'wait' });
+    await settle();
+    expect(bucketCalls).toEqual([]);
+  });
+
+  it('stays capped after "Reset usage data", which must not erase what was spent', async () => {
+    env.repo.spend.add('snooze_ai', 3_000_000);
+    expect((await send('DELETE', '/api/usage')).statusCode).toBe(204);
     await snooze({ commentIds: [id(1)], until: new Date(Date.now() + 2 * DAY).toISOString(), why: 'wait' });
     await settle();
     expect(bucketCalls).toEqual([]);
@@ -321,8 +338,14 @@ describe('POST /api/items/:id/nudge-draft', () => {
     recent = async () => {
       throw new Error('rate limited');
     };
-    expect((await send('POST', `/api/items/${encodeURIComponent(id(1))}/nudge-draft`)).statusCode).toBe(200);
-    expect(nudgeCalls[0]!.comments).toEqual([]);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    try {
+      expect((await send('POST', `/api/items/${encodeURIComponent(id(1))}/nudge-draft`)).statusCode).toBe(200);
+      expect(nudgeCalls[0]!.comments).toEqual([]);
+      expect(warn.mock.calls.map((c) => String(c[0]))).toContain('nudge: could not fetch comments');
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   it('only applies to a GitHub item that came back from a waiting_on_* snooze with no activity', async () => {
@@ -341,7 +364,7 @@ describe('POST /api/items/:id/nudge-draft', () => {
     let res = await send('POST', `/api/items/${encodeURIComponent(id(1))}/nudge-draft`);
     expect([res.statusCode, res.json().code]).toEqual([424, 'no_key']);
     env.repo.updateSettings({ llm: { apiKey: 'sk', model: 'claude-haiku-5-5' } });
-    env.repo.usage.add({ 'snooze_ai.cost_micros': 3_000_000 });
+    env.repo.spend.add('assistant', 3_000_000);
     res = await send('POST', `/api/items/${encodeURIComponent(id(1))}/nudge-draft`);
     expect([res.statusCode, res.json().code]).toEqual([429, 'cap']);
     expect(nudgeCalls).toEqual([]);
