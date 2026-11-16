@@ -103,6 +103,7 @@ describe('settings', () => {
       snoozeDays: { waiting_on_them: 7, waiting_on_merge: 3, in_flight: 7, lower_priority: 30 },
       github: { token: null, myAccounts: [] },
       llm: { apiKey: null, model: 'claude-haiku-5-5' },
+      rpg: { enabled: true, sound: true, title: null, seen: null, tz: null, prevTz: null },
     });
     const s = repo.updateSettings({ apiKey: 'k', theme: 'dark', pollEnabled: false });
     expect(s).toMatchObject({ apiKey: 'k', theme: 'dark', pollEnabled: false, dailyQuotaBudget: 9000 });

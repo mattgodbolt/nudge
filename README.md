@@ -23,6 +23,9 @@ All screenshots in this README are the built-in demo mode: fake data, nothing re
   palette, and a quota meter for the YouTube API.
 - **Phone and notifications:** an installable PWA with Web Push. See [Install on your phone](#install-on-your-phone-and-get-notifications).
 - **Stats and usage:** per-source video and comment totals, plus private counters of which features you use.
+- **Adventure mode:** a purely cosmetic level, silly title, trophies and a campfire, earned from the triage you have
+  already done, in the sidebar and in the Hall of Heroes under Stats. It never changes how anything works, and one
+  switch in Settings turns it off. See [docs/RPG.md](docs/RPG.md).
 - **Demo mode:** a complete fake world, with no API keys or network, for trying it out.
 
 |                                                                                    |                                                                      |

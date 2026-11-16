@@ -84,5 +84,6 @@ export function buildSettingsDto(deps: AppDeps): SettingsDTO {
     },
     // Status only: account titles and flags. Tokens and the client secret never leave the server.
     google: deps.auth.status(),
+    rpg: { enabled: s.rpg.enabled, sound: s.rpg.sound, title: s.rpg.title },
   };
 }

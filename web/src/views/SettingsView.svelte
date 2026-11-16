@@ -722,6 +722,29 @@
         suggests; nothing is ever done for you.
       </p>
       <SuggestProgress />
+      <label class="field"
+        ><span>Adventure mode (levels, titles, silly loot)</span>
+        <input
+          type="checkbox"
+          checked={s.rpg.enabled}
+          data-testid="rpg-enabled"
+          onchange={(e) => void settings.save({ rpg: { enabled: e.currentTarget.checked } })}
+        />
+      </label>
+      <label class="field"
+        ><span>Level-up sound</span>
+        <input
+          type="checkbox"
+          checked={s.rpg.sound}
+          disabled={!s.rpg.enabled}
+          data-testid="rpg-sound"
+          onchange={(e) => void settings.save({ rpg: { sound: e.currentTarget.checked } })}
+        />
+      </label>
+      <p class="faint meta">
+        A level and a silly title earned from the triage you have already done, shown in the sidebar and in the Hall of
+        Heroes under Stats, with a short chime on a level-up. Decoration only: it never changes how anything works.
+      </p>
     </section>
 
     <section class="panel sec" data-testid="settings-usage">

@@ -64,6 +64,18 @@ function parseSnoozeDays(v: unknown): NonNullable<SettingsUpdate['snoozeDays']> 
   return out;
 }
 
+/** Adventure mode's switches. The title is a level number (the picker only offers earned ones) or null. */
+function parseRpgUpdate(v: unknown): NonNullable<SettingsUpdate['rpg']> {
+  const r = asObject(v);
+  const out: NonNullable<SettingsUpdate['rpg']> = {};
+  const enabled = bool(r, 'enabled');
+  if (enabled !== undefined) out.enabled = enabled;
+  const sound = bool(r, 'sound');
+  if (sound !== undefined) out.sound = sound;
+  if (r.title !== undefined) out.title = r.title === null ? null : int(r.title, 'rpg.title', { min: 1, max: 10_000 });
+  return out;
+}
+
 /** The assistant's settings: an opaque key (null removes it) and a model id. */
 function parseLlmUpdate(v: unknown): NonNullable<SettingsUpdate['llm']> {
   const g = asObject(v);
@@ -423,12 +435,19 @@ export function registerApiRoutes(app: FastifyInstance, deps: AppDeps): void {
     if (b.theme !== undefined) u.theme = oneOf(b.theme, 'theme', THEMES);
     if (b.snoozeDays !== undefined) u.snoozeDays = parseSnoozeDays(b.snoozeDays);
     if (b.github !== undefined) u.github = parseGithubUpdate(b.github);
+    if (b.rpg !== undefined) u.rpg = parseRpgUpdate(b.rpg);
     const llm = b.llm === undefined ? undefined : parseLlmUpdate(b.llm);
     const googleClient = b.googleClient === undefined ? undefined : parseGoogleClientUpdate(b.googleClient);
 
     const before = repo.getSettings();
-    const { apiKey, googleClient: _ignored, github, llm: _llmIgnored, snoozeDays, ...rest } = u;
+    const { apiKey, googleClient: _ignored, github, llm: _llmIgnored, snoozeDays, rpg, ...rest } = u;
     const patch: Parameters<typeof repo.updateSettings>[0] = { ...rest };
+    if (rpg) {
+      const next = { ...before.rpg, ...rpg };
+      // Switching it back on is a fresh arrival: one "You arrive as..." toast, and nothing earned meanwhile replayed.
+      if (rpg.enabled === true && !before.rpg.enabled) next.seen = null;
+      patch.rpg = next;
+    }
     if (snoozeDays) patch.snoozeDays = { ...before.snoozeDays, ...snoozeDays };
     if (github) {
       patch.github = {

@@ -28,6 +28,7 @@ import type {
   TriageResult,
   VideoDTO,
   ReplyResult,
+  RpgSheet,
   Capabilities,
   FeedDTO,
   GithubAssociation,
@@ -137,6 +138,30 @@ export interface StoredSettings {
   /** GitHub: a read-only token (never sent to the browser) and the logins that are me. */
   github: { token: string | null; myAccounts: string[] };
   llm: { apiKey: string | null; model: string };
+  /** Adventure mode (docs/RPG.md). `seen` is what has been announced already; null = never claimed since switch-on. */
+  rpg: RpgStored;
+}
+export interface RpgSeen {
+  /** Highest level announced (a level lost to undo is not announced again). */
+  level: number;
+  achievements: string[];
+  bosses: string[];
+  /** Lines announced: 'ring', 'tooth', 'lute', 'lantern:YYYY-MM-DD' per day, 'camp:<kind>:YYYY-MM-DD' per miss. */
+  loot: string[];
+}
+export interface RpgStored {
+  enabled: boolean;
+  sound: boolean;
+  title: number | null;
+  seen: RpgSeen | null;
+  /** The browser's time zone at the last claim, and the one before it when it changed (for lenient campfire days). */
+  tz: string | null;
+  prevTz: string | null;
+}
+/** Adventure mode's view of the history. Reads only (see server/db/rpg.ts). */
+export interface RpgReader {
+  /** Throws RangeError for a time zone the runtime does not know. */
+  sheet(tz: string, chosenTitle: number | null, prevTz?: string | null): RpgSheet;
 }
 export interface NewFeed {
   /** A user or organisation, or "owner/name" for a single-repository feed (decides the feed's kind). */
@@ -758,10 +783,14 @@ export interface AppDeps {
     comment(itemId: string, me: boolean): Promise<boolean>;
     /** Run the snooze waker as if `days` days had passed (for snooze fallback dates), then carry on in real time. */
     advanceDays(days: number): void;
+    /** Adventure mode only: let its clock run `hours` ahead (0 = real time), to show what a missed campfire day does. */
+    rpgSkewHours?(hours: number): void;
   };
   staticDir?: string;
   /** The id of the web build being served (see shared/build.ts); null when there is none. Sent in every ping. */
   buildId?: () => string | null;
+  /** Adventure mode's reader (absent in tests that do not exercise it: /api/rpg then answers 404). */
+  rpg?: RpgReader;
 }
 export type { QuotaDTO, SettingsDTO, InboxItem };
 

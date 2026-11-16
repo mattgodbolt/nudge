@@ -7,6 +7,7 @@
   import { ui } from '../lib/stores/ui.svelte';
   import { usage } from '../lib/usage';
   import { decisions } from '../lib/decisions';
+  import { rpg } from '../lib/stores/rpg.svelte';
   import { fade } from 'svelte/transition';
   import { tick } from 'svelte';
 
@@ -70,6 +71,9 @@
         ui.addSourceFocusTick++;
       },
     });
+    if (rpg.enabled) {
+      out.push({ id: 'rpg.hall', label: 'Character sheet', group: 'Go to', run: () => rpg.openHall() });
+    }
     for (const s of sources.list) {
       out.push({
         id: `src.${s.id}`,

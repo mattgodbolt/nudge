@@ -61,6 +61,7 @@ function stubRepo() {
     theme: 'system',
     github: { token: null, myAccounts: [] },
     llm: { apiKey: null, model: 'claude-haiku-5-5' },
+    rpg: { enabled: true, sound: true, title: null, seen: null, tz: null, prevTz: null },
   };
   const sources: SourceDTO[] = [];
   const counts = (): Counts => {

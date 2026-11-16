@@ -14,6 +14,9 @@
   import SyncIndicator from './SyncIndicator.svelte';
   import QuotaMeter from './QuotaMeter.svelte';
   import Kbd from './Kbd.svelte';
+  import RpgChip from './RpgChip.svelte';
+  import RpgArt from './RpgArt.svelte';
+  import { rpg } from '../lib/stores/rpg.svelte';
 
   /** Which GitHub owners are expanded. A feed you are looking at is always shown open. */
   let expanded = $state<Set<number>>(new Set());
@@ -95,8 +98,11 @@
   });
   // Phone only: Manage sources / Stats / Settings fold into a popover so the top bar stays a single row.
   let moreOpen = $state(false);
+  // Close it when the view changes. Through a derived, because the router replaces its whole state on any query
+  // change (the inbox writes the selected item into ?c= after loading), which would otherwise shut the popover too.
+  const currentRoute = $derived(router.route);
   $effect(() => {
-    void router.route;
+    void currentRoute;
     moreOpen = false;
   });
   const activeSource = $derived(router.route === 'inbox' ? router.query.source : undefined);
@@ -114,10 +120,17 @@
 
 <nav class="sidebar" aria-label="Main">
   <div class="brand">
-    <svg class="logo" viewBox="0 0 32 32" aria-hidden="true">
-      <path d="M3 17h7l2 4h8l2-4h7v8a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3z" fill="currentColor" />
-      <circle cx="16" cy="8" r="5" fill="var(--accent)" />
-    </svg>
+    <span class="logo">
+      <svg viewBox="0 0 32 32" aria-hidden="true">
+        <path d="M3 17h7l2 4h8l2-4h7v8a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3z" fill="currentColor" />
+        <circle cx="16" cy="8" r="5" fill="var(--accent)" />
+      </svg>
+      {#if rpg.enabled && rpg.sheet?.today.hat}
+        <span class="hat" data-testid="rpg-hat"
+          ><RpgArt kind="loot" id="hat" size={14} label="Wizard Hat (levelled up today)" /></span
+        >
+      {/if}
+    </span>
     <span class="name">Nudge</span>
     <button
       class="btn ghost sm refresh"
@@ -331,6 +344,7 @@
         router.navigate('settings');
       }}><Icon name="settings" /><span class="grow">Settings</span></a
     >
+    <RpgChip />
     <SyncIndicator />
     <QuotaMeter />
   </div>
@@ -356,10 +370,23 @@
     padding: var(--s1) var(--s2);
   }
   .logo {
+    position: relative;
     width: 20px;
     height: 20px;
     flex: none;
     color: var(--text);
+  }
+  .logo > svg {
+    display: block;
+    width: 20px;
+    height: 20px;
+  }
+  .hat {
+    position: absolute;
+    left: 6px;
+    top: -9px;
+    transform: rotate(14deg);
+    pointer-events: none;
   }
   .name {
     font-weight: 600;

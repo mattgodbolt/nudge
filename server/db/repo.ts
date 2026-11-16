@@ -66,6 +66,8 @@ const DEFAULT_SETTINGS: StoredSettings = {
   snoozeDays: { ...DEFAULT_SNOOZE_DAYS },
   github: { token: null, myAccounts: [] },
   llm: { apiKey: null, model: 'claude-haiku-5-5' },
+  // Adventure mode is on unless switched off: the owner asked for it (docs/RPG.md).
+  rpg: { enabled: true, sound: true, title: null, seen: null, tz: null, prevTz: null },
 };
 
 export type UndoErrorCode = 'not_found' | 'already_undone' | 'expired';
@@ -156,6 +158,7 @@ export function createRepo(db: Db, clock: () => Date = () => new Date()): Repo {
     }
     // Stored days may predate a bucket; fill from the defaults so every bucket always has a number.
     out.snoozeDays = { ...DEFAULT_SNOOZE_DAYS, ...(out.snoozeDays as object) };
+    out.rpg = { ...DEFAULT_SETTINGS.rpg, ...(out.rpg && typeof out.rpg === 'object' ? (out.rpg as object) : {}) };
     return out as StoredSettings;
   }
   const putSetting = db.prepare(

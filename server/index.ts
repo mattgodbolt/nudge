@@ -7,7 +7,9 @@ import { createGoogleAuth } from './auth/google.js';
 import { checkExposure } from './security.js';
 import { createAccessVerifier } from './auth/access.js';
 import { loadConfig, migrateLegacyDb, resolveApiKey, resolveGoogleClient } from './config.js';
-import { openRepo } from './db/repo.js';
+import { openDb } from './db/db.js';
+import { createRepo } from './db/repo.js';
+import { createRpgReader } from './db/rpg.js';
 import { createFakeClient } from './demo/fake-client.js';
 import { createFakeGithubClient, DEMO_GITHUB_OWNER } from './demo/github.js';
 import { createFakeLlmClient, createFakeSnoozeAi } from './demo/llm.js';
@@ -57,7 +59,11 @@ async function main(): Promise<void> {
   if (migrateLegacyDb(config.dbPath)) console.log('Moved data/youtubey.db to data/nudge.db');
   // Demo servers can be told that days have passed, for one sweep (e2e checks what a snooze does at its fallback date).
   let demoSkewMs = 0;
-  const repo = openRepo(config.dbPath, config.demo ? () => new Date(Date.now() + demoSkewMs) : undefined);
+  // Adventure mode's own clock can run ahead in demo mode only, to show a missed campfire day in e2e.
+  let rpgSkewMs = 0;
+  const db = openDb(config.dbPath);
+  const repo = createRepo(db, config.demo ? () => new Date(Date.now() + demoSkewMs) : undefined);
+  const rpg = createRpgReader(db, () => new Date(Date.now() + demoSkewMs + rpgSkewMs));
   if (config.demo) {
     const foreign = nonDemoSources(repo);
     if (foreign.length) {
@@ -232,6 +238,9 @@ async function main(): Promise<void> {
               await engine.run({ trigger: 'manual', scope: 'video', id: video });
               return true;
             },
+            rpgSkewHours(hours) {
+              rpgSkewMs = hours * 3_600_000;
+            },
             advanceDays(days) {
               // One sweep sees the later date, then the clock is real again (new snoozes are made against real time).
               demoSkewMs = days * 86_400_000;
@@ -243,6 +252,7 @@ async function main(): Promise<void> {
             },
           }
         : undefined,
+    rpg,
     staticDir,
     // A demo server may claim a different build (NUDGE_DEMO_BUILD_ID) so the "new version" prompt can be shown in e2e.
     buildId: createBuildId(staticDir, config.demo ? process.env.NUDGE_DEMO_BUILD_ID : undefined),

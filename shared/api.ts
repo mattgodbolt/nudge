@@ -56,6 +56,8 @@ export interface SettingsUpdate {
   llm?: { apiKey?: string | null; model?: string };
   /** Google OAuth client: pasted JSON from the console, explicit fields, or null to remove. */
   googleClient?: { json: string } | { clientId: string; clientSecret: string } | null;
+  /** Adventure mode: on/off, the level-up chime, and which earned title to show (null = the current level's). */
+  rpg?: { enabled?: boolean; sound?: boolean; title?: number | null };
 }
 export interface DraftDTO {
   body: string;
@@ -112,6 +114,12 @@ export const CLIENT_HEADER = 'X-Nudge';
  *                                                  and tracks it as an isOwn channel source.
  * DELETE /api/settings/own-channels/:channelId  -> SettingsDTO. Un-marks the source isOwn; tracking continues.
  * POST   /api/settings/test-key {apiKey?}       -> {ok, message}
+ * GET    /api/rpg?tz=Area/City                  -> RpgSheet. Adventure mode, worked out from item_events (read only);
+ *                                                  days are in the given IANA zone (UTC when absent). 409 rpg_off when
+ *                                                  the mode is off; 400 for an unknown zone.
+ * POST   /api/rpg/claim {tz}                    -> RpgClaim: the sheet plus what is new since the last claim from any
+ *                                                  device (each level-up, achievement, boss and loot line is handed out
+ *                                                  once). The first claim after switching on hands out only `arrive`.
  * GET    /api/notes                             -> NoteDTO[] (newest first)
  * PATCH  /api/notes/:id {text?, scope?, enabled?} -> NoteDTO. `enabled: false` keeps the note on record but stops
  *                                                  feeding it to the suggestion model.

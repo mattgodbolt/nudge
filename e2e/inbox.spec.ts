@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 
+// Toasts are found by their text: Adventure mode may add its own (an arrival or a level-up) to the stack.
 test.beforeEach(async ({ page }) => {
   await page.goto('/inbox');
   await page.waitForSelector('[data-testid=inbox-row]');
@@ -9,7 +10,7 @@ test('e marks done, z undoes, counts follow', async ({ page }) => {
   const count = page.getByTestId('sidebar-count-inbox');
   const before = Number((await count.innerText()).replace(/\D/g, ''));
   await page.keyboard.press('e');
-  await expect(page.getByTestId('toast').first()).toContainText('done');
+  await expect(page.getByTestId('toast').filter({ hasText: 'done' }).first()).toBeVisible();
   await expect(count).toHaveText((before - 1).toLocaleString('en-US'));
   await page.keyboard.press('z');
   await expect(count).toHaveText(before.toLocaleString('en-US'));
@@ -22,7 +23,7 @@ test('n marks "no action needed", which shows as Dismissed (not Done), and z und
   const id = (await row.getAttribute('data-comment-id'))!;
   const words = ((await row.locator('.text').innerText()).match(/[A-Za-z]{4,}/g) ?? []).slice(0, 2).join(' ');
   await page.keyboard.press('n');
-  await expect(page.getByTestId('toast').first()).toContainText('no action needed');
+  await expect(page.getByTestId('toast').filter({ hasText: 'no action needed' }).first()).toBeVisible();
   await expect(count).toHaveText((before - 1).toLocaleString('en-US'));
 
   // Both views show it, and All says which kind of finished it is.
@@ -68,7 +69,7 @@ test('Done button marks done with toast, undo button reverts; focus does not eat
   const count = page.getByTestId('sidebar-count-inbox');
   const before = Number((await count.innerText()).replace(/\D/g, ''));
   await page.getByTestId('act-done').click();
-  await expect(page.getByTestId('toast').first()).toContainText('done');
+  await expect(page.getByTestId('toast').filter({ hasText: 'done' }).first()).toBeVisible();
   await expect(count).toHaveText((before - 1).toLocaleString('en-US'));
   await page.getByTestId('act-undo').click();
   await expect(count).toHaveText(before.toLocaleString('en-US'));
@@ -95,7 +96,7 @@ test('the No action needed button works like Done, and its tooltip names the key
   await expect(page.getByTestId('tooltip').locator('kbd')).toHaveText('n');
   await expect(button).toHaveAttribute('aria-keyshortcuts', 'N');
   await button.click();
-  await expect(page.getByTestId('toast').first()).toContainText('no action needed');
+  await expect(page.getByTestId('toast').filter({ hasText: 'no action needed' }).first()).toBeVisible();
   await expect(count).toHaveText((before - 1).toLocaleString('en-US'));
   await page.getByTestId('act-undo').click();
   await expect(count).toHaveText(before.toLocaleString('en-US'));
@@ -134,7 +135,7 @@ test('* a selects all, bulk bar acts on them', async ({ page }) => {
   const bar = page.getByTestId('bulk-bar');
   await expect(bar).toBeVisible();
   await page.getByTestId('bulk-done').click();
-  await expect(page.getByTestId('toast').first()).toContainText('done');
+  await expect(page.getByTestId('toast').filter({ hasText: 'done' }).first()).toBeVisible();
   await expect(bar).toHaveCount(0);
 });
 
@@ -165,7 +166,7 @@ test('ticking rows and pressing No action acts on all of them', async ({ page })
   await rows.nth(3).getByTestId('row-check').click();
   await expect(page.getByTestId('bulk-bar')).toContainText('2 selected');
   await page.getByTestId('bulk-dismiss').click();
-  await expect(page.getByTestId('toast').first()).toContainText('2 items: marked no action needed');
+  await expect(page.getByTestId('toast').filter({ hasText: '2 items: marked no action needed' }).first()).toBeVisible();
   await expect(page.getByTestId('bulk-bar')).toHaveCount(0);
 });
 
@@ -180,6 +181,6 @@ test('hovering a row shows a tick; ticking rows and pressing Done acts on all of
   await second.getByTestId('row-check').click();
   await expect(page.getByTestId('bulk-bar')).toContainText('2 selected');
   await page.getByTestId('bulk-done').click();
-  await expect(page.getByTestId('toast').first()).toContainText('2');
+  await expect(page.getByTestId('toast').filter({ hasText: '2 items: marked done' })).toBeVisible();
   await expect(page.getByTestId('bulk-bar')).toHaveCount(0);
 });

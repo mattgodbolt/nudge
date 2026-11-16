@@ -18,6 +18,7 @@
   import SourcesView from './views/SourcesView.svelte';
   import SettingsView from './views/SettingsView.svelte';
   import StatsView from './views/StatsView.svelte';
+  import RpgLayer from './components/RpgLayer.svelte';
 
   onMount(() => {
     theme.init();
@@ -44,6 +45,7 @@
     </EmptyState>
   </div>
 {:else}
+  <RpgLayer />
   <Shell>
     {#if settings.needsKey && router.route !== 'settings'}
       <Onboarding />

@@ -6,6 +6,7 @@
   import EmptyState from '../components/EmptyState.svelte';
   import Icon from '../components/Icon.svelte';
   import UsagePanel from '../components/UsagePanel.svelte';
+  import HallOfHeroes from '../components/HallOfHeroes.svelte';
 
   let stats = $state<StatsDTO | null>(null);
   let loading = $state(true);
@@ -142,6 +143,8 @@
   {/if}
 
   <UsagePanel />
+
+  <HallOfHeroes />
 </div>
 
 <style>
@@ -207,6 +210,10 @@
     display: flex;
     align-items: center;
     gap: var(--s3);
+  }
+  /* A narrow screen scrolls the wide per-source table on its own, not the whole page sideways. */
+  .tablewrap {
+    overflow-x: auto;
   }
   .num {
     text-align: right;

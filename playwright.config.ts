@@ -22,7 +22,7 @@ export default defineConfig({
     {
       name: 'handoff',
       testIgnore:
-        /(inbox|reply-api|snooze|snooze-activity|github|assistant|suggestions|notes|backlog|update)\.spec\.ts/,
+        /(inbox|reply-api|snooze|snooze-activity|github|assistant|suggestions|notes|backlog|update|adventure)\.spec\.ts/,
       use: { ...use, baseURL: 'http://127.0.0.1:4518' },
     },
     {
@@ -73,6 +73,12 @@ export default defineConfig({
       name: 'update',
       testMatch: /update\.spec\.ts/,
       use: { ...use, baseURL: 'http://127.0.0.1:4527' },
+    },
+    {
+      // Adventure mode: levels earned from triage, a demo clock for missed campfire days, and the off switch.
+      name: 'adventure',
+      testMatch: /adventure\.spec\.ts/,
+      use: { ...use, baseURL: 'http://127.0.0.1:4529' },
     },
     {
       name: 'github',
@@ -138,6 +144,12 @@ export default defineConfig({
     {
       command: 'npm run demo:e2e:update',
       url: 'http://127.0.0.1:4527/api/bootstrap',
+      reuseExistingServer: false,
+      timeout: 120000,
+    },
+    {
+      command: 'npm run demo:e2e:adventure',
+      url: 'http://127.0.0.1:4529/api/bootstrap',
       reuseExistingServer: false,
       timeout: 120000,
     },

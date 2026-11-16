@@ -416,6 +416,104 @@ export interface SettingsDTO {
   github: GithubSettingsDTO;
   llm: LlmSettingsDTO;
   google: GoogleAuthDTO;
+  /** Adventure mode (docs/RPG.md): a cosmetic level/title layer. Off hides it all and stops the /api/rpg calls. */
+  rpg: RpgSettingsDTO;
+}
+export interface RpgSettingsDTO {
+  enabled: boolean;
+  /** A short chime on a level-up toast. */
+  sound: boolean;
+  /** The level whose title the chip shows (an earned one); null = the current level's. */
+  title: number | null;
+}
+
+/* ---------------- Adventure mode (cosmetic only; see docs/RPG.md) ---------------- */
+export interface RpgAchievementDTO {
+  id: string;
+  /** Null while a hidden achievement is unearned: the Hall shows "???". */
+  name: string | null;
+  description: string | null;
+  hidden: boolean;
+  earned: boolean;
+  /** The day it was earned (YYYY-MM-DD in the browser's time zone), when known. */
+  earnedOn: string | null;
+  /** For count achievements: how far along (shown in the Hall only). */
+  progress: { n: number; of: number } | null;
+}
+export interface RpgBossDTO {
+  id: string;
+  name: string;
+  who: string;
+  line: string;
+  /** How many times it has fallen (0 = still at large). */
+  defeated: number;
+  /** The day it first fell (YYYY-MM-DD). */
+  firstOn: string | null;
+}
+export interface RpgLootDTO {
+  id: string;
+  name: string;
+  description: string;
+  earned: boolean;
+  /** How many times, for the ones that can happen again (lantern, cloak, hat...). */
+  times: number;
+}
+export interface RpgSheet {
+  /** Today (YYYY-MM-DD) in the time zone the sheet was worked out for. */
+  day: string;
+  xp: number;
+  level: number;
+  /** The level's own title. */
+  levelTitle: string;
+  /** What the chip shows: the chosen earned title, else the level's. */
+  title: string;
+  /** XP at which this level started and the next one starts. */
+  levelXp: number;
+  nextLevelXp: number;
+  /** Today's decoration (days in the browser's time zone). */
+  today: { cloak: boolean; lantern: boolean; hat: boolean; flame: boolean };
+  /**
+   * The campfire: good days in the current run (0 when it is out) and the longest run. One missed day per run is
+   * covered by a rest day, earned back after a few good days; `notice` is the latest miss worth a kind word.
+   */
+  campfire: {
+    current: number;
+    longest: number;
+    restUsed: boolean;
+    goodToRestore: number;
+    notice: RpgCampfireNotice | null;
+  };
+  accent: 'default' | 'phosphor' | 'amber';
+  achievements: RpgAchievementDTO[];
+  bosses: RpgBossDTO[];
+  loot: RpgLootDTO[];
+  /** Worthless finds, newest first (at most 30), with the day each was found. */
+  lootLog: { name: string; on: string }[];
+  /** Titles earned so far, for the picker. */
+  titles: { level: number; title: string }[];
+  chosenTitle: number | null;
+  /** Items that have paid anything, and how. */
+  tally: { payouts: number; replies: number; dones: number; dismissals: number };
+}
+/** What this device should announce now (each thing is announced once, on one device). */
+export interface RpgNews {
+  /** First switch-on: "You arrive as a Level N ...". Nothing earlier is replayed. */
+  arrive: { level: number; title: string } | null;
+  levelUp: { from: number; to: number; title: string } | null;
+  achievements: { id: string; name: string }[];
+  bosses: { id: string; name: string; line: string }[];
+  loot: { id: string; name: string; line: string }[];
+  /** A missed day, the first time it is noticed. */
+  campfire: RpgCampfireNotice | null;
+}
+/** A missed campfire day (YYYY-MM-DD): covered by the rest day, or the one that put the fire out. */
+export interface RpgCampfireNotice {
+  kind: 'forgiven' | 'out';
+  day: string;
+}
+export interface RpgClaim {
+  sheet: RpgSheet;
+  news: RpgNews;
 }
 export interface Capabilities {
   canPost: boolean;
