@@ -3,6 +3,7 @@ import type { AssistantOutcome } from '../../shared/types.js';
 import type { AssistantAction, AppDeps } from '../contracts.js';
 import { LlmError } from '../contracts.js';
 import { costMicros } from '../classify/anthropic.js';
+import { groundedInCommand } from '../providers/anthropic/client.js';
 import { fallbackDate } from '../../shared/snooze.js';
 import { recordNote } from './notes.js';
 import { bucketInBackground } from './snoozeAi.js';
@@ -109,6 +110,8 @@ export function registerTodoRoutes(app: FastifyInstance, deps: AppDeps): void {
         added.push(id);
         outcomes.push({ type: 'add_todo', id, title: a.title, due: a.due });
       } else if (a.type === 'note') {
+        // Checked here too, so no LlmClient can store words the owner never said.
+        if (!groundedInCommand(a.text, text)) continue;
         // What he said about a suggestion or an item is kept whatever else happens. "That" is the item he is on, or the
         // one he has just dealt with (the selection has usually moved on by then).
         const latest = repo.notes.recentAction();

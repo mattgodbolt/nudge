@@ -122,9 +122,10 @@ const words = (s: string): string[] =>
     .filter(Boolean);
 
 /**
- * Did the owner say this note himself? A standing note reaches the classifier's prompt for every item, so one may only
- * come from the command's own words, never from an item title the model was shown (which a stranger may have written).
- * The model tidies dictation, so most rather than all of the note's words must appear in the command.
+ * Did the owner say this note himself? A standing note reaches the classifier's prompt for every item (an item note,
+ * for its item), so one may only come from the command's own words, never from an item title the model was shown
+ * (which a stranger may have written). The model tidies dictation, so most rather than all of the note's words must
+ * appear in the command.
  */
 export function groundedInCommand(note: string, command: string): boolean {
   const all = words(note);
@@ -159,13 +160,13 @@ export function parseCommand(reply: Json, now: Date, command?: string): Assistan
       if (until || untilActivity) actions.push({ type: 'snooze', until, why: why || null, bucket, untilActivity });
     } else if (b.name === 'record_note') {
       const text = typeof input.text === 'string' ? input.text.trim().slice(0, NOTE_TEXT_MAX) : '';
-      if (!text) continue;
-      // A standing preference the command never stated is kept, but only as a note about the item.
-      const standing = input.scope === 'standing' && (command === undefined || groundedInCommand(text, command));
+      // A note the command never stated came from somewhere else the model read (an item title a stranger wrote), and
+      // an item note reaches the classifier for that item just as a standing one reaches every item: drop it.
+      if (!text || (command !== undefined && !groundedInCommand(text, command))) continue;
       actions.push({
         type: 'note',
         text,
-        scope: standing ? 'standing' : 'item',
+        scope: input.scope === 'standing' ? 'standing' : 'item',
         about: input.about === 'last_action' ? 'last_action' : 'selected',
       });
     } else if (b.name === 'mark_done') {
