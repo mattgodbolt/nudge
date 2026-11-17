@@ -1,7 +1,6 @@
 import { app } from './stores/app.svelte';
-import { inbox } from './stores/inbox.svelte';
 import { toasts } from './stores/toasts.svelte';
-import { reconnectEvents } from './sse';
+import { reconnectEvents, refetchState } from './sse';
 
 /** A tab hidden for less than this is assumed to have kept up with the event stream. */
 export const STALE_AFTER_MS = 5_000;
@@ -15,9 +14,9 @@ class Resync {
   busy = $state(false);
 
   /**
-   * Bring this tab's data up to date: reopen the event stream, and refetch counts, sources and the top of the list.
-   * Only a failure is reported. It never reloads the page, even after a deploy: that would throw away anything
-   * half-typed. The reopened stream's first ping names the server's build, which raises the "New version available"
+   * Bring this tab's data up to date: reopen the event stream, and refetch counts, sources, the top of the list and
+   * the open thread. Only a failure is reported. It never reloads the page, even after a deploy: that would throw away
+   * anything half-typed. The reopened stream's first ping names the server's build, which raises the "New version available"
    * prompt instead (see update.svelte.ts).
    */
   async run(): Promise<void> {
@@ -25,7 +24,7 @@ class Resync {
     this.busy = true;
     try {
       reconnectEvents();
-      await Promise.all([app.boot(), inbox.refreshTop()]);
+      await refetchState();
       if (app.error) toasts.error(`Couldn't reach Nudge: ${app.error}`);
     } finally {
       this.busy = false;

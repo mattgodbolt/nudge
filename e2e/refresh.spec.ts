@@ -80,6 +80,75 @@ test('a broken event stream shows in the sync indicator until it reconnects', as
   await expect(indicator).not.toContainText('Reconnecting', { timeout: 15_000 });
 });
 
+// The open thread is refetched by a resync too, swapped in where it is: no blank, the same scroll, the draft kept.
+const isThread = (url: URL) => url.pathname.startsWith('/api/threads/');
+/** From now on the server's copy of every thread has a new last line, as if a reply landed while the tab was away. */
+async function threadChangesUnderneath(page: Page) {
+  await page.route(isThread, async (route) => {
+    const res = await route.fetch();
+    const d = (await res.json()) as { comments: { textHtml: string }[] };
+    d.comments[d.comments.length - 1]!.textHtml += ' <b data-testid="e2e-arrived">Arrived while away</b>';
+    await route.fulfill({ response: res, json: d });
+  });
+}
+/** Open the first row's thread, scroll it and start a reply; returns the checks that all of that survived. */
+async function openThread(page: Page) {
+  // The draft stays in this page: the demo server is shared with other specs, which must not find it on their rows.
+  await page.route('**/api/drafts/**', (route) => {
+    const method = route.request().method();
+    if (method === 'GET') return route.fulfill({ status: 404, json: { error: 'not found' } });
+    if (method === 'DELETE') return route.fulfill({ status: 204 });
+    const { body } = route.request().postDataJSON() as { body: string };
+    return route.fulfill({ json: { body, updatedAt: new Date().toISOString(), status: 'draft' } });
+  });
+  await page.setViewportSize({ width: 1280, height: 600 });
+  await page.getByTestId('inbox-row').first().click();
+  const pane = page.getByTestId('thread-view');
+  await expect(pane.locator('.scroll [data-comment-id]').first()).toBeVisible();
+  await expect(pane.locator('.skeleton')).toHaveCount(0);
+  await pane.getByTestId('composer-box').getByRole('button', { name: 'Reply…' }).click();
+  await page.getByTestId('composer').fill('half-typed reply');
+  const scroller = pane.locator('.scroll');
+  await scroller.evaluate((el) => {
+    el.scrollTop = el.scrollHeight;
+  });
+  const scrolled = await scroller.evaluate((el) => el.scrollTop);
+  await page.evaluate(() => {
+    const w = window as unknown as { __blanked?: boolean };
+    w.__blanked = false;
+    new MutationObserver(() => {
+      if (document.querySelector('[data-testid=thread-view] .skeleton')) w.__blanked = true;
+    }).observe(document.body, { subtree: true, childList: true });
+  });
+  return async () => {
+    await expect(pane.getByTestId('e2e-arrived')).toBeVisible();
+    expect(await page.evaluate(() => (window as unknown as { __blanked?: boolean }).__blanked)).toBe(false);
+    await expect(page.getByTestId('composer')).toHaveValue('half-typed reply');
+    expect(await scroller.evaluate((el) => el.scrollTop)).toBe(scrolled);
+  };
+}
+
+test('a resync brings the open thread up to date in place', async ({ page }) => {
+  const check = await openThread(page);
+  await threadChangesUnderneath(page);
+  await page.getByTestId('refresh').click();
+  await check();
+});
+
+test('the event stream coming back brings the open thread up to date in place', async ({ page }) => {
+  const events = (url: URL) => url.pathname === '/api/events';
+  await page.route(events, (route) => route.abort());
+  await page.goto('/inbox');
+  await page.waitForSelector('[data-testid=inbox-row]');
+  await expect(page.getByTestId('sync-indicator')).toContainText('Reconnecting');
+  const check = await openThread(page);
+  await threadChangesUnderneath(page);
+  await page.unroute(events);
+  // The browser retries the stream on its own every few seconds.
+  await expect(page.getByTestId('thread-view').getByTestId('e2e-arrived')).toBeVisible({ timeout: 15_000 });
+  await check();
+});
+
 test.describe('on a touch phone', () => {
   test.use({ viewport: { width: 412, height: 800 }, hasTouch: true, isMobile: true });
 

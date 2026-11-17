@@ -9,6 +9,7 @@ import { sources } from './stores/sources.svelte';
 import { suggestStatus } from './stores/suggestStatus.svelte';
 import { sync } from './stores/sync.svelte';
 import { theme } from './stores/theme.svelte';
+import { thread } from './stores/thread.svelte';
 import { update } from './stores/update.svelte';
 import { toasts } from './stores/toasts.svelte';
 
@@ -80,6 +81,15 @@ export function streamIsSilent(lastHeardAt: number, now: number): boolean {
 }
 
 /**
+ * Refetch what the event stream would have kept current: counts, sources and the top of the list, and the open thread
+ * (refetched in the background and swapped in, so it never blanks; with none open nothing is fetched).
+ */
+export function refetchState(): Promise<unknown> {
+  thread.invalidate();
+  return Promise.all([app.boot(), inbox.refreshTop()]);
+}
+
+/**
  * Drop and reopen the event stream. A phone that has had the tab frozen in the background can hold a connection that
  * looks open but is dead, so no error ever fires; reopening is the only way to know.
  */
@@ -114,8 +124,7 @@ export function connectEvents(): () => void {
       sync.streamDown = false;
       if (wasDown) {
         wasDown = false;
-        void app.boot();
-        void inbox.refreshTop();
+        void refetchState();
       }
     };
     es.onerror = () => {
@@ -128,8 +137,7 @@ export function connectEvents(): () => void {
   const watchdog = setInterval(() => {
     if (document.hidden || !streamIsSilent(lastHeardAt, Date.now())) return;
     me.reconnect();
-    void app.boot();
-    void inbox.refreshTop();
+    void refetchState();
   }, 15_000);
   const me = {
     reconnect() {
