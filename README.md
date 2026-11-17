@@ -38,6 +38,16 @@ machine (or a box of your own behind Cloudflare Access), and keeps its data in a
   works, and one switch in Settings turns it off. See [docs/RPG.md](docs/RPG.md).
 - **Demo mode:** a complete fake world, with no API keys or network, for trying it out.
 
+## A closer look
+
+All from the demo. Click one for the full size.
+
+| <a href="docs/screenshots/hall-of-heroes.png"><img src="docs/screenshots/hall-of-heroes.png" width="260" alt="The Hall of Heroes: level, campfire and tiered achievements"></a> |  <a href="docs/screenshots/insights.png"><img src="docs/screenshots/insights.png" width="260" alt="Insights: the week in a sentence and a heatmap of arrivals"></a>   |             <a href="docs/screenshots/snooze-menu.png"><img src="docs/screenshots/snooze-menu.png" width="260" alt="The snooze menu, with Until activity and a reason"></a>              |
+| :-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------: | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------: | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------: |
+|                                                                         Adventure mode's Hall of Heroes                                                                         |                                                                     Insights: when things arrive                                                                      |                                                                                Snooze until someone acts                                                                                 |
+|         <a href="docs/screenshots/command-palette.png"><img src="docs/screenshots/command-palette.png" width="260" alt="The command palette, filtered as you type"></a>         | <a href="docs/screenshots/settings.png"><img src="docs/screenshots/settings.png" width="260" alt="Settings, grouped into You, Preferences, Connections and Sync"></a> | <a href="docs/screenshots/github-conversation.png"><img src="docs/screenshots/github-conversation.png" width="260" alt="A GitHub pull request with its suggestion and conversation"></a> |
+|                                                                         The command palette (`Ctrl+K`)                                                                          |                                                                     Settings, grouped by purpose                                                                      |                                                                           A pull request and its conversation                                                                            |
+
 ## Quick start
 
 Needs Node 22 or later.
