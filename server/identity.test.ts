@@ -3,9 +3,9 @@ import { join, relative } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 // Nobody in particular owns Nudge: who the model works for is configuration (Settings > About you), and the prompts are
-// built from it. This keeps the owner's identity from creeping back into the source, prompts, demo data and docs.
-// Tests are out of scope (they may use any sample name); so are the files that name the author or the repository on
-// purpose, below. Repository links (github.com/<owner>/nudge) are allowed anywhere: they say where the code lives.
+// built from it. This keeps the owner's identity from creeping back into the source, prompts, demo data, docs and
+// tests (which use sample names: Priya, example-org). Only the files below name the author or the repository on
+// purpose. Repository links (github.com/<owner>/nudge) are allowed anywhere: they say where the code lives.
 const ROOT = join(import.meta.dirname, '..');
 
 const ALLOWED = new Set([
@@ -16,6 +16,9 @@ const ALLOWED = new Set([
   'docs/PLAN.md', // the original plan, kept as history
   // Migration 018 renames the old stored value, so it has to name it; migrations are never edited afterwards.
   'server/db/migrations.ts',
+  // ...and its test has to name it too, to check that it is renamed and that nothing still accepts it.
+  'server/db/migrations.test.ts',
+  'server/identity.test.ts', // this file: the pattern, and the shapes it must catch
 ]);
 const SKIP_DIRS = new Set(['.git', 'node_modules', 'data', 'screenshots', 'playwright-report']);
 const SKIP_DIR_PREFIXES = ['dist', 'test-results'];
@@ -24,9 +27,6 @@ const TEXT = /\.(ts|js|mjs|cjs|svelte|html|css|md|json|ya?ml|sh|toml|txt|example
 /** The owner's name in any of the shapes it used to appear in: prose, a turn value, a camelCase or snake_case key. */
 const IDENTITY = /godbolt|compiler[\s-]explorer|\bmatt\b|ismatt|_matt\b|\bmatt_/i;
 const REPO_LINK = /github\.com\/[\w-]+\/nudge\b/gi;
-
-const isTest = (path: string): boolean =>
-  /\.test\.ts$/.test(path) || path.startsWith('e2e/') || /(^|\/)test-helpers\.ts$/.test(path);
 
 function* files(dir: string): Generator<string> {
   for (const name of readdirSync(dir)) {
@@ -44,7 +44,7 @@ function* files(dir: string): Generator<string> {
 function leaks(): string[] {
   const out: string[] = [];
   for (const path of files(ROOT)) {
-    if (ALLOWED.has(path) || isTest(path)) continue;
+    if (ALLOWED.has(path)) continue;
     readFileSync(join(ROOT, path), 'utf8')
       .split('\n')
       .forEach((line, i) => {
@@ -55,7 +55,7 @@ function leaks(): string[] {
 }
 
 describe("the owner's identity is configuration, not code", () => {
-  it('appears nowhere in the source, prompts, demo data or docs outside the allowlist', () => {
+  it('appears nowhere in the source, prompts, demo data, docs or tests outside the allowlist', () => {
     expect(leaks()).toEqual([]);
   });
 
@@ -81,6 +81,8 @@ describe("the owner's identity is configuration, not code", () => {
     for (const f of ['server/classify/anthropic.ts', 'server/classify/snooze.ts', 'web/src/views/SettingsView.svelte'])
       expect(all).toContain(f);
     expect(all).toContain('README.md');
+    for (const f of ['server/routes/github.test.ts', 'shared/youtube-urls.test.ts', 'e2e/search.spec.ts'])
+      expect(all).toContain(f);
     expect(all.some((f) => f.startsWith('node_modules/') || f.startsWith('dist/'))).toBe(false);
   });
 });
