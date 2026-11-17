@@ -6,6 +6,30 @@ export interface RuleHit {
   confidence: Confidence;
   /** Which rule fired, for the audit trail. */
   rule: string;
+  /** The text tries to instruct the model: shown as Suspicious, the suggestion's action withheld. */
+  injection?: boolean;
+}
+
+/**
+ * Phrases that only make sense as an attempt to instruct a model. Conservative on purpose: each needs the instruction
+ * word AND its target ("ignore the above warning" or "you are now able to" must not match), and a model call still
+ * catches subtler attempts. The flag only labels the item Suspicious; nothing is hidden.
+ */
+const INJECTION_PATTERNS: RegExp[] = [
+  /\b(?:ignore|disregard|forget|override)\s+(?:all\s+|any\s+|your\s+|the\s+|my\s+)?(?:previous|prior|above|earlier|preceding)\s+(?:instructions?|prompts?|rules|directions?|context)\b/i,
+  /\b(?:ignore|disregard|forget)\s+(?:all\s+)?(?:your|these|those)\s+(?:instructions?|rules|guidelines)\b/i,
+  /\byou\s+are\s+now\s+(?:a|an|the|in|my|dan)\b(?!\s+(?:able|ready|free|done|set|good|all|going))/i,
+  /\b(?:classify|mark|label|rate|treat|categori[sz]e)\s+(?:this|it|the\s+(?:item|comment|issue|message))\s+as\s+(?:needs[_ ]action|no[_ ]reply|urgent|important|not\s+spam|spam|safe|trusted|high\s+priority)\b/i,
+  /<\/?\s*(?:system|assistant|tool|developer|instructions?)\s*>/i,
+  /^\s*(?:system|assistant|developer)\s*:\s*\S/im,
+  /\[\s*(?:system|assistant|inst)\s*\]|<\|(?:im_start|system|assistant)\|>/i,
+  /\b(?:reveal|show|print|repeat|leak)\s+(?:me\s+)?(?:your|the)\s+(?:system\s+prompt|instructions)\b/i,
+  /\bsystem\s+prompt\b/i,
+];
+
+/** Does this text look like an attempt to instruct the model? Exported for tests. */
+export function looksLikeInjection(text: string): boolean {
+  return INJECTION_PATTERNS.some((re) => re.test(text));
 }
 
 // Emoji, symbols, punctuation and whitespace only.
@@ -35,6 +59,10 @@ function isSymbolSoup(text: string): boolean {
  * the direction, and it never decides "needs_reply".
  */
 export function applyRules(item: EvalItem): RuleHit | null {
+  // First, and for every provider: an instruction aimed at the model outranks any other rule.
+  if (looksLikeInjection(`${item.title ?? ''}\n${item.text}`)) {
+    return { verdict: 'spam', category: 'other', confidence: 'medium', rule: 'injection-phrases', injection: true };
+  }
   const gh = item.github;
   if (gh) {
     if (item.author === 'ghost' && item.text.trim().length <= 20) {

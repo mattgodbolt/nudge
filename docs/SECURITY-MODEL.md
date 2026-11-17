@@ -36,6 +36,10 @@ lets in) or if the Access settings are incomplete, and warns when bound to a non
   [YouTube API Services Terms](https://developers.google.com/youtube/terms/api-services-terms-of-service) and
   Developer Policies (including how long you keep API data).
 - When the optional assistant, or the offline classifier tooling, is enabled, comment text and video titles are sent to
-  Anthropic using your own API key. Voice dictation in the browser may send audio to your browser vendor's service.
+  Anthropic using your own API key. The assistant (Tell Nudge, which can mark done, dismiss and snooze) is never sent
+  item text, and its output is checked against what you typed; see [Tell Nudge](ASSISTANT.md). Text that contains
+  obvious instructions to a model ("ignore previous instructions", "you are now", fake system tags) is flagged
+  Suspicious by a rule before any model call; the item stays in your inbox and its suggested action is withheld.
+  Voice dictation in the browser may send audio to your browser vendor's service.
 - Nudge is not affiliated with or endorsed by YouTube, Google, GitHub or Anthropic. "YouTube" is a trademark of
   Google LLC.

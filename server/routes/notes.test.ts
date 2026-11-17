@@ -123,7 +123,8 @@ describe('the assistant records notes', () => {
     env.repo.snooze([id(1)], until, 'review the proposed fix');
     actions = [note("I wouldn't have snoozed that", 'item', 'last_action')];
     await say("I wouldn't have snoozed that", { selectedId: id(2) });
-    expect(seenInput!.recent).toMatchObject({ what: 'snoozed', title: 'Issue 1' });
+    expect(seenInput!.recent).toMatchObject({ what: 'snoozed' });
+    expect(seenInput!.recent).not.toHaveProperty('title');
     const [n] = env.repo.notes.list();
     expect(n).toMatchObject({ scope: 'item', itemId: id(1), source: 'text' });
     expect(n!.lastAction).toMatchObject({ kind: 'snooze', why: 'review the proposed fix' });
