@@ -24,7 +24,7 @@ npm run check    # typecheck (server, tests, e2e, scripts, web) + Prettier + uni
 npm run test:e2e # the Playwright suite
 ```
 
-`npm run format` fixes formatting. CI (`.github/workflows/ci.yml`) runs the same on every push and pull request, plus
+`npm run format` fixes formatting. `npm run shots` retakes the README screenshots from demo mode (`scripts/screenshots.ts`). CI (`.github/workflows/ci.yml`) runs the same on every push and pull request, plus
 `npm run test:deploy`, a sandboxed rehearsal of the deploy scripts.
 
 ## End-to-end tests

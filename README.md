@@ -5,12 +5,9 @@ appear in), new pull requests and issues from GitHub accounts and organisations 
 all of them are cleared the same way: read, reply, snooze, done.
 
 Nudge is a personal tool for one person, not a SaaS. There are no accounts and no multi-user mode: it runs on your own
-machine (or a box of your own behind Cloudflare Access), keeps its data in a local SQLite file and never writes to GitHub.
+machine (or a box of your own behind Cloudflare Access), and keeps its data in a local SQLite file.
 
 ![The inbox: YouTube comments, each with a suggestion, and the open one beside the list](docs/screenshots/inbox.png)
-
-All screenshots in this README are the built-in demo mode: fake data, nothing real. `npm run shots` retakes them
-(see `scripts/screenshots.ts`).
 
 ## What it does
 
@@ -96,7 +93,7 @@ database). For Docker, [`.env.example`](.env.example) lists what `compose.yaml` 
 | `NUDGE_GOOGLE_CLIENT_ID`, `NUDGE_GOOGLE_CLIENT_SECRET` | OAuth client for posting replies (else Settings, else `~/.nudge-google-client.json`)                         |
 | `NUDGE_PUSH_SUBJECT`                                   | Contact `mailto:` sent to push services, default `mailto:nudge@example.invalid`                              |
 | `NUDGE_WEB_DIR`                                        | Built web UI to serve, relative to the repository (default `dist/web`)                                       |
-| `GIT_SHA`                                              | Commit shown in Settings > About; the build reads it from git when unset (the Docker build passes it in)     |
+| `GIT_SHA`                                              | Commit shown in Settings > Version; the build reads it from git when unset (the Docker build passes it in)   |
 | `NUDGE_BACKUP_DIR`                                     | Off-box directory for `deploy/backup.sh` (host side, see [Deploying](#deploying-docker--cloudflare-access))  |
 | `NUDGE_DEMO`                                           | `1`: demo mode, a fake world with no keys or network (refuses a database that holds real sources)            |
 | `NUDGE_DEMO_GITHUB`, `NUDGE_DEMO_COMMENTS`             | Demo: a fake GitHub organisation; give some of its items comment threads                                     |
@@ -127,7 +124,8 @@ Nudge has no login of its own. The server listens on loopback (`127.0.0.1`) only
   install the PWA (`/manifest.webmanifest`, `/sw.js`, the icons) are served to an Access host without a token, so the
   Access policy needs a bypass for exactly those paths;
 - changing requests must have a same-origin `Origin` (when sent) and the `X-Nudge: 1` header;
-- stored secrets (API keys, tokens) are never sent back to the browser, and Nudge never writes to GitHub.
+- stored secrets (API keys, tokens) are never sent back to the browser, and Nudge only reads from GitHub: snoozing or
+  clearing an item changes nothing on GitHub, and a drafted follow-up is text you copy and post yourself.
 
 Do not expose the port anywhere else: a request that reaches it directly with a loopback `Host` is treated as local.
 Nudge refuses to start if `NUDGE_ACCESS_HOSTS` is set without `NUDGE_ALLOWED_USERS` (that would admit everyone Access
@@ -177,7 +175,7 @@ units) as your channel, with no copy and paste. One-time Google Cloud setup, in 
    **Download JSON**. No redirect URI is needed: Nudge always uses `http://127.0.0.1:4517/api/auth/callback`
    (or your `NUDGE_PORT`).
 8. Give Nudge the client in any one of these ways:
-   - paste the downloaded JSON into **Settings > Reply from Nudge**;
+   - paste the downloaded JSON into **Settings > Post replies from Nudge**;
    - save it as `~/.nudge-google-client.json` and run `chmod 600` on it;
    - set `NUDGE_GOOGLE_CLIENT_ID` and `NUDGE_GOOGLE_CLIENT_SECRET`.
 9. **Settings > Connect Google account.** Choose the account, then the channel if Google asks (Brand Accounts are
@@ -389,17 +387,17 @@ repositories, so you can triage them with the same keys (`e` done, `b` snooze, `
 - **Add a feed:** Sources > GitHub, enter a user or organisation (for example `octocat`). It starts "from now
   on" by default; you can also import the last two weeks or everything open. Public repositories work with no token,
   at GitHub's low anonymous rate limit.
-- **Token (optional):** Settings > GitHub. Create a **fine-grained** token (GitHub > Settings > Developer settings >
+- **Token (optional):** Settings > Connections > GitHub token. Create a **fine-grained** token (GitHub > Settings > Developer settings >
   Fine-grained tokens): resource owner = you, all repositories, and only **Issues: read-only** and **Pull requests:
   read-only**. It can also read other owners' public repositories, so one token covers your private repos and a public
   organisation. A classic token cannot be read-only for private repositories (its `repo` scope includes write). The
   token lives in Nudge's database like the YouTube key and is never sent back to the browser. **Test** shows who it
-  belongs to and warns about a classic token with write-capable scopes. Nudge never writes to GitHub.
+  belongs to and warns about a classic token with write-capable scopes. Nudge only reads from GitHub, so it needs no write access.
 - **Known limitation:** there is one token for all feeds, and a fine-grained token has a single owner, so private
   repositories of a second owner (for example a private repo in an organisation) are not visible. Public ones are.
   Per-feed tokens are tracked in [#1](https://github.com/mattgodbolt/nudge/issues/1).
 - **One feed per owner:** a feed covers every repository the owner has, including ones created later.
-- **My accounts:** Settings > GitHub. Items opened by these logins (yours, and any agent account that works for you)
+- **My accounts:** Settings > You > My GitHub accounts. Items opened by these logins (yours, and any agent account that works for you)
   never reach the inbox.
 - **Who opened it:** every row says whether the author is on the team, a past contributor, a first-timer, an outsider
   or a bot, and the filter bar above the list narrows to any of those, or to just PRs or just issues.
