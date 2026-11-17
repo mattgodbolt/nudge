@@ -78,7 +78,7 @@ describe('thread state in the prompt', () => {
     ...over,
   });
   it('is a new prompt version, so cached eval results from before are never reused', () => {
-    expect(PROMPT_VERSION).toBe('p0-11');
+    expect(PROMPT_VERSION).toBe('p0-12');
   });
   it('quote-escapes attribute values, so a label cannot close its attribute and add others', () => {
     const out = renderItem(

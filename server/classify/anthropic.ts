@@ -7,7 +7,7 @@ const TIMEOUT_MS = 30_000;
 const MAX_ATTEMPTS = 4;
 
 /** Bump with every edit to the system prompt, the tool schema or renderItem: the eval cache is keyed on it. */
-export const PROMPT_VERSION = 'p0-11';
+export const PROMPT_VERSION = 'p0-12';
 
 /** The owner's name as written into a prompt: escaped like everything else there (Settings also refuses markup in it). */
 export const ownerName = (owner: OwnerProfile): string => esc(owner.name.trim());

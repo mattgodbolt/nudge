@@ -109,6 +109,31 @@ const words = (s: string): string[] =>
  */
 const GROUNDED_SHARE = 0.7;
 const FILLER = new Set(['the', 'and', 'for', 'with', 'that', 'this', 'about']);
+
+/** Levenshtein distance, giving up (returning max + 1) once it must exceed `max`. */
+function editDistance(a: string, b: string, max: number): number {
+  if (Math.abs(a.length - b.length) > max) return max + 1;
+  let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    const cur = [i];
+    for (let j = 1; j <= b.length; j++) {
+      cur[j] = Math.min(prev[j]! + 1, cur[j - 1]! + 1, prev[j - 1]! + (a[i - 1] === b[j - 1] ? 0 : 1));
+    }
+    prev = cur;
+  }
+  return prev[b.length]!;
+}
+
+/**
+ * The model repairs speech-recognition slips ("by milk" -> "Buy milk"), so a word one edit away from a spoken word
+ * (two for words of 6+ letters) counts as said. Kept this tight so a different word cannot slip through.
+ */
+function saidWord(w: string, said: Set<string>): boolean {
+  if (said.has(w)) return true;
+  const max = w.length >= 6 ? 2 : 1;
+  for (const s of said) if (editDistance(w, s, max) <= max) return true;
+  return false;
+}
 export function groundedInCommand(note: string, command: string): boolean {
   const all = [...new Set(words(note))];
   // Function words the model adds when tidying ("ring the plumber") say nothing, so they neither count for nor against.
@@ -116,7 +141,7 @@ export function groundedInCommand(note: string, command: string): boolean {
   const noteWords = long.length > 0 ? long : all;
   if (noteWords.length === 0) return false;
   const said = new Set(words(command));
-  return noteWords.filter((w) => said.has(w)).length / noteWords.length >= GROUNDED_SHARE;
+  return noteWords.filter((w) => saidWord(w, said)).length / noteWords.length >= GROUNDED_SHARE;
 }
 
 /**
@@ -124,8 +149,10 @@ export function groundedInCommand(note: string, command: string): boolean {
  * not have seen) is replaced by the command's own words, and unfounded notes are dropped: the todo is still made.
  */
 export function groundTodo(title: string, notes: string, command: string): { title: string; notes: string } {
+  // An empty title means the model chose to create nothing: the caller drops it rather than make one from the command.
+  if (!title) return { title: '', notes: '' };
   const safeNotes = notes && groundedInCommand(notes, command) ? notes : '';
-  if (title && groundedInCommand(title, command)) return { title, notes: safeNotes };
+  if (groundedInCommand(title, command)) return { title, notes: safeNotes };
   const first = command.trim().split(/\n/)[0]!.trim();
   return { title: first.length > TITLE_MAX ? `${first.slice(0, TITLE_MAX - 1)}…` : first, notes: safeNotes };
 }
