@@ -280,23 +280,42 @@ export function emptyInsights(opts: InsightsOptions): Insights {
   };
 }
 
-/** Work out every card. Read only. Throws RangeError for an unknown time zone. */
-export function insightsReport(db: Db, opts: InsightsOptions): Insights {
-  checkTimeZone(opts.tz);
-  let rows: ItemRow[];
-  let events: HistEvent[];
-  try {
-    rows = loadItems(db);
-    events = loadEvents(db, ['state', 'snooze', 'reply', 'undo', 'decision']);
-  } catch {
-    return emptyInsights(opts); // a database from before the columns this reads
-  }
-  const nowMs = opts.now.getTime();
-  const clock = localClock(opts.tz);
-  const today = clock.day(nowMs);
-  const mine = myAccounts(db);
+type Judged = {
+  suggested: string;
+  action: (typeof FIRST_ACTIONS)[number];
+  confidence: unknown;
+  turn: unknown;
+  category: string | null;
+  approxCategory: boolean;
+};
+type Tally = Map<string, { n: number; hits: number }>;
+const splitKey = (k: string): { provider: string; kind: string } => {
+  const [provider, kind] = k.split('\t') as [string, string];
+  return { provider, kind };
+};
 
-  /* ---- items ---- */
+/** What every section reads: the items with their events, the clock, the range in whole local days, and the filters. */
+interface Ctx {
+  db: Db;
+  opts: InsightsOptions;
+  nowMs: number;
+  clock: ReturnType<typeof localClock>;
+  today: number;
+  items: Map<string, Item>;
+  events: HistEvent[];
+  undos: ReturnType<typeof undoIndex>;
+  bulk: ReturnType<typeof bulkIndex>;
+  /** An action of the owner's that no undo cancelled. */
+  isMine: (e: HistEvent) => boolean;
+  firstDay: number;
+  days: number;
+  weekdays: number[];
+  inRange: (t: number) => boolean;
+  /** Weekday (0-6) of the local day a moment falls on. */
+  wdOf: (t: number) => number;
+}
+
+function buildItems(rows: ItemRow[], events: HistEvent[], nowMs: number, mine: Set<string>): Map<string, Item> {
   const items = new Map<string, Item>();
   for (const r of rows) {
     const firstSeen = ms(r.first_seen_at) ?? nowMs;
@@ -328,6 +347,14 @@ export function insightsReport(db: Db, opts: InsightsOptions): Insights {
   }
   for (const e of events) items.get(e.item)?.events.push(e);
   for (const it of items.values()) it.events.sort((a, b) => a.t - b.t || a.id - b.id);
+  return items;
+}
+
+function buildContext(db: Db, opts: InsightsOptions, rows: ItemRow[], events: HistEvent[]): Ctx {
+  const nowMs = opts.now.getTime();
+  const clock = localClock(opts.tz);
+  const today = clock.day(nowMs);
+  const items = buildItems(rows, events, nowMs, myAccounts(db));
 
   const undos = undoIndex(events);
   const bulk = bulkIndex(events, { decisions: true });
@@ -350,13 +377,48 @@ export function insightsReport(db: Db, opts: InsightsOptions): Insights {
     firstDay = Number.isFinite(first) ? Math.min(today, clock.day(first)) : today;
   } else firstDay = today - RANGE_DAYS[opts.range] + 1;
   const start = startOfDay(firstDay);
-  const inRange = (t: number) => t >= start && t <= nowMs;
   const days = today - firstDay + 1;
   const weekdays = new Array<number>(7).fill(0);
   for (let d = firstDay; d <= today; d++) weekdays[weekday(d)]!++;
-  const wdOf = (t: number) => weekday(clock.day(t));
+  return {
+    db,
+    opts,
+    nowMs,
+    clock,
+    today,
+    items,
+    events,
+    undos,
+    bulk,
+    isMine,
+    firstDay,
+    days,
+    weekdays,
+    inRange: (t) => t >= start && t <= nowMs,
+    wdOf: (t) => weekday(clock.day(t)),
+  };
+}
 
-  /* ---- arrivals (R1, sources) ---- */
+const hourlyOf = (g: number[][]) => Array.from({ length: 24 }, (_, h) => g.reduce((a, row) => a + row[h]!, 0));
+
+/* ---- arrivals (R1, sources) ---- */
+interface Arrivals {
+  arrivals: number[][];
+  written: number[][];
+  rearrivals: number;
+  /** Live arrivals plus re-arrivals. */
+  n: number;
+  hourly: number[];
+  byRepo: Map<string, number>;
+  byVideo: Map<string, number>;
+  videoLabel: Map<string, string>;
+  byChannel: Map<string, number>;
+  byAuthor: Map<string, number>;
+  byMix: Map<string, number>;
+}
+
+function collectArrivals(ctx: Ctx): Arrivals {
+  const { items, clock, inRange, wdOf } = ctx;
   const arrivals = grid();
   const written = grid();
   let liveArrivals = 0;
@@ -399,9 +461,33 @@ export function insightsReport(db: Db, opts: InsightsOptions): Insights {
       }
     }
   }
-  const arrivalsN = liveArrivals + rearrivals;
+  return {
+    arrivals,
+    written,
+    rearrivals,
+    n: liveArrivals + rearrivals,
+    hourly: hourlyOf(arrivals),
+    byRepo,
+    byVideo,
+    videoLabel,
+    byChannel,
+    byAuthor,
+    byMix,
+  };
+}
 
-  /* ---- the owner's actions (R2, F1, P6) ---- */
+/* ---- the owner's actions (R2, F1, P6) ---- */
+interface Actions {
+  grid: number[][];
+  hourly: number[];
+  n: number;
+  bulkActions: number;
+  perDay: Map<number, number>;
+  undoKeys: Set<string>;
+}
+
+function collectActions(ctx: Ctx): Actions {
+  const { items, events, clock, inRange, wdOf, isMine, bulk } = ctx;
   const actionsGrid = grid();
   const actionKeys = new Set<string>();
   let bulkActions = 0;
@@ -417,15 +503,40 @@ export function insightsReport(db: Db, opts: InsightsOptions): Insights {
     inc(perDay, clock.day(e.t));
     if (bulk.isBulk(e)) bulkActions++;
   }
-  const actionsN = actionKeys.size;
   const undoKeys = new Set<string>();
   for (const e of events) {
     if (e.kind !== 'undo' || e.source !== 'user' || !inRange(e.t) || !items.get(e.item)?.inUniverse) continue;
     const a = actionIdOf(e);
     undoKeys.add(a !== null ? `a${a}` : `e${e.id}`);
   }
+  return { grid: actionsGrid, hourly: hourlyOf(actionsGrid), n: actionKeys.size, bulkActions, perDay, undoKeys };
+}
 
-  /* ---- per item: first touch, outcome, resolution, judgement ---- */
+/* ---- per item: first touch, outcome, resolution, judgement ---- */
+interface PerItem {
+  outcomeCounts: Record<Outcome, number>;
+  outcomeBulk: number;
+  waiting: number;
+  firstResp: Map<string, number[]>;
+  firstRespHour: number[][];
+  replyBy: Tally;
+  bySize: Map<SizeBand, { n: number; hits: number }>;
+  sizeApprox: number;
+  ages: Record<'replied' | 'done' | 'dismissed', number[]>;
+  /** Things cleared (todos included) and how many of them were replies, for the sentence. */
+  dealt: number;
+  repliedN: number;
+  dealtBy: Map<string, number>;
+  biggest: { it: Item; size: number } | null;
+  resolvedCount: number;
+  replyDays: { youtube: Set<number>; github: Set<number> };
+  judged: Judged[];
+  judgedBulk: number;
+  capturedSince: number | null;
+}
+
+function collectPerItem(ctx: Ctx): PerItem {
+  const { db, items, clock, inRange, undos, bulk, isMine } = ctx;
   const outcomeCounts: Record<Outcome, number> = {
     replied: 0,
     done: 0,
@@ -438,24 +549,17 @@ export function insightsReport(db: Db, opts: InsightsOptions): Insights {
   let waiting = 0;
   const firstResp = new Map<string, number[]>();
   const firstRespHour = Array.from({ length: 24 }, () => [] as number[]);
-  const replyBy = new Map<string, { n: number; hits: number }>();
+  const replyBy: Tally = new Map();
   const bySize = new Map<SizeBand, { n: number; hits: number }>();
   let sizeApprox = 0;
-  const ages: Record<'replied' | 'done' | 'dismissed', number[]> = { replied: [], done: [], dismissed: [] };
+  const ages: PerItem['ages'] = { replied: [], done: [], dismissed: [] };
   let dealt = 0;
   let repliedN = 0;
   const dealtBy = new Map<string, number>();
   let biggest: { it: Item; size: number } | null = null;
   let resolvedCount = 0;
   const replyDays = { youtube: new Set<number>(), github: new Set<number>() };
-  const judged: {
-    suggested: string;
-    action: (typeof FIRST_ACTIONS)[number];
-    confidence: unknown;
-    turn: unknown;
-    category: string | null;
-    approxCategory: boolean;
-  }[] = [];
+  const judged: Judged[] = [];
   let judgedBulk = 0;
   const categoriesNow = currentCategories(db);
   let capturedSince: number | null = null;
@@ -582,12 +686,85 @@ export function insightsReport(db: Db, opts: InsightsOptions): Insights {
       if (it.provider === 'github') replyDays.github.add(clock.day(e.t));
     }
   }
+  return {
+    outcomeCounts,
+    outcomeBulk,
+    waiting,
+    firstResp,
+    firstRespHour,
+    replyBy,
+    bySize,
+    sizeApprox,
+    ages,
+    dealt,
+    repliedN,
+    dealtBy,
+    biggest,
+    resolvedCount,
+    replyDays,
+    judged,
+    judgedBulk,
+    capturedSince,
+  };
+}
 
-  /* ---- snoozes started in the range (P5) ---- */
-  const snoozeRows = new Map<
-    string,
-    { n: number; activity: number; fallback: number; manual: number; timed: number; open: number; dur: number[] }
-  >();
+const rateRows = <K extends string>(keys: readonly K[], m: Map<K, { n: number; hits: number }>, min: number) =>
+  keys.map((k) => {
+    const r = m.get(k) ?? { n: 0, hits: 0 };
+    return { key: k, n: r.n, hits: r.hits, rate: rate(r.hits, r.n, min) };
+  });
+
+/* ---- the sections ---- */
+
+function rhythmSection(ctx: Ctx, arr: Arrivals, act: Actions, per: PerItem): Insights['rhythm'] {
+  const { weekdays } = ctx;
+  const arrivalsGrid = weekGrid(arr.arrivals, weekdays);
+  const actionsWeek = weekGrid(act.grid, weekdays);
+  const firstRespN = [...per.firstResp.values()].reduce((a, xs) => a + xs.length, 0);
+  return {
+    arrivals: card(arr.n, MIN.arrivals, () => ({
+      ...arrivalsGrid,
+      written: weekGrid(arr.written, weekdays),
+      rearrivals: arr.rearrivals,
+    })),
+    actions: card(act.n, MIN.actions, () => ({ ...actionsWeek, bulkActions: act.bulkActions })),
+    hourly: card(Math.min(arr.n, act.n), MIN.arrivals, () => ({ arrivals: arr.hourly, actions: act.hourly })),
+    firstResponse: card(firstRespN, MIN.firstResponseRow, () => ({
+      rowMin: MIN.firstResponseRow,
+      byProvider: [...per.firstResp]
+        .map(([provider, xs]) => {
+          const ok = xs.length >= MIN.firstResponseRow;
+          return {
+            provider,
+            n: xs.length,
+            medianMs: ok ? median(xs) : null,
+            p75Ms: ok ? quantile(xs, 0.75) : null,
+          };
+        })
+        .sort((a, b) => b.n - a.n || a.provider.localeCompare(b.provider)),
+      byHour: per.firstRespHour.map((xs, hour) => ({
+        hour,
+        n: xs.length,
+        medianMs: xs.length >= MIN.firstResponseRow ? median(xs) : null,
+      })),
+    })),
+  };
+}
+
+type SnoozeRow = {
+  n: number;
+  activity: number;
+  fallback: number;
+  manual: number;
+  timed: number;
+  open: number;
+  dur: number[];
+};
+
+/** Snoozes started in the range (P5), by bucket, with how each one ended. */
+function collectSnoozes(ctx: Ctx): { rows: Map<string, SnoozeRow>; n: number } {
+  const { items, inRange, undos } = ctx;
+  const snoozeRows = new Map<string, SnoozeRow>();
   let snoozeN = 0;
   for (const it of items.values()) {
     if (!it.inUniverse) continue;
@@ -611,69 +788,65 @@ export function insightsReport(db: Db, opts: InsightsOptions): Insights {
       snoozeRows.set(bucket, row);
     });
   }
+  return { rows: snoozeRows, n: snoozeN };
+}
 
-  /* ---- sources: the biggest threads touched in the range (S5) ---- */
-  const threads = new Map<string, { it: Item; size: number }>();
-  for (const it of items.values()) {
-    if (!it.world || it.size === null) continue;
-    const touched = (it.live && inRange(it.firstSeen)) || it.events.some((e) => inRange(e.t));
-    if (!touched) continue;
-    const key = it.provider === 'youtube' && it.row.thread_id ? `yt:${it.row.thread_id}` : it.id;
-    const cur = threads.get(key);
-    // A YouTube thread is many items: link to its top comment when that is one of them.
-    if (!cur || it.size > cur.size || (it.row.thread_id === it.id && cur.it.id !== it.id))
-      threads.set(key, { it, size: it.size });
-  }
-  const bigThreads = [...threads.values()].sort((a, b) => b.size - a.size || a.it.id.localeCompare(b.it.id));
-
-  /* ---- backlog, right now (ignores the range) ---- */
-  const inboxAges: { it: Item; since: number; age: number }[] = [];
-  const snoozedNow = new Map<string, number[]>();
-  for (const it of items.values()) {
-    if (!it.inUniverse || it.row.state !== 'inbox') continue;
-    const until = ms(it.row.snoozed_until);
-    if (until !== null && until > nowMs) {
-      const bucket = it.row.snooze_bucket ?? 'none';
-      const at = ms(it.row.snoozed_at);
-      (snoozedNow.get(bucket) ?? snoozedNow.set(bucket, []).get(bucket)!).push(
-        at === null ? NaN : Math.max(0, nowMs - at) / DAY_MS,
-      );
-      continue;
-    }
-    const since = ms(it.row.woke_at) ?? it.firstSeen;
-    inboxAges.push({ it, since, age: Math.max(0, nowMs - since) });
-  }
-  const elder = inboxAges.reduce<(typeof inboxAges)[number] | null>(
-    (a, x) => (!a || x.since < a.since || (x.since === a.since && x.it.id < a.it.id) ? x : a),
-    null,
-  );
-
-  /* ---- assemble ---- */
-  const arrivalsGrid = weekGrid(arrivals, weekdays);
-  const actionsWeek = weekGrid(actionsGrid, weekdays);
-  const hourlyOf = (g: number[][]) => Array.from({ length: 24 }, (_, h) => g.reduce((a, row) => a + row[h]!, 0));
-  const hourlyArrivals = hourlyOf(arrivals);
-  const hourlyActions = hourlyOf(actionsGrid);
-
-  const firstRespN = [...firstResp.values()].reduce((a, xs) => a + xs.length, 0);
-  const rateRows = <K extends string>(keys: readonly K[], m: Map<K, { n: number; hits: number }>, min: number) =>
-    keys.map((k) => {
-      const r = m.get(k) ?? { n: 0, hits: 0 };
-      return { key: k, n: r.n, hits: r.hits, rate: rate(r.hits, r.n, min) };
-    });
-
-  const replySourceRows = [...replyBy]
-    .map(([k, r]) => {
-      const [provider, kind] = k.split('\t') as [string, string];
-      return { provider, kind, n: r.n, hits: r.hits, rate: rate(r.hits, r.n, MIN.rateRow) };
-    })
+function responsesSection(ctx: Ctx, act: Actions, per: PerItem): Insights['responses'] {
+  const { ages } = per;
+  const snoozes = collectSnoozes(ctx);
+  const replySourceRows = [...per.replyBy]
+    .map(([k, r]) => ({ ...splitKey(k), n: r.n, hits: r.hits, rate: rate(r.hits, r.n, MIN.rateRow) }))
     .sort((a, b) => b.n - a.n || a.provider.localeCompare(b.provider) || a.kind.localeCompare(b.kind));
   const resolvedSingle = replySourceRows.reduce((a, r) => a + r.n, 0);
+  return {
+    outcomes: card(
+      OUTCOME_KEYS.reduce((a, k) => a + per.outcomeCounts[k], 0),
+      MIN.outcomes,
+      () => ({ counts: per.outcomeCounts, waiting: per.waiting, bulk: per.outcomeBulk }),
+    ),
+    replyBySource: card(resolvedSingle, MIN.rateRow, () => ({ rowMin: MIN.rateRow, rows: replySourceRows })),
+    replyBySize: card(resolvedSingle, MIN.rateRow, () => ({
+      rowMin: MIN.rateRow,
+      rows: rateRows(SIZE_BANDS, per.bySize, MIN.rateRow).map(({ key, ...r }) => ({ band: key, ...r })),
+      approx: per.sizeApprox,
+    })),
+    ageWhenAnswered: card(ages.replied.length + ages.done.length + ages.dismissed.length, MIN.rateRow, () => ({
+      rowMin: MIN.rateRow,
+      rows: (['replied', 'done', 'dismissed'] as const).map((outcome) => {
+        const xs = ages[outcome];
+        const ok = xs.length >= MIN.rateRow;
+        return {
+          outcome,
+          n: xs.length,
+          p25Ms: ok ? quantile(xs, 0.25) : null,
+          medianMs: ok ? median(xs) : null,
+          p75Ms: ok ? quantile(xs, 0.75) : null,
+        };
+      }),
+    })),
+    snoozes: card(snoozes.n, MIN.snoozes, () => ({
+      rows: [...snoozes.rows]
+        .map(([bucket, r]) => ({
+          bucket,
+          n: r.n,
+          activity: r.activity,
+          fallback: r.fallback,
+          manual: r.manual,
+          timed: r.timed,
+          open: r.open,
+          medianMs: median(r.dur),
+        }))
+        .sort((a, b) => b.n - a.n || a.bucket.localeCompare(b.bucket)),
+    })),
+    undos: card(act.n, MIN.undos, () => ({ undos: act.undoKeys.size, actions: act.n })),
+  };
+}
 
-  // Predictions.
+function predictionsSection(per: PerItem): Insights['predictions'] {
+  const { judged } = per;
   const scored = judged.filter((j) => !(j.action === 'legacy' && j.suggested !== 'reply'));
-  const hit = (j: (typeof judged)[number]) => (AGREES[j.suggested] ?? []).includes(j.action);
-  const tally = <K extends string>(keys: readonly K[], keyOf: (j: (typeof judged)[number]) => unknown, hitOf = hit) => {
+  const hit = (j: Judged) => (AGREES[j.suggested] ?? []).includes(j.action);
+  const tally = <K extends string>(keys: readonly K[], keyOf: (j: Judged) => unknown, hitOf = hit) => {
     const m = new Map<K, { n: number; hits: number }>();
     for (const j of scored) {
       const k = keyOf(j);
@@ -712,20 +885,65 @@ export function insightsReport(db: Db, opts: InsightsOptions): Insights {
   const catN = [...catMap.values()].reduce((a, c) => a + c.n, 0);
   const high = byConfidence.find((r) => r.key === 'high')!;
   const medium = byConfidence.find((r) => r.key === 'medium')!;
+  const { capturedSince } = per;
+  return {
+    agreement: card(scored.length, MIN.agreement, () => ({
+      hits,
+      total: scored.length,
+      ambiguous: judged.length - scored.length,
+      bulk: per.judgedBulk,
+    })),
+    bySuggestion: card(scored.length, MIN.rateRow, () => ({
+      rowMin: MIN.rateRow,
+      rows: bySuggestion.map(({ key, ...r }) => ({ suggested: key, ...r })),
+    })),
+    calibration: card(scored.length, MIN.rateRow, () => ({
+      rowMin: MIN.rateRow,
+      rows: byConfidence.map(({ key, ...r }) => ({ confidence: key, ...r })),
+      highNotBetter: high.rate !== null && medium.rate !== null && high.rate <= medium.rate,
+    })),
+    confusion: card(judged.length, MIN.confusion, () => ({ cells })),
+    categories: card(catN, MIN.rateRow, () => ({
+      rowMin: MIN.rateRow,
+      rows: catRows,
+      capturedSince: capturedSince === null ? null : new Date(capturedSince).toISOString(),
+    })),
+    turns: card(
+      byTurn.reduce((a, r) => a + r.n, 0),
+      MIN.rateRow,
+      () => ({ rowMin: MIN.rateRow, rows: byTurn.map(({ key, ...r }) => ({ turn: key, ...r })) }),
+    ),
+  };
+}
 
-  // Sources.
-  const repos = ranked(byRepo, TOP_RANKED);
+/** The biggest threads touched in the range (S5). */
+function collectThreads(ctx: Ctx): { it: Item; size: number }[] {
+  const { items, inRange } = ctx;
+  const threads = new Map<string, { it: Item; size: number }>();
+  for (const it of items.values()) {
+    if (!it.world || it.size === null) continue;
+    const touched = (it.live && inRange(it.firstSeen)) || it.events.some((e) => inRange(e.t));
+    if (!touched) continue;
+    const key = it.provider === 'youtube' && it.row.thread_id ? `yt:${it.row.thread_id}` : it.id;
+    const cur = threads.get(key);
+    // A YouTube thread is many items: link to its top comment when that is one of them.
+    if (!cur || it.size > cur.size || (it.row.thread_id === it.id && cur.it.id !== it.id))
+      threads.set(key, { it, size: it.size });
+  }
+  return [...threads.values()].sort((a, b) => b.size - a.size || a.it.id.localeCompare(b.it.id));
+}
+
+function sourcesSection(ctx: Ctx, arr: Arrivals): Insights['sources'] {
+  const bigThreads = collectThreads(ctx);
+  const repos = ranked(arr.byRepo, TOP_RANKED);
   const videos = ranked(
-    new Map([...byVideo].map(([k, n]) => [videoLabel.get(k) ?? k, n] as [string, number])),
+    new Map([...arr.byVideo].map(([k, n]) => [arr.videoLabel.get(k) ?? k, n] as [string, number])),
     TOP_RANKED,
   );
-  const channels = ranked(byChannel, Infinity).rows.filter((r) => r.n >= MIN.channelRow);
-  const regulars = ranked(byAuthor, Infinity).rows.filter((r) => r.n >= MIN.regularRow);
-  const mixAll = [...byMix]
-    .map(([k, n]) => {
-      const [provider, kind] = k.split('\t') as [string, string];
-      return { provider, kind, n };
-    })
+  const channels = ranked(arr.byChannel, Infinity).rows.filter((r) => r.n >= MIN.channelRow);
+  const regulars = ranked(arr.byAuthor, Infinity).rows.filter((r) => r.n >= MIN.regularRow);
+  const mixAll = [...arr.byMix]
+    .map(([k, n]) => ({ ...splitKey(k), n }))
     .sort((a, b) => b.n - a.n || a.provider.localeCompare(b.provider));
   const mixParts =
     mixAll.length <= MIX_PARTS
@@ -734,46 +952,51 @@ export function insightsReport(db: Db, opts: InsightsOptions): Insights {
           ...mixAll.slice(0, MIX_PARTS - 1),
           { provider: 'other', kind: 'other', n: mixAll.slice(MIX_PARTS - 1).reduce((a, p) => a + p.n, 0) },
         ];
+  return {
+    repos: card(arr.byRepo.size ? repos.rows.reduce((a, r) => a + r.n, 0) + repos.other : 0, MIN.repos, () => repos),
+    videos: card(
+      arr.byVideo.size ? videos.rows.reduce((a, r) => a + r.n, 0) + videos.other : 0,
+      MIN.videos,
+      () => videos,
+    ),
+    channels: card(channels.length, MIN.channels, () => ({ rowMin: MIN.channelRow, rows: channels })),
+    regulars: card(regulars[0]?.n ?? 0, MIN.regularRow, () => ({
+      rowMin: MIN.regularRow,
+      rows: regulars.slice(0, TOP_REGULARS),
+    })),
+    threads: card(bigThreads[0]?.size ?? 0, MIN.bigThread, () => ({
+      rows: bigThreads
+        .filter((t) => t.size >= MIN.bigThread)
+        .slice(0, TOP_THREADS)
+        .map((t) => ({ ...refOf(t.it), size: t.size })),
+    })),
+    mix: card(arr.n, MIN.mix, () => ({ parts: mixParts })),
+  };
+}
 
-  // Extras.
-  let busiest: { day: number; n: number } | null = null;
-  for (const [day, n] of perDay)
-    if (!busiest || n > busiest.n || (n === busiest.n && day > busiest.day)) busiest = { day, n };
-  const quietest = (() => {
-    let best: { hour: number; perDay: number } | null = null;
-    for (let h = 0; h < 24; h++) {
-      const v = hourlyArrivals[h]! / Math.max(1, days);
-      if (!best || v < best.perDay) best = { hour: h, perDay: v };
+/** The backlog right now: ignores the range. */
+function backlogSection(ctx: Ctx): Insights['backlog'] {
+  const { db, items, nowMs, clock, opts, firstDay, today } = ctx;
+  const inboxAges: { it: Item; since: number; age: number }[] = [];
+  const snoozedNow = new Map<string, number[]>();
+  for (const it of items.values()) {
+    if (!it.inUniverse || it.row.state !== 'inbox') continue;
+    const until = ms(it.row.snoozed_until);
+    if (until !== null && until > nowMs) {
+      const bucket = it.row.snooze_bucket ?? 'none';
+      const at = ms(it.row.snoozed_at);
+      (snoozedNow.get(bucket) ?? snoozedNow.set(bucket, []).get(bucket)!).push(
+        at === null ? NaN : Math.max(0, nowMs - at) / DAY_MS,
+      );
+      continue;
     }
-    return best!;
-  })();
-  const polyDays = [...replyDays.youtube].filter((d) => replyDays.github.has(d)).sort((a, b) => a - b);
-  const allReplyDays = new Set([...replyDays.youtube, ...replyDays.github]);
-
-  const repoCard = card(
-    byRepo.size ? repos.rows.reduce((a, r) => a + r.n, 0) + repos.other : 0,
-    MIN.repos,
-    () => repos,
+    const since = ms(it.row.woke_at) ?? it.firstSeen;
+    inboxAges.push({ it, since, age: Math.max(0, nowMs - since) });
+  }
+  const elder = inboxAges.reduce<(typeof inboxAges)[number] | null>(
+    (a, x) => (!a || x.since < a.since || (x.since === a.since && x.it.id < a.it.id) ? x : a),
+    null,
   );
-  const videoCard = card(
-    byVideo.size ? videos.rows.reduce((a, r) => a + r.n, 0) + videos.other : 0,
-    MIN.videos,
-    () => videos,
-  );
-  // A repo reads as a name; a video title is quoted so the sentence still parses.
-  const loudest = [
-    repoCard.data?.rows[0],
-    videoCard.data?.rows[0] && { ...videoCard.data.rows[0], label: `‘${videoCard.data.rows[0].label}’` },
-  ]
-    .filter((r): r is RankedRow => !!r)
-    .sort((a, b) => b.n - a.n)[0];
-  const agreementCard = card(scored.length, MIN.agreement, () => ({
-    hits,
-    total: scored.length,
-    ambiguous: judged.length - scored.length,
-    bulk: judgedBulk,
-  }));
-  const actionsCard = card(actionsN, MIN.actions, () => ({ ...actionsWeek, bulkActions }));
 
   let overTime: InsightCard<{ days: { day: string; count: number }[] }>;
   try {
@@ -784,172 +1007,112 @@ export function insightsReport(db: Db, opts: InsightsOptions): Insights {
   } catch {
     overTime = nullCard(MIN.overTimeDays);
   }
+  return {
+    inboxAge: card(inboxAges.length, MIN.backlog, () => ({
+      bands: AGE_BANDS.map((band) => ({ band, n: inboxAges.filter((x) => ageBand(x.age) === band).length })),
+    })),
+    elder: card(inboxAges.length, MIN.backlog, () => ({
+      ...refOf(elder!.it),
+      since: new Date(elder!.since).toISOString(),
+      ageMs: elder!.age,
+    })),
+    snoozedNow: card(
+      [...snoozedNow.values()].reduce((a, xs) => a + xs.length, 0),
+      MIN.backlog,
+      () => ({
+        rows: [...snoozedNow]
+          .map(([bucket, xs]) => ({ bucket, n: xs.length, medianDays: median(xs.filter((x) => !Number.isNaN(x))) }))
+          .sort((a, b) => b.n - a.n || a.bucket.localeCompare(b.bucket)),
+      }),
+    ),
+    overTime,
+  };
+}
 
+function extrasSection(ctx: Ctx, arr: Arrivals, act: Actions, per: PerItem): Insights['extras'] {
+  const { days, clock } = ctx;
+  let busiest: { day: number; n: number } | null = null;
+  for (const [day, n] of act.perDay)
+    if (!busiest || n > busiest.n || (n === busiest.n && day > busiest.day)) busiest = { day, n };
+  const quietest = (() => {
+    let best: { hour: number; perDay: number } | null = null;
+    for (let h = 0; h < 24; h++) {
+      const v = arr.hourly[h]! / Math.max(1, days);
+      if (!best || v < best.perDay) best = { hour: h, perDay: v };
+    }
+    return best!;
+  })();
+  const { replyDays, biggest } = per;
+  const polyDays = [...replyDays.youtube].filter((d) => replyDays.github.has(d)).sort((a, b) => a - b);
+  const allReplyDays = new Set([...replyDays.youtube, ...replyDays.github]);
+  return {
+    busiestDay: card(act.n, 1, () => ({ day: clock.key(busiest!.day), actions: busiest!.n })),
+    quietestHour: card(days >= MIN.quietestHourDays ? arr.n : 0, MIN.arrivals, () => quietest),
+    biggestCleared: card(per.resolvedCount, 1, () => ({ ...refOf(biggest!.it), size: biggest!.size })),
+    polyglot: card(allReplyDays.size, 1, () => ({
+      days: polyDays.length,
+      last: polyDays.length ? clock.key(polyDays[polyDays.length - 1]!) : null,
+    })),
+  };
+}
+
+/** Work out every card. Read only. Throws RangeError for an unknown time zone. */
+export function insightsReport(db: Db, opts: InsightsOptions): Insights {
+  checkTimeZone(opts.tz);
+  let rows: ItemRow[];
+  let events: HistEvent[];
+  try {
+    rows = loadItems(db);
+    events = loadEvents(db, ['state', 'snooze', 'reply', 'undo', 'decision']);
+  } catch {
+    return emptyInsights(opts); // a database from before the columns this reads
+  }
+  const ctx = buildContext(db, opts, rows, events);
+  const arr = collectArrivals(ctx);
+  const act = collectActions(ctx);
+  const per = collectPerItem(ctx);
+
+  const rhythm = rhythmSection(ctx, arr, act, per);
+  const responses = responsesSection(ctx, act, per);
+  const predictions = predictionsSection(per);
+  const sources = sourcesSection(ctx, arr);
+  const backlog = backlogSection(ctx);
+  const extras = extrasSection(ctx, arr, act, per);
+
+  // A repo reads as a name; a video title is quoted so the sentence still parses.
+  const loudest = [
+    sources.repos.data?.rows[0],
+    sources.videos.data?.rows[0] && { ...sources.videos.data.rows[0], label: `‘${sources.videos.data.rows[0].label}’` },
+  ]
+    .filter((r): r is RankedRow => !!r)
+    .sort((a, b) => b.n - a.n)[0];
   const anything =
-    [...items.values()].some((it) => it.world) ||
-    events.some((e) => e.source === 'user' && items.get(e.item)?.inUniverse);
+    [...ctx.items.values()].some((it) => it.world) ||
+    events.some((e) => e.source === 'user' && ctx.items.get(e.item)?.inUniverse);
 
   return {
     range: opts.range,
     tz: opts.tz,
     generatedAt: opts.now.toISOString(),
-    from: clock.key(firstDay),
-    days,
+    from: ctx.clock.key(ctx.firstDay),
+    days: ctx.days,
     sentence: insightsSentence({
       range: opts.range,
-      actions: actionsN,
-      dealt,
-      dealtBy: [...dealtBy].map(([k, n]) => {
-        const [provider, kind] = k.split('\t') as [string, string];
-        return { provider, kind, n };
-      }),
-      replied: repliedN,
-      hourlyActions: actionsCard.data ? hourlyActions : null,
+      actions: act.n,
+      dealt: per.dealt,
+      dealtBy: [...per.dealtBy].map(([k, n]) => ({ ...splitKey(k), n })),
+      replied: per.repliedN,
+      hourlyActions: rhythm.actions.data ? act.hourly : null,
       loudest: loudest?.label ?? null,
-      agreement: agreementCard.data,
+      agreement: predictions.agreement.data,
     }),
     empty: !anything,
-    rhythm: {
-      arrivals: card(arrivalsN, MIN.arrivals, () => ({
-        ...arrivalsGrid,
-        written: weekGrid(written, weekdays),
-        rearrivals,
-      })),
-      actions: actionsCard,
-      hourly: card(Math.min(arrivalsN, actionsN), MIN.arrivals, () => ({
-        arrivals: hourlyArrivals,
-        actions: hourlyActions,
-      })),
-      firstResponse: card(firstRespN, MIN.firstResponseRow, () => ({
-        rowMin: MIN.firstResponseRow,
-        byProvider: [...firstResp]
-          .map(([provider, xs]) => {
-            const ok = xs.length >= MIN.firstResponseRow;
-            return {
-              provider,
-              n: xs.length,
-              medianMs: ok ? median(xs) : null,
-              p75Ms: ok ? quantile(xs, 0.75) : null,
-            };
-          })
-          .sort((a, b) => b.n - a.n || a.provider.localeCompare(b.provider)),
-        byHour: firstRespHour.map((xs, hour) => ({
-          hour,
-          n: xs.length,
-          medianMs: xs.length >= MIN.firstResponseRow ? median(xs) : null,
-        })),
-      })),
-    },
-    responses: {
-      outcomes: card(
-        OUTCOME_KEYS.reduce((a, k) => a + outcomeCounts[k], 0),
-        MIN.outcomes,
-        () => ({ counts: outcomeCounts, waiting, bulk: outcomeBulk }),
-      ),
-      replyBySource: card(resolvedSingle, MIN.rateRow, () => ({ rowMin: MIN.rateRow, rows: replySourceRows })),
-      replyBySize: card(resolvedSingle, MIN.rateRow, () => ({
-        rowMin: MIN.rateRow,
-        rows: rateRows(SIZE_BANDS, bySize, MIN.rateRow).map(({ key, ...r }) => ({ band: key, ...r })),
-        approx: sizeApprox,
-      })),
-      ageWhenAnswered: card(ages.replied.length + ages.done.length + ages.dismissed.length, MIN.rateRow, () => ({
-        rowMin: MIN.rateRow,
-        rows: (['replied', 'done', 'dismissed'] as const).map((outcome) => {
-          const xs = ages[outcome];
-          const ok = xs.length >= MIN.rateRow;
-          return {
-            outcome,
-            n: xs.length,
-            p25Ms: ok ? quantile(xs, 0.25) : null,
-            medianMs: ok ? median(xs) : null,
-            p75Ms: ok ? quantile(xs, 0.75) : null,
-          };
-        }),
-      })),
-      snoozes: card(snoozeN, MIN.snoozes, () => ({
-        rows: [...snoozeRows]
-          .map(([bucket, r]) => ({
-            bucket,
-            n: r.n,
-            activity: r.activity,
-            fallback: r.fallback,
-            manual: r.manual,
-            timed: r.timed,
-            open: r.open,
-            medianMs: median(r.dur),
-          }))
-          .sort((a, b) => b.n - a.n || a.bucket.localeCompare(b.bucket)),
-      })),
-      undos: card(actionsN, MIN.undos, () => ({ undos: undoKeys.size, actions: actionsN })),
-    },
-    predictions: {
-      agreement: agreementCard,
-      bySuggestion: card(scored.length, MIN.rateRow, () => ({
-        rowMin: MIN.rateRow,
-        rows: bySuggestion.map(({ key, ...r }) => ({ suggested: key, ...r })),
-      })),
-      calibration: card(scored.length, MIN.rateRow, () => ({
-        rowMin: MIN.rateRow,
-        rows: byConfidence.map(({ key, ...r }) => ({ confidence: key, ...r })),
-        highNotBetter: high.rate !== null && medium.rate !== null && high.rate <= medium.rate,
-      })),
-      confusion: card(judged.length, MIN.confusion, () => ({ cells })),
-      categories: card(catN, MIN.rateRow, () => ({
-        rowMin: MIN.rateRow,
-        rows: catRows,
-        capturedSince: capturedSince === null ? null : new Date(capturedSince).toISOString(),
-      })),
-      turns: card(
-        byTurn.reduce((a, r) => a + r.n, 0),
-        MIN.rateRow,
-        () => ({ rowMin: MIN.rateRow, rows: byTurn.map(({ key, ...r }) => ({ turn: key, ...r })) }),
-      ),
-    },
-    sources: {
-      repos: repoCard,
-      videos: videoCard,
-      channels: card(channels.length, MIN.channels, () => ({ rowMin: MIN.channelRow, rows: channels })),
-      regulars: card(regulars[0]?.n ?? 0, MIN.regularRow, () => ({
-        rowMin: MIN.regularRow,
-        rows: regulars.slice(0, TOP_REGULARS),
-      })),
-      threads: card(bigThreads[0]?.size ?? 0, MIN.bigThread, () => ({
-        rows: bigThreads
-          .filter((t) => t.size >= MIN.bigThread)
-          .slice(0, TOP_THREADS)
-          .map((t) => ({ ...refOf(t.it), size: t.size })),
-      })),
-      mix: card(arrivalsN, MIN.mix, () => ({ parts: mixParts })),
-    },
-    backlog: {
-      inboxAge: card(inboxAges.length, MIN.backlog, () => ({
-        bands: AGE_BANDS.map((band) => ({ band, n: inboxAges.filter((x) => ageBand(x.age) === band).length })),
-      })),
-      elder: card(inboxAges.length, MIN.backlog, () => ({
-        ...refOf(elder!.it),
-        since: new Date(elder!.since).toISOString(),
-        ageMs: elder!.age,
-      })),
-      snoozedNow: card(
-        [...snoozedNow.values()].reduce((a, xs) => a + xs.length, 0),
-        MIN.backlog,
-        () => ({
-          rows: [...snoozedNow]
-            .map(([bucket, xs]) => ({ bucket, n: xs.length, medianDays: median(xs.filter((x) => !Number.isNaN(x))) }))
-            .sort((a, b) => b.n - a.n || a.bucket.localeCompare(b.bucket)),
-        }),
-      ),
-      overTime,
-    },
-    extras: {
-      busiestDay: card(actionsN, 1, () => ({ day: clock.key(busiest!.day), actions: busiest!.n })),
-      quietestHour: card(days >= MIN.quietestHourDays ? arrivalsN : 0, MIN.arrivals, () => quietest),
-      biggestCleared: card(resolvedCount, 1, () => ({ ...refOf(biggest!.it), size: biggest!.size })),
-      polyglot: card(allReplyDays.size, 1, () => ({
-        days: polyDays.length,
-        last: polyDays.length ? clock.key(polyDays[polyDays.length - 1]!) : null,
-      })),
-    },
+    rhythm,
+    responses,
+    predictions,
+    sources,
+    backlog,
+    extras,
   };
 }
 

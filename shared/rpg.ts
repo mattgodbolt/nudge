@@ -435,10 +435,6 @@ export function roman(n: number): string {
   return out;
 }
 
-/** An achievement's name at a tier: a ladder carries its numeral ("Rubber Duck III"), a one-off does not. */
-export const tierName = (def: Pick<AchievementDef, 'name' | 'tiers'>, tier: number) =>
-  def.tiers.length > 1 && tier > 0 ? `${def.name} ${roman(tier)}` : def.name;
-
 /** The key `seen` stores for an achievement tier: the bare id for tier I (as before ladders), "id:k" above it. */
 export const tierKey = (id: string, tier: number) => (tier <= 1 ? id : `${id}:${tier}`);
 

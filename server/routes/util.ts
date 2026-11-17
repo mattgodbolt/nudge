@@ -70,6 +70,13 @@ export function oneOf<T extends string>(v: unknown, name: string, allowed: reado
   return v as T;
 }
 
+/** An IANA time zone name from a request: absent or empty means UTC. Whether it names a real zone is checked by the reader. */
+export function tz(v: unknown): string {
+  if (v === undefined || v === null || v === '') return 'UTC';
+  if (typeof v !== 'string' || v.length > 64) throw bad('"tz" must be an IANA time zone name');
+  return v;
+}
+
 export function buildSettingsDto(deps: AppDeps): SettingsDTO {
   const s = deps.repo.getSettings();
   const { key, source } = deps.resolveApiKey();
