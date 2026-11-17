@@ -27,7 +27,6 @@
     snoozedText,
     wokeText,
     showSuggestion = false,
-    chrome = false,
   }: {
     item: InboxItem;
     now: number;
@@ -50,8 +49,6 @@
     snoozedText: (when: string) => string;
     wokeText: string;
     showSuggestion?: boolean;
-    /** The comment thread's header styling: hidden back button on desktop, mobile layout, coloured snooze tag. */
-    chrome?: boolean;
   } = $props();
 
   /** "Done", "Dismissed" ... once the item is dealt with; empty while it is in the inbox. */
@@ -75,7 +72,7 @@
   const woke = $derived(!item.snoozedUntil && item.comment.state === 'inbox' && recentlyWoken(item.wokeAt, now));
 </script>
 
-<header bind:clientWidth={headerWidth} class:chrome>
+<header bind:clientWidth={headerWidth}>
   <button class="btn ghost sm back" onclick={() => (ui.pane = 'list')} aria-label="Back to list"
     ><Icon name="chevron-left" size={phone.value ? 22 : 15} /> Back</button
   >
@@ -126,24 +123,21 @@
     flex-wrap: wrap;
     gap: var(--s2);
     align-items: center;
-    margin-top: 4px;
-  }
-  .chrome .tags {
     margin-top: 3px;
   }
-  .chrome .snz {
+  .snz {
     font-size: var(--fs-label);
     color: var(--secondary);
   }
-  .chrome .back {
+  .back {
     display: none;
   }
   @media (max-width: 899px) {
-    .chrome {
+    header {
       padding: var(--s2) var(--s3) var(--s3);
       gap: var(--s2) var(--s3);
     }
-    .chrome .back {
+    .back {
       display: inline-flex;
       flex-basis: calc(100% + var(--s5));
       height: 52px;

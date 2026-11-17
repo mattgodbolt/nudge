@@ -53,7 +53,6 @@
     actionsLabel="Comment actions"
     inlineFrom={1500}
     showSuggestion
-    chrome
     snoozedText={(when) => `Snoozed until ${item.snoozeUntilActivity ? 'activity, or ' : ''}${when}`}
     wokeText="back from snooze"
   >
