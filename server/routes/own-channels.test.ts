@@ -2,14 +2,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../app.js';
 import type { SyncEngine } from '../contracts.js';
-import { createHandoffPoster } from '../reply/poster.js';
-import { fakeGoogleAuth } from '../reply/test-helpers.js';
 import { createAddSource } from '../sync/sources.js';
 import { makeEnv } from '../sync/test-helpers.js';
 import type { SettingsDTO } from '../../shared/types.js';
+import { H, testDeps } from './test-helpers.js';
 
 // Real repo + real addSource against a scripted YouTube client: exercises the whole "this is my channel" flow.
-const H = { 'x-nudge': '1', host: '127.0.0.1:4517' };
 const CH = 'UC' + 'm'.repeat(22);
 
 let app: FastifyInstance;
@@ -23,19 +21,14 @@ beforeEach(() => {
   env.yt.playlists.set('UUmine', []);
   engineRun = vi.fn(async () => ({}));
   const engine = { run: engineRun, status: () => ({}) } as unknown as SyncEngine;
-  app = buildApp({
-    repo: env.repo,
-    engine,
-    bus: env.bus,
-    quota: env.quota,
-    poster: createHandoffPoster(env.repo),
-    auth: fakeGoogleAuth(),
-    addSource: createAddSource({ repo: env.repo, yt: env.yt, engine, clock: env.clock.now }),
-    testKey: async () => ({ ok: true, message: '' }),
-    onSettingsChanged: () => {},
-    resolveApiKey: () => ({ key: 'k', source: 'env' }),
-    demo: false,
-  });
+  app = buildApp(
+    testDeps(env.repo, {
+      bus: env.bus,
+      quota: env.quota,
+      engine,
+      addSource: createAddSource({ repo: env.repo, yt: env.yt, engine, clock: env.clock.now }),
+    }),
+  );
 });
 afterEach(() => app.close());
 

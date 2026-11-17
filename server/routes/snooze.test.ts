@@ -1,21 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../app.js';
-import type { SyncEngine } from '../contracts.js';
-import { createHandoffPoster } from '../reply/poster.js';
-import { fakeGoogleAuth } from '../reply/test-helpers.js';
 import { makeEnv } from '../sync/test-helpers.js';
 import type { ServerEvent } from '../../shared/types.js';
+import { H, sender, testDeps } from './test-helpers.js';
 
 // Real repo behind the real routes: snooze endpoints, validation and events.
-const H = { 'x-nudge': '1', host: '127.0.0.1:4517' };
 
 let app: FastifyInstance;
 let env: ReturnType<typeof makeEnv>;
 let events: ServerEvent[];
 
-const send = (method: 'POST' | 'PATCH' | 'DELETE', url: string, payload?: unknown) =>
-  app.inject({ method, url, headers: H, payload: payload as never });
+const send = sender(() => app);
 const get = (url: string) => app.inject({ method: 'GET', url, headers: { host: H.host } });
 const inMs = (ms: number) => new Date(Date.now() + ms).toISOString();
 const HOUR = 3_600_000;
@@ -56,22 +52,7 @@ beforeEach(() => {
   }
   events = [];
   env.bus.subscribe((e) => events.push(e));
-  const engine = { run: async () => ({}), status: () => ({}) } as unknown as SyncEngine;
-  app = buildApp({
-    repo: env.repo,
-    engine,
-    bus: env.bus,
-    quota: env.quota,
-    poster: createHandoffPoster(env.repo),
-    auth: fakeGoogleAuth(),
-    addSource: async () => {
-      throw new Error('unused');
-    },
-    testKey: async () => ({ ok: true, message: '' }),
-    onSettingsChanged: () => {},
-    resolveApiKey: () => ({ key: 'k', source: 'env' }),
-    demo: false,
-  });
+  app = buildApp(testDeps(env.repo, { bus: env.bus, quota: env.quota }));
 });
 afterEach(() => app.close());
 

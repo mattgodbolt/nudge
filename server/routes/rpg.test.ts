@@ -1,25 +1,22 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../app.js';
-import type { Repo, SyncEngine } from '../contracts.js';
+import type { Repo } from '../contracts.js';
 import { openDb } from '../db/db.js';
 import { createRepo } from '../db/repo.js';
 import { createRpgReader } from '../db/rpg.js';
-import { createHandoffPoster } from '../reply/poster.js';
-import { fakeGoogleAuth } from '../reply/test-helpers.js';
 import { makeBus } from '../sync/test-helpers.js';
 import { createQuotaTracker } from '../sync/quota.js';
 import type { RpgClaim, RpgSheet } from '../../shared/types.js';
+import { sender, testDeps } from './test-helpers.js';
 
 // Real repository and routes: Adventure mode's endpoints, its settings, and the rule that it changes nothing else.
-const H = { 'x-nudge': '1', host: '127.0.0.1:4517' };
 let app: FastifyInstance;
 let repo: Repo;
 let now: number;
 let todos: string[];
 
-const send = (method: 'GET' | 'POST' | 'PUT', url: string, payload?: unknown) =>
-  app.inject({ method, url, headers: H, ...(payload === undefined ? {} : { payload: payload as never }) });
+const send = sender(() => app);
 const claim = async (tz = 'UTC') => (await send('POST', '/api/rpg/claim', { tz })).json() as RpgClaim;
 
 beforeEach(() => {
@@ -30,22 +27,13 @@ beforeEach(() => {
   todos = Array.from({ length: 60 }, (_, i) => repo.addTodo({ title: `todo ${i}`, notes: '', raw: '', dueAt: null }));
   now += 60_000;
   const bus = makeBus();
-  app = buildApp({
-    repo,
-    engine: { run: async () => ({}), status: () => ({}) } as unknown as SyncEngine,
-    bus,
-    quota: createQuotaTracker({ repo, getSettings: () => repo.getSettings(), clock }),
-    poster: createHandoffPoster(repo),
-    auth: fakeGoogleAuth(),
-    addSource: async () => {
-      throw new Error('unused');
-    },
-    testKey: async () => ({ ok: true, message: '' }),
-    onSettingsChanged: () => {},
-    resolveApiKey: () => ({ key: 'k', source: 'env' }),
-    demo: false,
-    rpg: createRpgReader(db, clock),
-  });
+  app = buildApp(
+    testDeps(repo, {
+      bus,
+      quota: createQuotaTracker({ repo, getSettings: () => repo.getSettings(), clock }),
+      rpg: createRpgReader(db, clock),
+    }),
+  );
 });
 afterEach(() => app.close());
 

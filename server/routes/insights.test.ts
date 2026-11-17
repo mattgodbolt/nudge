@@ -1,45 +1,31 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../app.js';
-import type { AppDeps, Repo, SyncEngine } from '../contracts.js';
+import type { Repo } from '../contracts.js';
 import { openDb, type Db } from '../db/db.js';
 import { createInsightsReader } from '../db/insights.js';
 import { createRepo } from '../db/repo.js';
-import { createHandoffPoster } from '../reply/poster.js';
-import { fakeGoogleAuth } from '../reply/test-helpers.js';
 import { makeBus } from '../sync/test-helpers.js';
 import { createQuotaTracker } from '../sync/quota.js';
 import type { Insights } from '../../shared/insights.js';
+import { sender, testDeps } from './test-helpers.js';
 
 // Real repository and routes: the Insights endpoint, its validation, and the rule that reading it changes nothing.
-const H = { 'x-nudge': '1', host: '127.0.0.1:4517' };
 let app: FastifyInstance;
 let repo: Repo;
 let db: Db;
 let now: number;
 let todos: string[];
 
-const send = (method: 'GET' | 'POST', url: string, headers: Record<string, string> = H) =>
-  app.inject({ method, url, headers });
+const send = sender(() => app);
 
 function build(withReader: boolean) {
   const clock = () => new Date(now);
-  const deps: AppDeps = {
-    repo,
-    engine: { run: async () => ({}), status: () => ({}) } as unknown as SyncEngine,
+  const deps = testDeps(repo, {
     bus: makeBus(),
     quota: createQuotaTracker({ repo, getSettings: () => repo.getSettings(), clock }),
-    poster: createHandoffPoster(repo),
-    auth: fakeGoogleAuth(),
-    addSource: async () => {
-      throw new Error('unused');
-    },
-    testKey: async () => ({ ok: true, message: '' }),
-    onSettingsChanged: () => {},
-    resolveApiKey: () => ({ key: 'k', source: 'env' }),
-    demo: false,
     ...(withReader ? { insights: createInsightsReader(db, clock) } : {}),
-  };
+  });
   return buildApp(deps);
 }
 
