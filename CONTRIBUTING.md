@@ -1,8 +1,10 @@
 # Contributing
 
-Nudge is a personal tool, developed in the open. Issues (bugs, ideas) are welcome. Pull requests are welcome too, but
-for anything bigger than a small fix please open an issue first: the author's own deployment updates itself from
-`main`, so every change is reviewed with that in mind.
+Nudge is a personal tool, developed in the open. You are welcome to use it and to fork it (MIT). The author has no
+spare time to support it or to review outside changes, so this is not a project that is looking for contributors:
+issues and pull requests are welcome to be sent but may go unanswered or be declined. If you do want to send
+something, keep it small, or open an issue first rather than writing a large patch. The author's own deployment
+updates itself from `main`, so every change is reviewed with that in mind.
 
 ## Getting started
 
