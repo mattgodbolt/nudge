@@ -40,7 +40,7 @@ and the Playwright suite on every push and pull request.
 
 - A fresh clone needs the browser once: `npx playwright install chromium`.
 - `npm run test:e2e` builds the web bundle once, then starts 15 in-memory demo servers on ports 4518-4532, each with
-  the flags its specs need (see `playwright.config.ts` and the `demo:e2e:*` scripts in `package.json`). They all run
+  the flags its specs need (see `playwright.config.ts`, which has one table of servers). They all run
   in demo mode, the only mode in which `NUDGE_DB=:memory:` is allowed.
 - **Port offset:** to run two suites at once (two checkouts, or another run already using those ports), give each a
   different `E2E_PORT_OFFSET`, a multiple of 100: `E2E_PORT_OFFSET=1700 npm run test:e2e`. Every port moves by the

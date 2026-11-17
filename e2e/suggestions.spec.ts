@@ -1,9 +1,8 @@
-import { expect, test, type Page } from './fixtures';
+import { expect, rows, test, type Page } from './fixtures';
 
 // A demo server with the fake, offline suggestion source (NUDGE_DEMO_SUGGEST=1): a question gets "reply", praise
 // "skip", pull requests "act". Suggestions are advisory, so these tests only look at what is shown and that nothing
 // else about the inbox changes.
-const rows = (page: Page) => page.getByTestId('inbox-row');
 const chips = (page: Page) => page.getByTestId('row-suggestion');
 
 async function openInbox(page: Page) {

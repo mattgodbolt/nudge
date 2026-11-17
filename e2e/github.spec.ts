@@ -1,11 +1,10 @@
-import { expect, test, type Page } from './fixtures';
+import { expect, rows, shot as shotAt, test, type Page } from './fixtures';
 
 // One shared demo server with a fake GitHub feed ("demo-org"): 30 pull requests and issues from six kinds of author.
 // The tests change shared state (done, muted), so they run in order.
 test.describe.configure({ mode: 'serial' });
 
 const FEED = '/inbox?feed=1';
-const rows = (page: Page) => page.getByTestId('inbox-row');
 
 // The list is virtualised, so the DOM holds only the visible rows: count items with the sidebar badge instead.
 const feedCount = async (page: Page) =>
@@ -444,10 +443,7 @@ test.describe('on a phone, the top of the inbox leaves the room to the list', ()
 });
 
 // Screenshots for eyeballing the layout are written only when $NUDGE_SHOTS names a directory, as in the other specs.
-const SHOTS = process.env.NUDGE_SHOTS;
-const shot = async (page: Page, name: string) => {
-  if (SHOTS) await page.screenshot({ path: `${SHOTS}/${name}.png`, fullPage: true });
-};
+const shot = (page: Page, name: string) => shotAt(page, name, { fullPage: true });
 
 async function addRepoFeed(page: Page, name: string) {
   await page.goto('/sources');

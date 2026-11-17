@@ -1,4 +1,4 @@
-import { expect, test, type Page } from './fixtures';
+import { expect, rows, shot as shotAt, test, type Page } from './fixtures';
 
 // A private demo server (NUDGE_DEMO_SUGGEST=1, NUDGE_DEMO_COMMENTS=1): the fake suggestion source judges a GitHub
 // thread by who wrote last ("your turn · answer alice-maintainer", "waiting on them"), uses the owner's snooze note and
@@ -6,15 +6,10 @@ import { expect, test, type Page } from './fixtures';
 // "never", "wouldn't" or "suggestion"). The tests change what they look at, so they run in order.
 test.describe.configure({ mode: 'serial' });
 
-const rows = (page: Page) => page.getByTestId('inbox-row');
 const withTurn = (page: Page, turn: 'me' | 'them') =>
   rows(page).filter({ has: page.locator(`[data-testid=row-suggestion][data-turn=${turn}]`) });
-const SHOTS = process.env.NUDGE_SHOTS;
-const shot = async (page: Page, name: string) => {
-  // Let the sheet and fade-in animations finish first.
-  if (SHOTS) await page.waitForTimeout(500);
-  if (SHOTS) await page.screenshot({ path: `${SHOTS}/${name}.png` });
-};
+// Let the sheet and fade-in animations finish first.
+const shot = (page: Page, name: string) => shotAt(page, name, { settleMs: 500 });
 
 /** GitHub rows get their suggestion a little after the comments do: reload until some have one with a turn. */
 async function openGithub(page: Page) {
