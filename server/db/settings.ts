@@ -65,7 +65,7 @@ export function createSettings(deps: SettingsDeps): SettingsStore {
     // Stored days may predate a bucket; fill from the defaults so every bucket always has a number.
     out.snoozeDays = { ...DEFAULT_SNOOZE_DAYS, ...(out.snoozeDays as object) };
     out.rpg = { ...DEFAULT_SETTINGS.rpg, ...(out.rpg && typeof out.rpg === 'object' ? (out.rpg as object) : {}) };
-    // Seeded by hand into a database (see README), so a half-written row reads as the missing parts, never a crash.
+    // Seeded by hand into a database (see docs/CONFIGURATION.md), so a half-written row reads as the missing parts, never a crash.
     const o = (out.owner && typeof out.owner === 'object' ? out.owner : {}) as Row;
     out.owner = {
       name: typeof o.name === 'string' ? o.name.trim() : '',

@@ -709,8 +709,11 @@
         <p class="muted meta">
           Optional. Lets Nudge post your replies on YouTube itself instead of copying them and opening YouTube. It needs
           a one-off Google Cloud setup; the
-          <a class="link" href="https://github.com/mattgodbolt/nudge" target="_blank" rel="noopener noreferrer"
-            >README checklist</a
+          <a
+            class="link"
+            href="https://github.com/mattgodbolt/nudge/blob/main/docs/YOUTUBE.md#replying-from-the-app-optional"
+            target="_blank"
+            rel="noopener noreferrer">setup checklist</a
           >
           walks through it.
         </p>
@@ -796,8 +799,8 @@
           </div>
           {#if anyNeedsReauth(google.accounts)}
             <p class="faint meta">
-              If the Google Cloud app is still in Testing status, sign-ins expire weekly: publish the app (README step
-              6) to stop that.
+              If the Google Cloud app is still in Testing status, sign-ins expire weekly: publish the app (step 6 of the
+              setup checklist) to stop that.
             </p>
           {/if}
           <details class="setupdetails" data-testid="google-setup">

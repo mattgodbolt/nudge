@@ -1,4 +1,4 @@
-# Deployment on a box fronted by a Cloudflare Tunnel with Cloudflare Access in front of it (see README, "Deploying").
+# Deployment on a box fronted by a Cloudflare Tunnel with Cloudflare Access in front of it (see docs/DEPLOYING.md).
 # The port is published on the host's loopback only; Access (HTTPS, signed-in users only) is the sole way in.
 services:
   nudge:

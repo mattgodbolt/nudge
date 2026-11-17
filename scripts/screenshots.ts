@@ -1,4 +1,4 @@
-// Retakes the README screenshots in docs/screenshots/ from a running demo server, in light mode.
+// Retakes the screenshots in docs/screenshots/ (used by the README and docs/) from a running demo server, in light mode.
 //
 //   npm run build && NUDGE_DEMO=1 NUDGE_DEMO_SUGGEST=1 NUDGE_DEMO_HISTORY=1 NUDGE_DEMO_GITHUB=1 NUDGE_DEMO_COMMENTS=1 \
 //     NUDGE_DB=:memory: NUDGE_PORT=4690 npx tsx server/index.ts &

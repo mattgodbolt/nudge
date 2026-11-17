@@ -25,9 +25,9 @@ and a fix or an explanation, as soon as it can be looked at; this is a one-perso
   A loopback `Host` is trusted on the Host header alone, so any other process on the same machine, or any container on
   the same compose network, can reach the app and act as you.
 - To reach it from elsewhere, put it behind Cloudflare Access and set `NUDGE_ACCESS_HOSTS`, `NUDGE_ACCESS_TEAM_DOMAIN`,
-  `NUDGE_ACCESS_AUD` and `NUDGE_ALLOWED_USERS` (see the README's "Security model"). Nudge refuses to start with an
+  `NUDGE_ACCESS_AUD` and `NUDGE_ALLOWED_USERS` (see [docs/SECURITY-MODEL.md](docs/SECURITY-MODEL.md) and [docs/DEPLOYING.md](docs/DEPLOYING.md)). Nudge refuses to start with an
   incomplete Access setup.
 - The database (`data/nudge.db`) and every backup of it hold your tokens and keys. Keep them private.
-- Give the Anthropic key a small spend limit, and the GitHub token read-only access (see the README).
+- Give the Anthropic key a small spend limit, and the GitHub token read-only access (see [docs/ASSISTANT.md](docs/ASSISTANT.md) and [docs/GITHUB.md](docs/GITHUB.md)).
 - The author's own deployment updates itself from `main` (`deploy/update.sh`), so merged changes are deployed there
   automatically; if you deploy Nudge yourself you can choose not to use that auto-update and pull changes by hand.

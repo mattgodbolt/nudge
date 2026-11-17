@@ -14,30 +14,21 @@ npm run demo     # a fake world, no keys or network: http://127.0.0.1:5173
 ```
 
 `npm run demo` keeps its data in `data/demo.db` and refuses to start against a database that holds real sources. See
-the README's "Configuration" table for the `NUDGE_DEMO_*` switches (a fake GitHub organisation, fake suggestions,
-weeks of history for Insights, and so on).
+[docs/CONFIGURATION.md](docs/CONFIGURATION.md#environment-variables) for the `NUDGE_DEMO_*` switches (a fake GitHub
+organisation, fake suggestions, weeks of history for Insights, and so on), and
+[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for the code's layout, every command and the offline tooling.
 
 ## Before you push
 
 ```shell
-npm run check    # typecheck (server, tests, e2e, scripts, web) + Prettier + unit tests
+npm run check    # typecheck (server, tests, e2e, scripts, web) + Prettier + docs links + unit tests
 npm run test:e2e # the Playwright suite
 ```
 
-`npm run format` fixes formatting. `npm run shots` retakes the README screenshots from demo mode (`scripts/screenshots.ts`). CI (`.github/workflows/ci.yml`) runs the same on every push and pull request, plus
-`npm run test:deploy`, a sandboxed rehearsal of the deploy scripts.
-
-## End-to-end tests
-
-- A fresh clone needs the browser once: `npx playwright install chromium`.
-- `npm run test:e2e` builds the web bundle once, then starts 15 in-memory demo servers on ports 4518-4532, each with
-  the flags its specs need (see `playwright.config.ts` and the `demo:e2e:*` scripts in `package.json`).
-- **Port offset:** to run two suites at once (two checkouts, or another run already using those ports), give each a
-  different `E2E_PORT_OFFSET`, a multiple of 100: `E2E_PORT_OFFSET=1700 npm run test:e2e`. Every port moves by the
-  offset, and the bundle and `test-results` go to directories of their own, so neither run disturbs the other.
-- Some specs can save screenshots for eyeballing a layout: set `NUDGE_SHOTS` to a directory. Without it they write
-  nothing.
-- A flaky test is a bug: find the race rather than rerunning until it passes.
+`npm run format` fixes formatting. `npm run shots` retakes the screenshots in `docs/screenshots/` from demo mode (`scripts/screenshots.ts`). CI (`.github/workflows/ci.yml`) runs the same on every push and pull request, plus
+`npm run test:deploy`, a sandboxed rehearsal of the deploy scripts. The end-to-end suite has a few things worth
+knowing (a browser to install once, `E2E_PORT_OFFSET` for running two suites at once, `NUDGE_SHOTS`): see
+[End-to-end tests](docs/DEVELOPMENT.md#end-to-end-tests).
 
 ## Conventions
 

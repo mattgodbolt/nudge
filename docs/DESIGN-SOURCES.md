@@ -429,7 +429,7 @@ minute is as fresh as YouTube polling already is. Not worth it.
 
 ### Adding a Google scope to the existing OAuth setup
 
-- Console: Data Access, then add `…/auth/tasks.readonly`, then save. The app is already "In production" (README
+- Console: Data Access, then add `…/auth/tasks.readonly`, then save. The app is already "In production" ([YOUTUBE.md](YOUTUBE.md#replying-from-the-app-optional)
   step 6), so there is no 7-day refresh-token expiry; in Testing, any non-basic scope expires every 7 days. It stays
   unverified under the personal-use exemption (fewer than 100 users), with the same "Google hasn't verified this app"
   click-through as before.

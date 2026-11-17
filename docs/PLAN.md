@@ -821,7 +821,7 @@ Ordering and dependencies: step 0, then A–F in parallel. Expected integration 
 
 The `ReplyPoster` seam described above is now implemented: a switching poster uses the OAuth-backed `ApiPoster`
 when a Google account is connected and falls back to the clipboard hand-off otherwise (R9). The design, Google Cloud
-setup, error table and test plan are in [docs/OAUTH-PLAN.md](docs/OAUTH-PLAN.md). Demo mode can exercise it with
+setup, error table and test plan are in [docs/OAUTH-PLAN.md](OAUTH-PLAN.md). Demo mode can exercise it with
 `NUDGE_DEMO_POST=api` (`server/demo/post.ts`). Held-for-review moderation (R8) remains deferred.
 
 Sources:
