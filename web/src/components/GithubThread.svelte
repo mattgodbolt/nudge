@@ -1,89 +1,49 @@
 <script lang="ts">
-  import { untrack } from 'svelte';
   import type { InboxItem } from '../../../shared/types';
-  import { usage } from '../lib/usage';
-  import { stateLabel } from '../lib/itemState';
-  import { decisions } from '../lib/decisions';
   import { authorChip, reasonChip, refLabel, statusChip } from '../lib/github';
   import { relativeTime } from '../lib/format';
   import { renderMarkdown } from '../lib/sanitize';
-  import { phone } from '../lib/phone.svelte';
-  import { formatSnoozeTime, recentlyWoken } from '../lib/snooze';
-  import { inbox } from '../lib/stores/inbox.svelte';
   import { ui } from '../lib/stores/ui.svelte';
-  import ItemActions from './ItemActions.svelte';
+  import ThreadHeader from './ThreadHeader.svelte';
   import NudgeDraft from './NudgeDraft.svelte';
-  import SnoozeNote from './SnoozeNote.svelte';
   import Avatar from './Avatar.svelte';
   import GithubDiscussion from './GithubDiscussion.svelte';
-  import Icon from './Icon.svelte';
-  import SuggestionChip from './SuggestionChip.svelte';
 
   let { item, now }: { item: InboxItem; now: number } = $props();
-  /** "Done", "Dismissed" ... once the item is dealt with; empty while it is in the inbox. */
-  const stateText = $derived(stateLabel(item.comment));
-  // Each thread is mounted once per open (the parent keys on it), so this counts opens, not renders.
-  usage.count('view.github_thread');
-  // Opened now, closed when this thread unmounts or another item takes its place; dwell is measured in between.
-  // Keyed on the id, not the row object, which a list refresh replaces: that would close and reopen the record.
-  const itemId = $derived(item.comment.id);
-  $effect(() =>
-    decisions.open(
-      itemId,
-      untrack(() => inbox.viewName),
-    ),
-  );
-
   const it = $derived(item.item);
   const g = $derived(it.github);
   const chips = $derived([reasonChip(it), authorChip(it), statusChip(it)].filter((c) => c !== null));
-  // The title block always gets the width it needs: the toolbar shares its row only in a very roomy pane, and otherwise
-  // takes a row of its own (it used to squeeze the title into a narrow column that wrapped to a dozen lines).
-  let headerWidth = $state(1000);
-  const inline = $derived(headerWidth >= 1700);
-  const woke = $derived(!item.snoozedUntil && item.comment.state === 'inbox' && recentlyWoken(item.wokeAt, now));
 </script>
 
 <section class="thread" data-testid="thread-view" class:focus={ui.pane === 'thread'} aria-label="Pull request or issue">
-  <header bind:clientWidth={headerWidth}>
-    <button class="btn ghost sm back" onclick={() => (ui.pane = 'list')} aria-label="Back to list"
-      ><Icon name="chevron-left" size={phone.value ? 22 : 15} /> Back</button
-    >
-    <div class="vt">
+  <ThreadHeader
+    {item}
+    {now}
+    view="view.github_thread"
+    actionsLabel="Item actions"
+    inlineFrom={1700}
+    hasExtraTags={chips.length > 0}
+    showSuggestion
+    snoozedText={(when) => `Snoozed until ${item.snoozeUntilActivity ? 'activity, or ' : ''}${when}`}
+    wokeText="back from snooze"
+  >
+    {#snippet title()}
       <a class="title" href={it.url ?? '#'} target="_blank" rel="noopener noreferrer" title="Open on GitHub"
         >{it.title}</a
       >
+    {/snippet}
+    {#snippet meta()}
       <div class="meta faint">
         <a href={it.containerUrl ?? '#'} target="_blank" rel="noopener noreferrer">{refLabel(it)}</a>
         · {it.kind === 'pr' ? 'Pull request' : 'Issue'}
       </div>
-      <SnoozeNote {item} />
-      {#if item.snoozedUntil || woke || chips.length > 0 || stateText}
-        <div class="tags">
-          {#if stateText}<span class="badge" data-testid="thread-state">{stateText}</span>{/if}
-          {#each chips as chip (chip.text)}
-            <span class="badge rowchip {chip.tone}" title={chip.title}>{chip.text}</span>
-          {/each}
-          {#if item.snoozedUntil}
-            <span class="snz" data-testid="thread-snoozed"
-              >⏰ Snoozed until {item.snoozeUntilActivity ? 'activity, or ' : ''}{formatSnoozeTime(
-                item.snoozedUntil,
-                new Date(now),
-              )}</span
-            >
-          {:else if woke}
-            <span class="snz" data-testid="thread-woke">⏰ back from snooze</span>
-          {/if}
-        </div>
-      {/if}
-    </div>
-    <ItemActions {item} width={headerWidth} ownRow={!inline} label="Item actions" />
-    {#if ui.showSuggestions && item.suggestion}<SuggestionChip
-        suggestion={item.suggestion}
-        testid="thread-suggestion"
-        full
-      />{/if}
-  </header>
+    {/snippet}
+    {#snippet extraTags()}
+      {#each chips as chip (chip.text)}
+        <span class="badge rowchip {chip.tone}" title={chip.title}>{chip.text}</span>
+      {/each}
+    {/snippet}
+  </ThreadHeader>
 
   <div class="scroll">
     <NudgeDraft {item} />
@@ -130,20 +90,6 @@
     flex: 1;
     background: var(--bg);
   }
-  header {
-    display: flex;
-    align-items: center;
-    gap: var(--s3);
-    padding: var(--s3) var(--s4);
-    border-bottom: 1px solid var(--border);
-    background: var(--bg-elev);
-    min-height: 58px;
-    flex-wrap: wrap;
-  }
-  .vt {
-    min-width: 0;
-    flex: 1;
-  }
   .title {
     display: block;
     font-weight: 600;
@@ -156,13 +102,6 @@
   }
   .meta a {
     color: inherit;
-  }
-  .tags {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--s2);
-    align-items: center;
-    margin-top: 4px;
   }
   .scroll {
     flex: 1;
