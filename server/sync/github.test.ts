@@ -499,6 +499,78 @@ describe('GitHub poller: lookups that outlive the search window', () => {
   });
 });
 
+describe('GitHub poller: lookups that keep failing', () => {
+  const ID = prId(1);
+  async function doneWithFailingLookup(err: Error, over: Partial<GithubClient> = {}, all?: GithubItemUpsert[]) {
+    const asked: number[] = [];
+    const base = fakeClient(script);
+    const p = createGithubPoller({
+      repo,
+      bus,
+      client: {
+        ...base,
+        ...over,
+        latestCommenter: async (_r: string, n: number) => {
+          asked.push(n);
+          throw err;
+        },
+      },
+      clock: clock.now,
+      maxPages: 1,
+    });
+    script.pages = [[item(1)]];
+    await p.pollNow();
+    repo.triage([ID], 'done');
+    return { p, asked, all };
+  }
+
+  it('does not hold the cursor for a lookup that is refused (403), so newer activity keeps arriving', async () => {
+    const { p, asked } = await doneWithFailingLookup(new GithubError('GitHub said 403: no access', 403));
+    script.pages = [[item(1, { comments: 1, updatedAt: T(20) })]];
+    clock.advance(30 * 60_000);
+    await p.pollNow();
+    expect(asked).toEqual([1]);
+    expect(repo.getFeedRow(feedId)!.cursor).toBe(clock.now().toISOString());
+  });
+
+  it('stops retrying a lookup that keeps failing transiently after a few polls', async () => {
+    const { p } = await doneWithFailingLookup(new GithubError('GitHub is unavailable (502)', 502));
+    script.pages = [[item(1, { comments: 1, updatedAt: T(20) })]];
+    clock.advance(30 * 60_000);
+    for (let i = 0; i < 8; i++) {
+      await p.pollNow();
+      clock.advance(60_000);
+    }
+    expect(repo.getFeedRow(feedId)!.cursor).toBe(new Date(clock.now().getTime() - 60_000).toISOString());
+  });
+
+  it('does not rewind a truncated poll to a held item, so a window above the page cap still drains', async () => {
+    const at = T(20);
+    const burst = Array.from({ length: 250 }, (_, i) =>
+      item(100 + i, { updatedAt: new Date(clock.now().getTime() + 25 * 60_000 + i * 1000).toISOString() }),
+    );
+    const all = [item(1)];
+    const search: GithubClient['search'] = async (q, page) => {
+      if (!/\bis:pr\b/.test(q)) return { items: [], total: 0, rate: null };
+      const since = /updated:>=(\S+)/.exec(q)![1]!.replace('Z', '.000Z');
+      const hits = all.filter((i) => i.updatedAt >= since).sort((a, b) => (a.updatedAt < b.updatedAt ? -1 : 1));
+      return { items: hits.slice((page - 1) * 100, page * 100), total: hits.length, rate: null };
+    };
+    const { p } = await doneWithFailingLookup(new GithubError('GitHub is unavailable (502)', 502), { search });
+    all.splice(0, 1, item(1, { comments: 1, updatedAt: at }), ...burst);
+    clock.advance(30 * 60_000);
+    const cursors: string[] = [];
+    for (let i = 0; i < 3; i++) {
+      clock.advance(1000);
+      await p.pollNow();
+      cursors.push(repo.getFeedRow(feedId)!.cursor!);
+    }
+    expect(cursors[0]! > at).toBe(true);
+    expect([...cursors].sort()).toEqual(cursors);
+    expect(cursors[2]! > cursors[0]!).toBe(true);
+  });
+});
+
 describe('GitHub poller: reviews and inline comments on a pull request', () => {
   // GitHub's search `comments` count leaves reviews and inline review comments out, so a PR that moved while Done or
   // parked is asked about its reviews (inline comments arrive as review envelopes) once per move.
