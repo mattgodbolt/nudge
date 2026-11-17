@@ -69,6 +69,9 @@ function fakeClient(s: Script): GithubClient {
     async recentComments() {
       return [];
     },
+    async reviewsSince() {
+      return [];
+    },
     async discussion() {
       throw new Error('the poller never fetches a discussion');
     },
@@ -409,6 +412,148 @@ describe('GitHub poller: was the newest comment mine?', () => {
     await p.pollNow();
     expect(asked).toEqual([1, 2]);
     expect(ids.map((i) => repo.getItem(i)!.state)).toEqual(['done', 'done']);
+  });
+});
+
+describe('GitHub poller: reviews and inline comments on a pull request', () => {
+  // GitHub's search `comments` count leaves reviews and inline review comments out, so a PR that moved while Done or
+  // parked is asked about its reviews (inline comments arrive as review envelopes) once per move.
+  const ID = githubItemId('org', 'app', 1);
+  type Review = { login: string; type: string | null; at: string };
+  let reviews: Review[];
+  let asked: { n: number; since: string }[];
+  let failReviews: boolean;
+  const p = () =>
+    createGithubPoller({
+      repo,
+      bus,
+      client: {
+        ...fakeClient(script),
+        async reviewsSince(_r, n, since) {
+          asked.push({ n, since });
+          if (failReviews) throw new GithubError('GitHub is unavailable (502)', 502);
+          return reviews.filter((r) => r.at > since);
+        },
+      },
+      clock: clock.now,
+    });
+  const at = (min: number) => new Date(Date.parse('2026-11-08T12:00:00.000Z') + min * 60_000).toISOString();
+  const pr = (over: Partial<GithubItemUpsert> = {}) => item(1, { updatedAt: at(10), ...over });
+
+  beforeEach(async () => {
+    reviews = [];
+    asked = [];
+    failReviews = false;
+    script.pages = [[pr()]];
+    await p().pollNow();
+    repo.updateSettings({ github: { token: null, myAccounts: ['me'] } });
+  });
+
+  it('brings a Done PR back when someone else reviews it, naming the reviewer', async () => {
+    repo.triage([ID], 'done');
+    clock.advance(30 * 60_000);
+    reviews = [{ login: 'dave', type: 'User', at: at(25) }];
+    script.pages = [[pr({ updatedAt: at(25) })]];
+    await p().pollNow();
+    expect(asked).toEqual([{ n: 1, since: at(10) }]);
+    expect(repo.getItem(ID)!.state).toBe('inbox');
+    const row = repo.listInbox({ view: 'inbox' }).items[0]!;
+    expect(row.item.reason).toBe('new_activity');
+    expect(row.item.github?.lastCommenter).toBe('dave');
+    expect(bus.of('inbox.changed').at(-1)!.addedIds).toEqual([ID]);
+  });
+
+  it('wakes a PR parked until activity when someone else leaves an inline comment', async () => {
+    repo.snooze([ID], T(7 * 24 * 60), 'waiting', { bucket: 'waiting_on_them', untilActivity: true });
+    clock.advance(30 * 60_000);
+    // An inline comment is listed among the reviews as an empty "commented" review by its author.
+    reviews = [{ login: 'erin', type: 'User', at: at(20) }];
+    script.pages = [[pr({ updatedAt: at(20) })]];
+    await p().pollNow();
+    expect(repo.listInbox({ view: 'snoozed' }).total).toBe(0);
+    expect(repo.listInbox({ view: 'inbox' }).items[0]).toMatchObject({ wakeCause: 'activity' });
+    expect(
+      bus
+        .of('inbox.changed')
+        .filter((e) => e.reason === 'woke')
+        .at(-1)!.addedIds,
+    ).toEqual([ID]);
+  });
+
+  it("does not wake for the owner's own review or a bot's, and does not ask again about the same move", async () => {
+    repo.triage([ID], 'done');
+    clock.advance(30 * 60_000);
+    reviews = [
+      { login: 'Me', type: 'User', at: at(20) },
+      { login: 'ci-helper[bot]', type: 'Bot', at: at(21) },
+      { login: 'lint-app', type: 'Bot', at: at(22) },
+    ];
+    script.pages = [[pr({ updatedAt: at(22) })]];
+    await p().pollNow();
+    expect(repo.getItem(ID)!.state).toBe('done');
+    // The overlap reads the same update again: nothing moved, so nothing is asked.
+    await p().pollNow();
+    expect(asked).toHaveLength(1);
+    expect(repo.getItem(ID)!.state).toBe('done');
+  });
+
+  it('makes no extra request for an unchanged PR, an issue, an inbox PR or a plain Done PR without a move', async () => {
+    script.pages = [[pr(), item(2, { kind: 'issue', updatedAt: at(10) }), item(3, { updatedAt: at(10) })]];
+    await p().pollNow();
+    repo.triage([ID, githubItemId('org', 'app', 2)], 'done');
+    clock.advance(30 * 60_000);
+    reviews = [{ login: 'dave', type: 'User', at: at(25) }];
+    // 1: Done but not updated since last seen. 2: an issue that moved (issues keep the comment rule only).
+    // 3: moved, but sits in the inbox, where no wake is needed.
+    script.pages = [[pr(), item(2, { kind: 'issue', updatedAt: at(25) }), item(3, { updatedAt: at(25) })]];
+    await p().pollNow();
+    expect(asked).toEqual([]);
+    expect(repo.getItem(ID)!.state).toBe('done');
+    expect(repo.getItem(githubItemId('org', 'app', 2))!.state).toBe('done');
+  });
+
+  it('does not spend a review lookup when a new comment from someone else already brings it back', async () => {
+    repo.triage([ID], 'done');
+    clock.advance(30 * 60_000);
+    script.commenter = 'carol';
+    script.pages = [[pr({ updatedAt: at(25), comments: 1 })]];
+    await p().pollNow();
+    expect(asked).toEqual([]);
+    expect(repo.getItem(ID)!.state).toBe('inbox');
+  });
+
+  it('leaves a Done PR alone when the review lookup fails, and asks again from the same point next poll', async () => {
+    repo.triage([ID], 'done');
+    clock.advance(30 * 60_000);
+    failReviews = true;
+    reviews = [{ login: 'dave', type: 'User', at: at(25) }];
+    script.pages = [[pr({ updatedAt: at(25) })]];
+    await p().pollNow();
+    expect(repo.getItem(ID)!.state).toBe('done');
+    failReviews = false;
+    await p().pollNow();
+    expect(asked).toEqual([
+      { n: 1, since: at(10) },
+      { n: 1, since: at(10) },
+    ]);
+    expect(repo.getItem(ID)!.state).toBe('inbox');
+  });
+
+  it('shares the per-poll lookup cap with comment lookups', async () => {
+    script.pages = [[pr(), item(2, { updatedAt: at(10) })]];
+    await p().pollNow();
+    repo.triage([ID, githubItemId('org', 'app', 2)], 'done');
+    clock.advance(30 * 60_000);
+    const capped = createGithubPoller({
+      repo,
+      bus,
+      client: { ...fakeClient(script), reviewsSince: async (_r, n, since) => (asked.push({ n, since }), []) },
+      clock: clock.now,
+      maxCommenterLookups: 1,
+    });
+    script.pages = [[pr({ updatedAt: at(25) }), item(2, { updatedAt: at(25) })]];
+    await capped.pollNow();
+    expect(asked.map((a) => a.n)).toEqual([1]);
   });
 });
 

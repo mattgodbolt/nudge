@@ -249,6 +249,12 @@ export interface GithubItemUpsert {
   lastCommenterIsMe?: boolean;
   /** Set alongside lastCommenterIsMe: who wrote it, for the "New comment from @login" chip. */
   lastCommenter?: string;
+  /**
+   * Set by the poller for an open PR that moved while Done or parked until activity (the search's comment count leaves
+   * reviews and inline review comments out): the newest reviewer since the last update Nudge saw who is neither me nor
+   * a bot, or null when there is none. Undefined = not asked, or the lookup failed or was past its cap.
+   */
+  reviewer?: string | null;
 }
 /** What else a snooze records: why it is parked and whether it waits on activity (until is then the fallback date). */
 export interface SnoozeOptions {
@@ -402,9 +408,17 @@ export interface Repo {
   addTodo(input: { title: string; notes: string; raw: string; dueAt: string | null }): string;
   /** Remove a todo outright (undoing its creation). Returns whether one was removed. */
   deleteTodo(id: string): boolean;
-  githubItemMeta(
-    ids: string[],
-  ): Map<string, { state: CommentState; sourceState: string | null; comments: number; snoozedUntilActivity: boolean }>;
+  githubItemMeta(ids: string[]): Map<
+    string,
+    {
+      state: CommentState;
+      sourceState: string | null;
+      comments: number;
+      snoozedUntilActivity: boolean;
+      /** The item's updated_at as of the last poll that took it in fully (older rows: when that poll ran). */
+      seenUpdatedAt: string | null;
+    }
+  >;
   upsertGithubItems(feedId: number, ups: GithubItemUpsert[]): UpsertGithubResult;
 
   listSources(): SourceDTO[];
@@ -736,6 +750,12 @@ export interface GithubClient {
   /** Login of the newest comment on an issue or PR (given its comment count), or null. */
   latestCommenter(repo: string, number: number, commentCount: number, token: string | null): Promise<string | null>;
   /**
+   * Reviews of a pull request submitted after `since`, oldest first, pending drafts left out. Every inline review
+   * comment (a reply too) is wrapped in a review by its author, so this sees those as well. One request, two when there
+   * are more than 100 reviews (then only the newest page is read). A vanished PR has none. Throws GithubError.
+   */
+  reviewsSince(repo: string, number: number, since: string, token: string | null): Promise<GithubReviewer[]>;
+  /**
    * The newest few conversation comments of an issue or PR (given its comment count), oldest first, as plain text.
    * At most two requests; throws GithubError. Empty when the count is zero.
    */
@@ -753,6 +773,12 @@ export interface GithubClient {
   coreRate?(): GithubRate | null;
   /** The conversation on an issue or PR (newest entries only), fetched live. Throws GithubError. */
   discussion(repo: string, number: number, kind: 'pr' | 'issue', token: string | null): Promise<GithubDiscussion>;
+}
+/** Who reviewed a pull request, and when. `type` is GitHub's account type ('User', 'Bot', ...). */
+export interface GithubReviewer {
+  login: string;
+  type: string | null;
+  at: string;
 }
 /** One conversation comment as the suggestion worker wants it. */
 export interface GithubRecentComment {

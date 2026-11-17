@@ -250,6 +250,16 @@ describe('waking on GitHub activity', () => {
     });
   });
 
+  it('wakes a parked PR on a review from someone else, recorded as a review', () => {
+    park(1);
+    t += 3600_000;
+    const res = repo.upsertGithubItems(feedId, [pr(1, { updatedAt: later(0), reviewer: 'dave' })]);
+    expect(res.woken).toEqual([id(1)]);
+    expect(gh(1)).toMatchObject({ wakeCause: 'activity', snoozedUntil: null });
+    expect(gh(1).item.github?.lastCommenter).toBe('dave');
+    expect(events(id(1)).at(-1)).toMatchObject({ cause: 'activity', trigger: 'review' });
+  });
+
   it('does not wake on the owner own comment, but a later comment from someone else does', () => {
     park(1);
     expect(

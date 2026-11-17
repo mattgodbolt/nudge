@@ -160,6 +160,50 @@ describe('closing, reopening and activity', () => {
     expect(repo.listInbox({ view: 'inbox' }).items[0]!.item.github?.lastCommenter).toBe('dave');
   });
 
+  it('brings a Done PR back on a review from someone else, with the reviewer and the cut-off for "new"', () => {
+    const u = fresh(1);
+    repo.upsertGithubItems(feedId, [u]);
+    repo.triage([u.id], 'done');
+    expect(repo.githubItemMeta([u.id]).get(u.id)?.seenUpdatedAt).toBe(u.updatedAt);
+    const moved = { ...u, updatedAt: '2026-11-08T12:30:00.000Z' };
+    const r = repo.upsertGithubItems(feedId, [{ ...moved, reviewer: 'dave' }]);
+    expect(r.reopened).toEqual([u.id]);
+    const g = repo.listInbox({ view: 'inbox' }).items[0]!.item;
+    expect(g.reason).toBe('new_activity');
+    expect(g.github).toMatchObject({ lastCommenter: 'dave', activitySince: expect.any(String) });
+  });
+
+  it('keeps a Done PR when the move had no review from someone else, and remembers the move', () => {
+    const u = fresh(1);
+    repo.upsertGithubItems(feedId, [u]);
+    repo.triage([u.id], 'done');
+    const moved = { ...u, updatedAt: '2026-11-08T12:30:00.000Z' };
+    expect(repo.upsertGithubItems(feedId, [{ ...moved, reviewer: null }]).reopened).toEqual([]);
+    expect(state(u.id)).toBe('done');
+    expect(repo.githubItemMeta([u.id]).get(u.id)?.seenUpdatedAt).toBe(moved.updatedAt);
+  });
+
+  it('keeps the last seen update while the reviews of a moved Done PR are unknown, so the next poll asks again', () => {
+    const u = fresh(1);
+    repo.upsertGithubItems(feedId, [u]);
+    repo.triage([u.id], 'done');
+    repo.upsertGithubItems(feedId, [{ ...u, updatedAt: '2026-11-08T12:30:00.000Z' }]);
+    expect(state(u.id)).toBe('done');
+    expect(repo.githubItemMeta([u.id]).get(u.id)?.seenUpdatedAt).toBe(u.updatedAt);
+  });
+
+  it('ignores a reviewer on an issue, and needs no review answer for an inbox PR', () => {
+    const i = fresh(1, { kind: 'issue' });
+    repo.upsertGithubItems(feedId, [i]);
+    repo.triage([i.id], 'done');
+    repo.upsertGithubItems(feedId, [{ ...i, updatedAt: '2026-11-08T12:30:00.000Z', reviewer: 'dave' }]);
+    expect(state(i.id)).toBe('done');
+    const p = fresh(2);
+    repo.upsertGithubItems(feedId, [p]);
+    repo.upsertGithubItems(feedId, [{ ...p, updatedAt: '2026-11-08T12:30:00.000Z' }]);
+    expect(repo.githubItemMeta([p.id]).get(p.id)?.seenUpdatedAt).toBe('2026-11-08T12:30:00.000Z');
+  });
+
   it('takes in new comments on an inbox item without asking who wrote them', () => {
     const u = fresh(1);
     repo.upsertGithubItems(feedId, [u]);

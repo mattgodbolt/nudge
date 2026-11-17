@@ -44,10 +44,10 @@ unchanged: `b`, a time key, done.
 
 - **What wakes it.** GitHub: a new comment from someone other than your own accounts (Settings > You > My GitHub
   accounts), or the item being closed or merged; your own comments never do. YouTube: a new reply in the thread from
-  anyone but your channels. It returns to the top of the Inbox marked "back: new activity". (GitHub reviews and CI
-  status are not looked at: the poller only reads comment counts and state.) Nothing in a request path calls GitHub:
-  the poll that notices the growth asks who wrote the newest comment, with the same capped lookups as Done items
-  coming back.
+  anyone but your channels. It returns to the top of the Inbox marked "back: new activity". On a pull request a review
+  or inline review comment from someone else (not a bot) wakes it too; CI status is not looked at. Nothing in a request
+  path calls GitHub: the poll that notices the growth asks who wrote the newest comment, and the poll that sees a parked
+  PR updated asks for its reviews, with the same capped lookups as Done items coming back.
 - **The audit line.** If the fallback date arrives with nothing having happened, the item comes back as "Still waiting
   on them (7d, no activity)", on the row and in the open item, with `B` snooze again (same bucket and words), `d` done,
   `n` no action needed and `v` open on GitHub. For GitHub items that were waiting on someone, **Draft a nudge** asks the
