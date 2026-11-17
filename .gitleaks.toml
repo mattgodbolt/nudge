@@ -1,0 +1,13 @@
+# Allowlist for the secret scan (CI job "Secret scan (gitleaks)"). Everything here is a fake value in a test or a
+# non-secret constant, matched by value rather than by file and line, so moving code around does not break the scan.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "fake fixtures and non-secrets"
+regexes = [
+  '''ghp_abcdefghijklmnop(1234)?''',   # fake GitHub token in route and client tests
+  '''AIza-the-api-key-1234''',         # fake API key in reply-api.test.ts
+  '''BEl62iUYgUivxIkv69yViEuiBIa-ib''', # the public example VAPID key from the web-push documentation
+  '''nudge-triage-labels-v1''',        # a localStorage key name in the offline labelling page, not a secret
+]
