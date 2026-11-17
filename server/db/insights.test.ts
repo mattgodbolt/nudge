@@ -608,7 +608,7 @@ describe('the cards', () => {
     const f = fixture();
     f.db
       .prepare("INSERT INTO settings (key, value) VALUES ('github', ?)")
-      .run(JSON.stringify({ token: 'SECRET-TOKEN', myAccounts: ['Matt-Godbolt'] }));
+      .run(JSON.stringify({ token: 'SECRET-TOKEN', myAccounts: ['Sam-Sample'] }));
     let n = 0;
     const add = (repo: string, author: string, count: number, data: Record<string, unknown> = { comments: 0 }) => {
       for (let i = 0; i < count; i++) f.item(`r${n++}`, { seen: ago(3), container: repo, author, data });
@@ -616,7 +616,7 @@ describe('the cards', () => {
     for (let r = 0; r < 10; r++) add(`org/repo${r}`, 'dave', 10 - r);
     add('org/bots', 'dependabot[bot]', 9);
     add('org/bots', 'renovate', 4, { authorType: 'Bot', comments: 0 });
-    add('org/bots', 'matt-godbolt', 6);
+    add('org/bots', 'sam-sample', 6);
     add('org/x', 'erin', 3);
     add('org/x', 'frank', 2);
     const s = f.report().sources;

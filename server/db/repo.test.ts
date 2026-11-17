@@ -543,7 +543,7 @@ describe('listInbox', () => {
 describe('search', () => {
   beforeEach(() => {
     repo.upsertThread(thread('a', { textHtml: 'Loved the <b>Café</b> tutorial!', authorName: 'Zoë Smith' }));
-    repo.upsertThread(thread('b', { textHtml: 'compiler explorer is great', authorName: 'Bob' }));
+    repo.upsertThread(thread('b', { textHtml: 'compiler output is great', authorName: 'Bob' }));
     repo.upsertThread(thread('c', { textHtml: 'unrelated text', authorName: 'Carol' }));
   });
   const q = (s: string, view: 'inbox' | 'all' = 'all') => repo.listInbox({ view, q: s }).items.map((i) => i.comment.id);
@@ -552,7 +552,7 @@ describe('search', () => {
     expect(q('compil')).toEqual(['b']);
     expect(q('cafe')).toEqual(['a']);
     expect(q('zoe')).toEqual(['a']);
-    expect(q('explorer great')).toEqual(['b']);
+    expect(q('output great')).toEqual(['b']);
     expect(q('nothing')).toEqual([]);
   });
   it('is safe against FTS syntax in the query', () => {

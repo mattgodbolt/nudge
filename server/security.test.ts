@@ -18,7 +18,7 @@ import {
 const ACCESS = 'nudge.example.com';
 // The name `tailscale serve` used to front the app as. Tailscale is no longer a way in, so it is just another host.
 const TAILNET = 'nudge.example.ts.net';
-const base = { accessHosts: [ACCESS], allowedUsers: ['matt@example.org'], port: 4517 };
+const base = { accessHosts: [ACCESS], allowedUsers: ['owner@example.org'], port: 4517 };
 const post = { 'x-nudge': '1' };
 
 describe('checkRequest', () => {
@@ -43,7 +43,7 @@ describe('checkRequest', () => {
   });
 
   it('no longer accepts a tailnet name, whatever Tailscale identity header it carries', () => {
-    for (const extra of [{}, { 'tailscale-user-login': 'matt@example.org' }]) {
+    for (const extra of [{}, { 'tailscale-user-login': 'owner@example.org' }]) {
       expect(checkRequest('GET', { host: TAILNET, ...extra }, base)?.body.code).toBe('bad_host');
       expect(checkRequest('GET', { host: TAILNET, ...extra }, { port: 4517 })?.body.code).toBe('bad_host');
     }
@@ -75,16 +75,16 @@ describe('checkExposure', () => {
 
 describe('Cloudflare Access hosts', () => {
   const verifyAccess = async (t: string | undefined) =>
-    t === 'good-matt' ? 'matt@example.org' : t === 'good-other' ? 'other@example.org' : null;
+    t === 'good-owner' ? 'owner@example.org' : t === 'good-other' ? 'other@example.org' : null;
   const opts = {
     accessHosts: [ACCESS],
-    allowedUsers: ['Matt@Example.org', 'second@example.org'],
+    allowedUsers: ['Owner@Example.org', 'second@example.org'],
     verifyAccess,
     port: 4517,
   };
 
   it('accepts a verified token whose email is allowed (case-insensitive)', async () => {
-    const h = { host: ACCESS, 'cf-access-jwt-assertion': 'good-matt' };
+    const h = { host: ACCESS, 'cf-access-jwt-assertion': 'good-owner' };
     expect(checkRequest('GET', h, opts)).toBeNull();
     expect(await checkAccess('GET', '/api/inbox', h, opts)).toBeNull();
   });
@@ -99,20 +99,20 @@ describe('Cloudflare Access hosts', () => {
   it('does not trust a forged Tailscale header or plain Cf-Access email on the Access host', async () => {
     const h = {
       host: ACCESS,
-      'tailscale-user-login': 'matt@example.org',
-      'cf-access-authenticated-user-email': 'matt@example.org',
+      'tailscale-user-login': 'owner@example.org',
+      'cf-access-authenticated-user-email': 'owner@example.org',
     };
     expect(checkRequest('GET', h, opts)).toBeNull(); // host itself is fine...
     expect((await checkAccess('GET', '/api/inbox', h, opts))?.body.code).toBe('bad_user'); // ...identity is not
   });
 
   it('ignores a valid Access token on any other host', async () => {
-    const h = { host: TAILNET, 'cf-access-jwt-assertion': 'good-matt' };
+    const h = { host: TAILNET, 'cf-access-jwt-assertion': 'good-owner' };
     expect(checkRequest('GET', h, opts)?.body.code).toBe('bad_host');
   });
 
   it('fails closed when no verifier is configured', async () => {
-    const h = { host: ACCESS, 'cf-access-jwt-assertion': 'good-matt' };
+    const h = { host: ACCESS, 'cf-access-jwt-assertion': 'good-owner' };
     expect((await checkAccess('GET', '/api/inbox', h, { ...opts, verifyAccess: undefined }))?.body.code).toBe(
       'bad_user',
     );
@@ -142,7 +142,7 @@ describe('Cloudflare Access hosts', () => {
 });
 
 describe('Cloudflare traffic with a loopback Host', () => {
-  const opts = { accessHosts: ['nudge.example.com'], allowedUsers: ['matt@example.org'], port: 4517 };
+  const opts = { accessHosts: ['nudge.example.com'], allowedUsers: ['owner@example.org'], port: 4517 };
   it('is refused, so a tunnel that rewrites Host cannot skip the token check', () => {
     expect(checkRequest('GET', { host: '127.0.0.1:4517', 'cf-ray': 'abc' }, opts)?.body.code).toBe('bad_host');
     expect(checkRequest('GET', { host: '127.0.0.1:4517', 'cf-connecting-ip': '1.2.3.4' }, opts)?.body.code).toBe(
@@ -186,7 +186,7 @@ describe('Cloudflare traffic with a loopback Host', () => {
 describe('checkExposure with Access', () => {
   const base = {
     host: '127.0.0.1',
-    allowedUsers: ['matt@example.org'],
+    allowedUsers: ['owner@example.org'],
     accessHosts: ['nudge.example.com'],
     accessTeamDomain: 'team.cloudflareaccess.com',
     accessAud: 'aud',
@@ -208,8 +208,8 @@ describe('registerSecurity hook with Access', () => {
     const app = Fastify();
     registerSecurity(app, {
       accessHosts: ['nudge.example.com'],
-      allowedUsers: ['matt@example.org'],
-      verifyAccess: async (t) => (t === 'good' ? 'matt@example.org' : null),
+      allowedUsers: ['owner@example.org'],
+      verifyAccess: async (t) => (t === 'good' ? 'owner@example.org' : null),
     });
     app.get('/api/x', async () => ({ ok: true }));
     app.get('/sw.js', async () => 'sw');
@@ -219,7 +219,7 @@ describe('registerSecurity hook with Access', () => {
     );
     expect((await get('/api/x', { host: 'nudge.example.com' })).statusCode).toBe(403);
     expect(
-      (await get('/api/x', { host: 'nudge.example.com', 'tailscale-user-login': 'matt@example.org' })).statusCode,
+      (await get('/api/x', { host: 'nudge.example.com', 'tailscale-user-login': 'owner@example.org' })).statusCode,
     ).toBe(403);
     expect((await get('/sw.js', { host: 'nudge.example.com' })).statusCode).toBe(200);
     expect((await get('/api/x', { host: 'evil.example.net', 'cf-access-jwt-assertion': 'good' })).statusCode).toBe(403);
@@ -237,7 +237,7 @@ describe('a deployment whose .env predates the end of Tailscale', () => {
   const env = {
     NUDGE_HOST: '0.0.0.0',
     NUDGE_ALLOWED_HOSTS: TAILNET,
-    NUDGE_ALLOWED_USERS: 'Matt@Example.org',
+    NUDGE_ALLOWED_USERS: 'Owner@Example.org',
     NUDGE_ACCESS_HOSTS: ACCESS,
     NUDGE_ACCESS_TEAM_DOMAIN: TEAM,
     NUDGE_ACCESS_AUD: AUD,
@@ -271,10 +271,10 @@ describe('a deployment whose .env predates the end of Tailscale', () => {
     registerSecurity(app, securityOptions(config, { fetchKeys: async () => [jwk], now: () => NOW }));
     app.get('/api/x', async () => ({ ok: true }));
     const get = (headers: Record<string, string>) => app.inject({ method: 'GET', url: '/api/x', headers });
-    expect((await get({ host: ACCESS, 'cf-access-jwt-assertion': token('matt@example.org') })).statusCode).toBe(200);
+    expect((await get({ host: ACCESS, 'cf-access-jwt-assertion': token('owner@example.org') })).statusCode).toBe(200);
     expect((await get({ host: ACCESS, 'cf-access-jwt-assertion': token('someone@example.org') })).statusCode).toBe(403);
     expect((await get({ host: ACCESS })).statusCode).toBe(403);
-    expect((await get({ host: TAILNET, 'tailscale-user-login': 'matt@example.org' })).statusCode).toBe(403);
+    expect((await get({ host: TAILNET, 'tailscale-user-login': 'owner@example.org' })).statusCode).toBe(403);
     await app.close();
   });
 });

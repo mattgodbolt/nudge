@@ -33,11 +33,11 @@ describe('the week in one sentence (F4)', () => {
         ...base,
         dealt: 23,
         hourlyActions: hourly,
-        loudest: 'compiler-explorer',
+        loudest: 'example-org',
         agreement: { hits: 8, total: 10 },
       }),
     ).toBe(
-      'You answered 23 things, mostly PRs, mostly before lunch; compiler-explorer was the loudest and the robot agreed 4 times in 5.',
+      'You answered 23 things, mostly PRs, mostly before lunch; example-org was the loudest and the robot agreed 4 times in 5.',
     );
   });
 

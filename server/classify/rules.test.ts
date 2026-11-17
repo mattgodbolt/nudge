@@ -38,7 +38,7 @@ describe('applyRules', () => {
     expect(applyRules(yt(t))?.rule).not.toBe('symbol-soup');
   });
   it.each(['Great video!', 'Thanks!', 'Incredible talk!'])(
-    '%j is left for the model: Matt often answers warm praise',
+    '%j is left for the model: the owner often answers warm praise',
     (t) => {
       expect(applyRules(yt(t))).toBeNull();
     },

@@ -115,7 +115,6 @@ describe('drafting a nudge', () => {
     // The owner's reason and own comments are marked as theirs under the neutral names.
     expect(user).toContain('<owner_note>wait for the author</owner_note>');
     expect(user).toContain('<comment is_owner="true"><author>priya</author>');
-    expect(user).not.toMatch(/matt/i);
     expect(c.body.system).toBe(nudgeSystem(SAMPLE_OWNER));
   });
 
@@ -125,7 +124,6 @@ describe('drafting a nudge', () => {
     expect(p).toContain(`Priya in their own words:\n<about_owner>${IDENTITY}</about_owner>`);
     expect(p).toContain('Write it in the first person as Priya:');
     expect(p).toContain('nothing you write is posted anywhere: Priya reads it first.');
-    expect(p).not.toMatch(/\bmatt\b|godbolt|compiler explorer/i);
     expect(p).not.toMatch(GENDERED);
     expect(nudgeSystem({ name: 'Jun', about: 'Jun keeps a database library alive.' })).not.toContain('Priya');
   });

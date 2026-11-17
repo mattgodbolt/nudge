@@ -3,6 +3,7 @@ import { mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { parseClassification } from '../classify/anthropic.js';
 import { migrate, openDb } from './db.js';
 import { createRepo } from './repo.js';
 import { MIGRATIONS } from './migrations.js';
@@ -550,6 +551,11 @@ describe("migration 018 (the owner's turn is 'me')", () => {
     // A row written as 'matt' after the migration (by nothing in the code) is not taken as the owner's turn.
     db.prepare("UPDATE suggestions SET turn = 'matt' WHERE item_id = 'e'").run();
     expect(repo.suggestions.get(['e']).get('e')).toMatchObject({ turn: null });
+  });
+
+  it("does not take the old turn 'matt' from the model either", () => {
+    const answer = { verdict: 'needs_reply', category: 'question', confidence: 'high', reason: 'r', turn: 'matt' };
+    expect(parseClassification(answer)?.turn).toBeNull();
   });
 
   it('upgrades a database file only after keeping a copy of it at schema 17', () => {

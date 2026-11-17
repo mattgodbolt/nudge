@@ -60,14 +60,14 @@ afterEach(() => app.close());
 
 describe('feeds', () => {
   it('adds a feed from a name or a github.com URL, polls it, and refuses duplicates and junk', async () => {
-    let res = await send('POST', '/api/feeds', { owner: 'https://github.com/compiler-explorer/' });
+    let res = await send('POST', '/api/feeds', { owner: 'https://github.com/example-org/' });
     expect(res.statusCode).toBe(201);
     const feed = res.json();
-    expect(feed).toMatchObject({ owner: 'compiler-explorer', prs: true, issues: true, importMode: 'none' });
+    expect(feed).toMatchObject({ owner: 'example-org', prs: true, issues: true, importMode: 'none' });
     expect(polled).toEqual([feed.id]);
     expect(env.bus.of('feeds.changed')).toHaveLength(1);
 
-    expect((await send('POST', '/api/feeds', { owner: 'Compiler-Explorer' })).statusCode).toBe(409);
+    expect((await send('POST', '/api/feeds', { owner: 'Example-Org' })).statusCode).toBe(409);
     expect((await send('POST', '/api/feeds', { owner: 'a/b/c' })).statusCode).toBe(400);
     expect((await send('POST', '/api/feeds', { owner: '/b' })).statusCode).toBe(400);
     expect((await send('POST', '/api/feeds', { owner: 'x[bot]/b' })).statusCode).toBe(400);
@@ -77,7 +77,7 @@ describe('feeds', () => {
   });
 
   it('lists, edits, polls and removes a feed', async () => {
-    const { id } = (await send('POST', '/api/feeds', { owner: 'mattgodbolt', issues: false })).json();
+    const { id } = (await send('POST', '/api/feeds', { owner: 'example-user', issues: false })).json();
     expect((await send('GET', '/api/feeds')).json().feeds).toHaveLength(1);
     let res = await send('PATCH', `/api/feeds/${id}`, { enabled: false });
     expect(res.json().enabled).toBe(false);
@@ -180,21 +180,21 @@ describe('mutes', () => {
 describe('GitHub settings', () => {
   it('stores the token and my accounts, never sends the token back, and polls when the token changes', async () => {
     const res = await send('PUT', '/api/settings', {
-      github: { token: ' ghp_abcdefghijklmnop1234 ', myAccounts: ['mattgodbolt', 'example-bot'] },
+      github: { token: ' ghp_abcdefghijklmnop1234 ', myAccounts: ['example-user', 'example-bot'] },
     });
     expect(res.statusCode).toBe(200);
     expect(res.json().github).toEqual({
       configured: true,
       last4: '1234',
-      myAccounts: ['mattgodbolt', 'example-bot'],
+      myAccounts: ['example-user', 'example-bot'],
     });
     expect(JSON.stringify(res.json())).not.toContain('ghp_abcdefghijklmnop');
     expect(env.repo.getSettings().github.token).toBe('ghp_abcdefghijklmnop1234');
     expect(polled).toEqual([undefined]);
 
     // Changing only the accounts keeps the token.
-    const res2 = await send('PUT', '/api/settings', { github: { myAccounts: ['mattgodbolt'] } });
-    expect(res2.json().github).toEqual({ configured: true, last4: '1234', myAccounts: ['mattgodbolt'] });
+    const res2 = await send('PUT', '/api/settings', { github: { myAccounts: ['example-user'] } });
+    expect(res2.json().github).toEqual({ configured: true, last4: '1234', myAccounts: ['example-user'] });
     // null removes it.
     const res3 = await send('PUT', '/api/settings', { github: { token: null } });
     expect(res3.json().github).toMatchObject({ configured: false, last4: null });

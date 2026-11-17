@@ -31,7 +31,7 @@ const good = (over: Record<string, unknown> = {}) => ({
   aud: [AUD],
   exp: NOW / 1000 + 600,
   nbf: NOW / 1000 - 10,
-  email: 'Matt@Example.org',
+  email: 'Owner@Example.org',
   ...over,
 });
 
@@ -45,12 +45,12 @@ function setup() {
 describe('Cloudflare Access token verification', () => {
   it('accepts a valid token and returns the lower-cased email', async () => {
     const { a, verify } = setup();
-    expect(await verify(sign(a.privateKey, 'kid-a', good()))).toBe('matt@example.org');
+    expect(await verify(sign(a.privateKey, 'kid-a', good()))).toBe('owner@example.org');
   });
 
   it('accepts aud given as a plain string', async () => {
     const { a, verify } = setup();
-    expect(await verify(sign(a.privateKey, 'kid-a', good({ aud: AUD })))).toBe('matt@example.org');
+    expect(await verify(sign(a.privateKey, 'kid-a', good({ aud: AUD })))).toBe('owner@example.org');
   });
 
   it.each([
@@ -60,7 +60,7 @@ describe('Cloudflare Access token verification', () => {
     ['not yet valid', { nbf: NOW / 1000 + 600 }],
     ['no exp', { exp: undefined }],
     ['no email', { email: undefined }],
-    ['email without @', { email: 'matt' }],
+    ['email without @', { email: 'owner' }],
   ])('rejects %s', async (_n, over) => {
     const { a, verify } = setup();
     expect(await verify(sign(a.privateKey, 'kid-a', good(over)))).toBeNull();
@@ -106,7 +106,7 @@ describe('Cloudflare Access token verification', () => {
     keys = [a.jwk, b.jwk];
     t += 120_000;
     expect(await verify(sign(b.privateKey, 'kid-b', good({ exp: t / 1000 + 600, nbf: undefined })))).toBe(
-      'matt@example.org',
+      'owner@example.org',
     );
     expect(fetchKeys).toHaveBeenCalledTimes(2);
   });
@@ -143,7 +143,7 @@ describe('Cloudflare Access token verification', () => {
     ['exp as a string', { exp: String(NOW / 1000 + 600) }],
     ['nbf as a string', { nbf: '0' }],
     ['iss as an array', { iss: [`https://${TEAM}`] }],
-    ['email as an array', { email: ['matt@example.org'] }],
+    ['email as an array', { email: ['owner@example.org'] }],
   ])('rejects claim type confusion: %s', async (_n, over) => {
     const { a, verify } = setup();
     expect(await verify(sign(a.privateKey, 'kid-a', good(over)))).toBeNull();

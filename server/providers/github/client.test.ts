@@ -146,8 +146,8 @@ describe('the client', () => {
   });
 
   it('knows an organisation from a user, and a missing owner', async () => {
-    expect(await client(() => json({ type: 'Organization' })).c.ownerType('compiler-explorer', null)).toBe('org');
-    expect(await client(() => json({ type: 'User' })).c.ownerType('mattgodbolt', null)).toBe('user');
+    expect(await client(() => json({ type: 'Organization' })).c.ownerType('example-org', null)).toBe('org');
+    expect(await client(() => json({ type: 'User' })).c.ownerType('example-user', null)).toBe('user');
     expect(await client(() => json({}, {}, 404)).c.ownerType('nobody-here', null)).toBeNull();
   });
 
