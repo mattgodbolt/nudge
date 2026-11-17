@@ -60,7 +60,9 @@ function fakeClient(s: Script): GithubClient {
       }
       if (s.fail) throw s.fail;
       const kind = /\bis:pr\b/.test(q) ? 'pr' : 'issue';
-      const items = (s.pages[page - 1] ?? []).filter((i) => i.kind === kind);
+      // Like the real API, honour the `updated:>=` qualifier: an item outside the window is not returned.
+      const since = /\bupdated:>=(\S+)/.exec(q)?.[1] ?? '';
+      const items = (s.pages[page - 1] ?? []).filter((i) => i.kind === kind && i.updatedAt >= since);
       return { items, total: 0, rate: { limit: 30, remaining: 28, resetAt: T(1) } };
     },
     async latestCommenter() {
@@ -412,6 +414,105 @@ describe('GitHub poller: was the newest comment mine?', () => {
     await p.pollNow();
     expect(asked).toEqual([1, 2]);
     expect(ids.map((i) => repo.getItem(i)!.state)).toEqual(['done', 'done']);
+  });
+});
+
+describe('GitHub poller: overlapping ticks', () => {
+  it('does not poll a feed again when a slow poll is still running as the next tick queues it', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const base = fakeClient(script);
+    const p = poller({
+      client: {
+        ...base,
+        search: async (...a: Parameters<GithubClient['search']>) => {
+          await gate;
+          return base.search(...a);
+        },
+      },
+    });
+    const first = p.tick();
+    clock.advance(60_000);
+    const second = p.tick(); // the first poll has not finished, so the feed is still "due"
+    release();
+    await Promise.all([first, second]);
+    expect(script.queries.filter((q) => q.includes('is:pr'))).toHaveLength(1);
+  });
+});
+
+describe('GitHub poller: lookups that outlive the search window', () => {
+  const ids = [1, 2, 3].map((n) => githubItemId('org', 'app', n));
+  async function threeDoneItems(over: Parameters<typeof poller>[0] = {}, asked: number[] = []) {
+    const p = poller({
+      client: { ...fakeClient(script), latestCommenter: async (_r: string, n: number) => (asked.push(n), 'carol') },
+      maxCommenterLookups: 1,
+      ...over,
+    });
+    script.pages = [[item(1), item(2), item(3)]];
+    await p.pollNow();
+    repo.triage(ids, 'done');
+    repo.updateSettings({ github: { token: null, myAccounts: ['me'] } });
+    return p;
+  }
+
+  it('looks up items the cap skipped even after the search window has moved past them', async () => {
+    const asked: number[] = [];
+    const p = await threeDoneItems({}, asked);
+    // Three Done items gain comments at once; only one lookup per poll is allowed.
+    const at = T(20);
+    script.pages = [[1, 2, 3].map((n) => item(n, { comments: 1, updatedAt: at }))];
+    await p.pollNow();
+    expect(asked).toEqual([1]);
+    // Hours later nothing has changed on those items, so a plain `updated:` window would no longer return them.
+    for (let i = 0; i < 4; i++) {
+      clock.advance(3 * 60 * 60_000);
+      await p.pollNow();
+    }
+    expect(asked).toEqual([1, 2, 3]);
+    expect(ids.map((i) => repo.getItem(i)!.state)).toEqual(['inbox', 'inbox', 'inbox']);
+  });
+
+  it('looks up items whose lookup failed even after the search window has moved past them', async () => {
+    let fail = true;
+    const p = poller({
+      client: {
+        ...fakeClient(script),
+        latestCommenter: async () => {
+          if (fail) throw new GithubError('GitHub is unavailable (502)', 502);
+          return 'carol';
+        },
+      },
+    });
+    script.pages = [[item(1)]];
+    await p.pollNow();
+    repo.triage([ids[0]!], 'done');
+    repo.updateSettings({ github: { token: null, myAccounts: ['me'] } });
+    script.pages = [[item(1, { comments: 1, updatedAt: T(20) })]];
+    await p.pollNow();
+    fail = false;
+    clock.advance(6 * 60 * 60_000);
+    await p.pollNow();
+    expect(repo.getItem(ids[0]!)!.state).toBe('inbox');
+  });
+
+  it('gives up holding the cursor back after a week, so an item that never resolves cannot pin it forever', async () => {
+    const p = poller({
+      client: {
+        ...fakeClient(script),
+        latestCommenter: async () => {
+          throw new GithubError('GitHub is unavailable (502)', 502);
+        },
+      },
+    });
+    script.pages = [[item(1)]];
+    await p.pollNow();
+    repo.triage([ids[0]!], 'done');
+    script.pages = [[item(1, { comments: 1, updatedAt: T(20) })]];
+    await p.pollNow();
+    clock.advance(10 * 24 * 60 * 60_000);
+    script.pages = [];
+    await p.pollNow();
+    expect(repo.getFeedRow(feedId)!.cursor).toBe(clock.now().toISOString());
   });
 });
 
