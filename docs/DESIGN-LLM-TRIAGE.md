@@ -1,6 +1,6 @@
 # Nudge: LLM-assisted triage (design proposal)
 
-Status: historical proposal (2026-11-08). The items spine, GitHub feeds, mutes and the "Tell Nudge" assistant have since been built; the LLM triage in this document (issues #9, #10) has not. Treat the rest as design background, not current behaviour.
+Status: historical proposal (2026-11-08). The items spine, GitHub feeds, mutes and the "Tell Nudge" assistant have since been built, and so has an advisory version of the LLM triage described here: a model suggests reply, act, skip or spam for each item, with a reason and whose move it is, within a daily cost cap. It never acts on its own. Automatic filing, notification gating and label suggestions were not built (labels were removed, see below). Treat the rest as design background, not current behaviour.
 
 > **Update (2026-11-14): user-defined labels were removed from Nudge.** The owner did not use them (production had
 > none), so the label list, `labels` / `item_labels` tables, label picker and label folders are gone (migration 015),
