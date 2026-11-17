@@ -9,7 +9,7 @@ services:
     image: nudge:latest
     container_name: nudge
     restart: unless-stopped
-    user: '1000:1000' # matches the owner of ./data on the host
+    user: '${NUDGE_UID:-1000}:${NUDGE_GID:-1000}' # must own ./data on the host; set both in .env if your user is not 1000
     # It needs no Linux capabilities and never escalates; everything it writes goes to ./data (or /tmp, for SQLite's
     # temporary files), so the rest of the filesystem is read-only.
     cap_drop: [ALL]

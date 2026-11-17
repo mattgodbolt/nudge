@@ -360,7 +360,7 @@ ALTER TABLE suggestions ADD COLUMN next_step TEXT;
 ALTER TABLE suggestions ADD COLUMN thread TEXT;
 ALTER TABLE suggestions ADD COLUMN thread_count INTEGER;
 
--- Why the owner snoozed an item, in his words; shown back when it wakes and given to the suggestion prompt.
+-- Why the owner snoozed an item, in their own words; shown back when it wakes and given to the suggestion prompt.
 ALTER TABLE items ADD COLUMN snooze_why TEXT;
 
 -- Everything the owner tells the assistant about a suggestion, an item or a preference. Deliberately no foreign key
