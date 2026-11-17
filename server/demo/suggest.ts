@@ -16,15 +16,19 @@ export function demoClassify(item: EvalItem, standingNotes: string[] = []): Clas
   // Thread state, as the real model is asked to judge it: his own note about the item first, then why he snoozed it,
   // then who wrote last.
   const note = item.ownerNotes?.[0];
-  if (note) return { ...c, turn: 'matt', nextStep: `Act on your note: ${note.slice(0, 40)}` };
-  if (item.snoozeNote) return { ...c, turn: 'matt', nextStep: item.snoozeNote };
+  if (note) return { ...c, turn: 'me', nextStep: `Act on your note: ${note.slice(0, 40)}` };
+  if (item.snoozeNote) return { ...c, turn: 'me', nextStep: item.snoozeNote };
   const last = item.github?.recent?.at(-1);
   if (last) {
-    return last.isMatt
-      ? { ...c, turn: 'them', nextStep: `Wait for ${item.github?.recent?.find((m) => !m.isMatt)?.author ?? 'a reply'}` }
+    return last.isOwner
+      ? {
+          ...c,
+          turn: 'them',
+          nextStep: `Wait for ${item.github?.recent?.find((m) => !m.isOwner)?.author ?? 'a reply'}`,
+        }
       : {
           ...c,
-          turn: 'matt',
+          turn: 'me',
           // As long-winded as the real model gets, so the layout is exercised with text that must wrap or be cut.
           nextStep: `Answer ${last.author} and merge alongside the companion Compiler Explorer PR`,
           reason: 'A first-time contributor opened a PR adding install targets to the infra repo, which needs review',

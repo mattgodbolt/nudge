@@ -148,7 +148,7 @@ export interface SuggestionDTO {
   confidence: 'low' | 'medium' | 'high';
   suspicious: boolean;
   /** Whose move it is now, judged from the current thread; null when the model did not say. */
-  turn?: 'matt' | 'them' | 'nobody' | null;
+  turn?: 'me' | 'them' | 'nobody' | null;
   /** One short sentence about what happens next ("review the proposed fix and merge"); null when none. */
   nextStep?: string | null;
 }
@@ -573,9 +573,10 @@ export interface SuggestStatusDTO {
   working: boolean;
   /**
    * Why it is not working through the rest: the daily cost cap (until the next UTC midnight), GitHub's rate limit (until
-   * it resets: only items that need a thread fetch wait), a back-off after errors, or a rejected key.
+   * it resets: only items that need a thread fetch wait), a back-off after errors, a rejected key, or an empty Settings >
+   * About you (nothing is asked of the model until it is filled in).
    */
-  paused: { reason: 'cap' | 'rate-limit' | 'backoff' | 'key-rejected'; until: string | null } | null;
+  paused: { reason: 'cap' | 'rate-limit' | 'backoff' | 'key-rejected' | 'no-profile'; until: string | null } | null;
   /** Items held back (not classified at all yet) because their thread cannot be fetched until GitHub's limit resets. */
   waitingForThread: number;
 }
@@ -605,6 +606,11 @@ export type ServerEvent =
 export interface ApiError {
   error: string;
   code: string;
+  /**
+   * Set when `error` is a machine-readable code rather than the words to show (owner_profile_missing): the words to
+   * show are then here.
+   */
+  message?: string;
 }
 
 /* ---------------- Web Push ---------------- */

@@ -36,7 +36,7 @@ export interface SuggestionRow {
 /** One of the last few comments on a GitHub item, trimmed for the model. */
 export interface RecentComment {
   author: string;
-  isMatt: boolean;
+  isOwner: boolean;
   text: string;
 }
 
@@ -50,7 +50,7 @@ export function suggestionDto(r: {
   nextStep?: string | null;
 }): SuggestionDTO {
   if (r.injection) return { action: null, reason: '', confidence: 'low', suspicious: true };
-  const turn = r.turn === 'matt' || r.turn === 'them' || r.turn === 'nobody' ? r.turn : null;
+  const turn = r.turn === 'me' || r.turn === 'them' || r.turn === 'nobody' ? r.turn : null;
   return {
     action: ACTION_OF[r.verdict],
     reason: r.reason,

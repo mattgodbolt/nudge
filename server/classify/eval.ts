@@ -5,10 +5,15 @@
 //   npm run eval:classify -- score --labels data/eval/labels.json
 //
 // Needs ANTHROPIC_API_KEY (or ~/.nudge-eval-key, mode 600) for `run`. Input is the JSONL from scripts/triage-eval/export.mjs.
+// `run` also needs the owner's profile (Settings > About you), which the prompt is built from: `--db <copy of nudge.db>`
+// reads it from a database copy, or `--owner-name` and `--owner-about` give it. A `--prompt` file needs neither.
 import { createHash } from 'node:crypto';
 import { homedir } from 'node:os';
 import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { ClassifierError, PROMPT_VERSION, costMicros, createAnthropicClassifier } from './anthropic.js';
+import { evalOwner } from './evalOwner.js';
+import { ownerHash } from '../suggest/worker.js';
+import type { OwnerProfile } from '../../shared/owner.js';
 import { labelArtifactHtml, labelPageHtml } from './labelPage.js';
 import {
   buildGroups,
@@ -56,9 +61,16 @@ const systemOverride = (): string | undefined => {
   const f = arg('prompt');
   return f ? readFileSync(f, 'utf8') : undefined;
 };
+
+let ownerMemo: OwnerProfile | undefined;
+const owner = (): OwnerProfile => (ownerMemo ??= evalOwner({ arg }));
+
+/** Results are cached per prompt: the version and the profile it was built for, or the hash of a prompt file. */
 const promptTag = (): string => {
   const s = systemOverride();
-  return s === undefined ? PROMPT_VERSION : `file:${createHash('sha256').update(s).digest('hex').slice(0, 8)}`;
+  return s === undefined
+    ? `${PROMPT_VERSION}:${ownerHash(owner())}`
+    : `file:${createHash('sha256').update(s).digest('hex').slice(0, 8)}`;
 };
 /** Deterministic half-and-half split of labelled ids: tune prompts on dev, look at test only to report. */
 const splitOf = (id: string): 'dev' | 'test' =>
@@ -128,6 +140,7 @@ function targetSet(all: EvalItem[]): EvalItem[] {
 
 async function cmdRun(): Promise<void> {
   const model = arg('model', 'claude-haiku-5-5')!;
+  if (systemOverride() === undefined) owner(); // before anything else: no profile, no run
   const cache = loadCache();
   const todo = targetSet(items())
     .filter((i) => inSplit(i.id))
@@ -142,7 +155,14 @@ async function cmdRun(): Promise<void> {
   const keyFile = `${homedir()}/.nudge-eval-key`;
   const apiKey = process.env.ANTHROPIC_API_KEY ?? (existsSync(keyFile) ? readFileSync(keyFile, 'utf8').trim() : '');
   if (!apiKey) throw new Error('Set ANTHROPIC_API_KEY or put a key (with a small spend limit) in ~/.nudge-eval-key');
-  const clf = createAnthropicClassifier({ apiKey, model, system: systemOverride() });
+  const system = systemOverride();
+  // A prompt file is the whole system prompt; the default one is built from the owner's profile.
+  const clf = createAnthropicClassifier({
+    apiKey,
+    model,
+    owner: system === undefined ? owner() : { name: 'the owner', about: '' },
+    system,
+  });
   let done = 0;
   let failed = 0;
   let spent = 0;
@@ -324,12 +344,18 @@ function cmdRankScore(): void {
 }
 
 const cmd = process.argv[2];
-if (cmd === 'sample') cmdSample();
-else if (cmd === 'run') await cmdRun();
-else if (cmd === 'score') cmdScore();
-else if (cmd === 'rank-sample') cmdRankSample();
-else if (cmd === 'rank-score') cmdRankScore();
-else
-  console.log(
-    'usage: eval:classify sample | run [--set sample|scored|all] [--model M] [--limit N] [--yes] | score [--labels file]',
-  );
+try {
+  if (cmd === 'sample') cmdSample();
+  else if (cmd === 'run') await cmdRun();
+  else if (cmd === 'score') cmdScore();
+  else if (cmd === 'rank-sample') cmdRankSample();
+  else if (cmd === 'rank-score') cmdRankScore();
+  else
+    console.log(
+      'usage: eval:classify sample | run [--set sample|scored|all] [--model M] [--limit N] [--yes] | score [--labels file]\n' +
+        '       run and score need the owner profile: --db <copy of nudge.db>, or --owner-name N --owner-about TEXT',
+    );
+} catch (e) {
+  console.error(e instanceof Error ? e.message : e);
+  process.exitCode = 1;
+}

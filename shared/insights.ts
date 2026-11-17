@@ -54,7 +54,7 @@ export const SUGGESTED = ['reply', 'act', 'skip', 'spam'] as const;
 /** What he did first, for the confusion table: the five columns. */
 export const FIRST_ACTIONS = ['replied', 'done', 'dismissed', 'snooze', 'legacy'] as const;
 export const CONFIDENCES = ['low', 'medium', 'high'] as const;
-export const TURNS = ['matt', 'them', 'nobody'] as const;
+export const TURNS = ['me', 'them', 'nobody'] as const;
 
 export interface RhythmInsights {
   /** R1: when things arrive (first_seen_at); `written` is the same items by when they were written (occurred_at). */

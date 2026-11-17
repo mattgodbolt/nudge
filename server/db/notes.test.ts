@@ -59,11 +59,11 @@ describe('notes', () => {
     });
   });
 
-  it('snapshots the suggestion showing, what he had just done with why, and the item context', () => {
+  it('snapshots the suggestion showing, what the owner had just done with why, and the item context', () => {
     db.prepare(
       `INSERT INTO suggestions (item_id, state_key, verdict, category, confidence, reason, model, prompt_version,
          created_at, turn, next_step) VALUES (?, 'k', 'needs_reply', 'question', 'high', 'A feature request', 'm', 'p',
-         't', 'matt', 'Review the fix')`,
+         't', 'me', 'Review the fix')`,
     ).run(id(1));
     repo.snooze([id(1)], new Date(t + 86_400_000).toISOString(), 'review the proposed fix');
     t += 60_000;
@@ -72,7 +72,7 @@ describe('notes', () => {
     expect(n.suggestion).toEqual({
       verdict: 'needs_reply',
       action: 'reply',
-      turn: 'matt',
+      turn: 'me',
       nextStep: 'Review the fix',
       reason: 'A feature request',
       confidence: 'high',

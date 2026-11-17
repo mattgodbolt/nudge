@@ -111,11 +111,31 @@ describe('settings', () => {
       snoozeDays: { waiting_on_them: 7, waiting_on_merge: 3, in_flight: 7, lower_priority: 30 },
       github: { token: null, myAccounts: [] },
       llm: { apiKey: null, model: 'claude-haiku-5-5' },
+      owner: { name: '', about: '' },
       rpg: { enabled: true, sound: true, title: null, seen: null, tz: null, prevTz: null },
     });
     const s = repo.updateSettings({ apiKey: 'k', theme: 'dark', pollEnabled: false });
     expect(s).toMatchObject({ apiKey: 'k', theme: 'dark', pollEnabled: false, dailyQuotaBudget: 9000 });
     expect(repo.updateSettings({ apiKey: null }).apiKey).toBeNull();
+  });
+
+  it('keeps the owner profile as one JSON row, and reads a half-written one as its missing parts', () => {
+    const db = openDb(':memory:');
+    const r = createRepo(db, clock);
+    r.updateSettings({ owner: { name: 'Priya', about: 'Maintains a parser.' } });
+    expect(r.getSettings().owner).toEqual({ name: 'Priya', about: 'Maintains a parser.' });
+    const put = (json: string) =>
+      db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('owner', ?)").run(json);
+    const row = db.prepare("SELECT value FROM settings WHERE key = 'owner'").get() as { value: string };
+    expect(JSON.parse(row.value)).toEqual({ name: 'Priya', about: 'Maintains a parser.' });
+    // As someone might seed it by hand.
+    put(JSON.stringify({ name: '  Sam ', about: 7 }));
+    expect(r.getSettings().owner).toEqual({ name: 'Sam', about: '' });
+    put('"just a string"');
+    expect(r.getSettings().owner).toEqual({ name: '', about: '' });
+    put('not json');
+    expect(r.getSettings().owner).toEqual({ name: '', about: '' });
+    db.close();
   });
 
   it('stores the Google client as JSON and clears it with null', () => {

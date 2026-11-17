@@ -11,7 +11,7 @@ describe('filters from the URL', () => {
         repo: 'org/app',
         kind: 'pr',
         who: 'people',
-        sug: 'matt',
+        sug: 'me',
         q: 'hello',
         c: 'c1',
       }),
@@ -22,7 +22,7 @@ describe('filters from the URL', () => {
       repo: 'org/app',
       kind: 'pr',
       audience: 'people',
-      suggestion: 'matt',
+      suggestion: 'me',
       q: 'hello',
     });
   });

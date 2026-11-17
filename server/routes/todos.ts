@@ -8,7 +8,8 @@ import { fallbackDate } from '../../shared/snooze.js';
 import { recordNote } from './notes.js';
 import { bucketInBackground } from './snoozeAi.js';
 import { overDailyCap } from '../suggest/worker.js';
-import { HttpError, asObject, bad, logBackground, notFound, str } from './util.js';
+import { ownerProfileComplete } from '../../shared/owner.js';
+import { HttpError, asObject, bad, logBackground, notFound, ownerProfileMissing, str } from './util.js';
 
 const TEXT_MAX = 4000;
 const TITLE_MAX = 140;
@@ -60,7 +61,11 @@ export function registerTodoRoutes(app: FastifyInstance, deps: AppDeps): void {
           }
         : null;
 
-    const { apiKey, model } = repo.getSettings().llm;
+    const { llm, owner } = repo.getSettings();
+    const { apiKey, model } = llm;
+    // With a key the words are meant for the model, which is paused until the profile is filled in: say so, and the
+    // browser keeps the words in the box (nothing is saved, so nothing is lost or half done).
+    if (apiKey && deps.llm && !ownerProfileComplete(owner)) return ownerProfileMissing(reply);
     let actions: AssistantAction[] = [];
     let said = '';
     let fallback: 'off' | 'failed' | null = null;

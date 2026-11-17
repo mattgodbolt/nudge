@@ -439,4 +439,30 @@ INSERT INTO llm_spend (day, purpose, micros)
   SELECT day, CASE key WHEN 'snooze_ai.cost_micros' THEN 'snooze_ai' ELSE 'assistant' END, count
     FROM usage_daily WHERE key IN ('snooze_ai.cost_micros', 'assistant.cost_micros') AND count > 0;
 `,
+  /* 018 the owner's turn is 'me', not a name */ `
+-- Whose turn it is was stored as 'matt' for the owner's own turn. The code no longer names its owner (Settings > About
+-- you says who they are), so the value becomes 'me' wherever it is stored, and nothing reads the old one any more:
+-- the current suggestions, the suggestion snapshot in each history event (meta.suggestedTurn) and in each note
+-- (suggestion.turn). The recent-comments excerpt kept with a suggestion marked the owner's own comments with isMatt;
+-- that becomes isOwner. Malformed JSON is left as it is, never an error: this runs against the live database (CASE
+-- wherever a json function could throw, because AND does not short-circuit in SQLite).
+UPDATE suggestions SET turn = 'me' WHERE turn = 'matt';
+UPDATE item_events SET meta = json_set(meta, '$.suggestedTurn', 'me')
+ WHERE CASE WHEN json_valid(meta) THEN json_type(meta) = 'object' AND json_extract(meta, '$.suggestedTurn') = 'matt'
+            ELSE 0 END;
+UPDATE notes SET suggestion = json_set(suggestion, '$.turn', 'me')
+ WHERE CASE WHEN json_valid(suggestion) THEN json_type(suggestion) = 'object' AND json_extract(suggestion, '$.turn') = 'matt'
+            ELSE 0 END;
+UPDATE suggestions SET thread = (
+  SELECT json_group_array(
+           CASE WHEN e.type = 'object' AND json_type(e.value, '$.isMatt') IS NOT NULL
+                THEN json_remove(json_set(e.value, '$.isOwner',
+                                          json(CASE WHEN json_extract(e.value, '$.isMatt') THEN 'true' ELSE 'false' END)),
+                                 '$.isMatt')
+                WHEN e.type IN ('object', 'array') THEN json(e.value)
+                ELSE e.value END
+           ORDER BY e.key)
+    FROM json_each(suggestions.thread) e)
+ WHERE CASE WHEN json_valid(thread) THEN json_type(thread) = 'array' AND instr(thread, '"isMatt"') > 0 ELSE 0 END;
+`,
 ];

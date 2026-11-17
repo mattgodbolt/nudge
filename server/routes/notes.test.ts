@@ -5,6 +5,7 @@ import type { AssistantAction, LlmClient, SyncEngine } from '../contracts.js';
 import { createHandoffPoster } from '../reply/poster.js';
 import { fakeGoogleAuth } from '../reply/test-helpers.js';
 import { makeEnv } from '../sync/test-helpers.js';
+import { SAMPLE_OWNER } from '../classify/test-helpers.js';
 import type { NoteDTO } from '../../shared/types.js';
 
 const H = { 'x-nudge': '1', host: '127.0.0.1:4517' };
@@ -46,7 +47,7 @@ beforeEach(() => {
       labels: [],
     })),
   );
-  env.repo.updateSettings({ llm: { apiKey: 'sk-test', model: 'm' } });
+  env.repo.updateSettings({ llm: { apiKey: 'sk-test', model: 'm' }, owner: SAMPLE_OWNER });
   app = buildApp({
     repo: env.repo,
     engine: { run: async () => ({}), status: () => ({}) } as unknown as SyncEngine,

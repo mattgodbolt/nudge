@@ -1,6 +1,6 @@
 import type * as T from './types.js';
 
-export const SUGGESTION_FILTERS = ['reply', 'act', 'skip', 'spam', 'matt', 'them', 'suspicious', 'none'] as const;
+export const SUGGESTION_FILTERS = ['reply', 'act', 'skip', 'spam', 'me', 'them', 'suspicious', 'none'] as const;
 export type SuggestionFilter = (typeof SUGGESTION_FILTERS)[number];
 
 export interface InboxQuery {
@@ -16,7 +16,7 @@ export interface InboxQuery {
   /** GitHub author filter: outside contributors, the team, past contributors, bots, or any human. */
   audience?: 'outside' | 'team' | 'contributors' | 'bots' | 'people';
   /**
-   * Only items by their current suggestion: reply / act / skip / spam, whose turn it is ('matt' = yours, 'them' =
+   * Only items by their current suggestion: reply / act / skip / spam, whose turn it is ('me' = yours, 'them' =
    * waiting on them), 'suspicious' (flagged as a prompt-injection attempt), or 'none' (no suggestion yet).
    */
   suggestion?: SuggestionFilter;

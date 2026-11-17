@@ -144,7 +144,10 @@ describe('security', () => {
 
 describe('assistant counters', () => {
   it('records calls, tool calls, failures and cost as counts, never the words', async () => {
-    env.repo.updateSettings({ llm: { apiKey: 'sk-test', model: 'claude-sonnet-5-5' } });
+    env.repo.updateSettings({
+      llm: { apiKey: 'sk-test', model: 'claude-sonnet-5-5' },
+      owner: { name: 'Priya', about: 'Maintains a parser.' },
+    });
     let fail = false;
     const llmApp = buildApp(
       {

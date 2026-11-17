@@ -710,11 +710,13 @@ export interface SnoozeAi {
       bucket: SnoozeBucket | null;
       days: number;
       why: string | null;
-      comments: { author: string; isMatt: boolean; text: string }[];
+      comments: { author: string; isOwner: boolean; text: string }[];
       body: string;
     },
     apiKey: string,
     model: string,
+    /** The draft is written as the owner: their name and description go into the prompt. */
+    owner: OwnerProfile,
   ): Promise<{ text: string; tokens: LlmTokens }>;
 }
 export type LlmTokens = {

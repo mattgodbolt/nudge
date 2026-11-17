@@ -559,7 +559,7 @@ describe('the cards', () => {
     for (let i = 0; i < 10; i++)
       act('reply', i < 8 ? 'replied' : 'done', {
         suggestedConfidence: 'high',
-        suggestedTurn: 'matt',
+        suggestedTurn: 'me',
         suggestedCategory: 'question',
       });
     for (let i = 0; i < 10; i++)
@@ -592,7 +592,7 @@ describe('the cards', () => {
     ]);
     expect(p.calibration.data!.highNotBetter).toBe(false);
     expect(p.turns.data!.rows).toEqual([
-      { turn: 'matt', n: 10, hits: 8, rate: 0.8 },
+      { turn: 'me', n: 10, hits: 8, rate: 0.8 },
       { turn: 'them', n: 10, hits: 7, rate: 0.7 },
       { turn: 'nobody', n: 0, hits: 0, rate: null },
     ]);

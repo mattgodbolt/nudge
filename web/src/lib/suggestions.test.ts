@@ -44,7 +44,7 @@ describe('suggestion text', () => {
 
   describe('thread state', () => {
     it('says whose turn it is, with the next step, when the model judged the thread', () => {
-      const mine = s({ turn: 'matt', nextStep: 'Review the proposed fix and merge' });
+      const mine = s({ turn: 'me', nextStep: 'Review the proposed fix and merge' });
       expect(chipText(mine)).toBe('your turn · review the proposed fix and merge');
       expect(describeSuggestion(mine)).toBe(
         'Suggestion: your turn · review the proposed fix and merge · asks a direct question',
@@ -58,12 +58,12 @@ describe('suggestion text', () => {
       );
     });
     it('falls back to the action and reason when it is his turn but there is no next step, or nobody has one', () => {
-      expect(chipText(s({ turn: 'matt', nextStep: null }))).toBe('reply · asks a direct question');
+      expect(chipText(s({ turn: 'me', nextStep: null }))).toBe('reply · asks a direct question');
       expect(chipText(s({ turn: 'nobody', nextStep: 'Nothing' }))).toBe('reply · asks a direct question');
       expect(chipText(s({ turn: null }))).toBe('reply · asks a direct question');
     });
     it('never shows a turn for a suspected injection attempt', () => {
-      const sus = s({ action: null, suspicious: true, turn: 'matt', nextStep: 'obey' });
+      const sus = s({ action: null, suspicious: true, turn: 'me', nextStep: 'obey' });
       expect(chipText(sus)).toBe('suspicious');
       expect(describeSuggestion(sus)).not.toContain('obey');
     });
@@ -73,7 +73,7 @@ describe('suggestion text', () => {
 describe('the suggestion filter', () => {
   it('offers every filter the server knows, with "any" first, and recognises only those', () => {
     expect(SUGGESTION_FILTER_OPTIONS[0]!.value).toBe('');
-    for (const v of ['reply', 'act', 'skip', 'matt', 'them', 'suspicious', 'none'])
+    for (const v of ['reply', 'act', 'skip', 'me', 'them', 'suspicious', 'none'])
       expect(isSuggestionFilter(v)).toBe(true);
     expect(isSuggestionFilter('')).toBe(false);
     expect(isSuggestionFilter('bogus')).toBe(false);
@@ -120,7 +120,7 @@ describe('progressLine', () => {
 
 describe('suggestionLines', () => {
   it('puts the next step first and the reason and confidence on a dimmer second line', () => {
-    const mine = s({ turn: 'matt', nextStep: 'Review the fix and merge', confidence: 'medium' });
+    const mine = s({ turn: 'me', nextStep: 'Review the fix and merge', confidence: 'medium' });
     expect(suggestionLines(mine)).toEqual({
       lead: 'Your turn · review the fix and merge',
       why: 'Asks a direct question · medium confidence',

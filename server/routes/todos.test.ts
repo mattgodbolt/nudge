@@ -7,6 +7,7 @@ import { parseCommand } from '../providers/anthropic/client.js';
 import { createHandoffPoster } from '../reply/poster.js';
 import { fakeGoogleAuth } from '../reply/test-helpers.js';
 import { makeEnv } from '../sync/test-helpers.js';
+import { SAMPLE_OWNER } from '../classify/test-helpers.js';
 
 const H = { 'x-nudge': '1', host: '127.0.0.1:4517' };
 let app: FastifyInstance;
@@ -52,7 +53,8 @@ afterEach(() => app.close());
 
 const inbox = () => env.repo.listInbox({ view: 'inbox' }).items;
 const post = (payload: unknown) => send('POST', '/api/assistant', payload);
-const key = () => env.repo.updateSettings({ llm: { apiKey: 'sk-test', model: 'claude-haiku-5-5' } });
+const key = () =>
+  env.repo.updateSettings({ llm: { apiKey: 'sk-test', model: 'claude-haiku-5-5' }, owner: SAMPLE_OWNER });
 const seedComment = () => {
   env.repo.upsertGithubItems(env.repo.addFeed({ owner: 'o', prs: true, issues: true, importMode: 'none' }).id, [
     {
@@ -117,6 +119,25 @@ describe('POST /api/assistant', () => {
       todo: { raw: 'ring the plumber\nabout the leak' },
     });
     expect(env.bus.of('inbox.changed').at(-1)!.addedIds).toHaveLength(1);
+  });
+
+  it('with a key but no profile (About you), refuses with 409 and saves nothing, so the browser keeps the words', async () => {
+    key();
+    env.repo.updateSettings({ owner: { name: '', about: SAMPLE_OWNER.about } });
+    const res = await post({ text: 'remind me in 3 days to ring the plumber' });
+    expect(res.statusCode).toBe(409);
+    expect(res.json()).toEqual({
+      error: 'owner_profile_missing',
+      message: 'Set up your profile in Settings > About you first.',
+      code: 'owner_profile_missing',
+    });
+    expect(calls).toEqual([]);
+    expect(inbox()).toEqual([]);
+    expect(env.repo.spend.todayUsd()).toBe(0);
+    expect(env.repo.usage.today('assistant.call')).toBe(0);
+    // Without a key nothing reaches the model, so the words are kept as a todo as before, profile or not.
+    env.repo.updateSettings({ llm: { apiKey: null, model: 'claude-haiku-5-5' } });
+    expect((await post({ text: 'ring the plumber' })).json()).toMatchObject({ fallback: 'off' });
   });
 
   it('adds the tidied todo the model asked for, passing the user local time and selection', async () => {

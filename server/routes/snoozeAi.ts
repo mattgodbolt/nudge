@@ -4,7 +4,8 @@ import type { AppDeps, LlmTokens } from '../contracts.js';
 import { LlmError } from '../contracts.js';
 import { costMicros } from '../classify/anthropic.js';
 import { overDailyCap } from '../suggest/worker.js';
-import { HttpError, logBackground, notFound } from './util.js';
+import { ownerProfileComplete } from '../../shared/owner.js';
+import { HttpError, logBackground, notFound, ownerProfileMissing } from './util.js';
 
 /** Most items one snooze action will have bucketed by the model (a bulk snooze must not become a bulk bill). */
 export const MAX_BUCKET_CALLS = 10;
@@ -28,7 +29,7 @@ function count(deps: AppDeps, model: string, tokens: LlmTokens | null, failed = 
 /**
  * After a snooze that gave a reason in words but no bucket: ask the model which bucket it fits and store it. Runs after
  * the snooze has been answered and never throws, never waits for anything the owner is waiting on; without a key, a
- * model, or budget it does nothing. The reason is untrusted text for the model (see classify/snooze.ts).
+ * model, a complete profile (Settings > About you) or budget it does nothing. The reason is untrusted text for the model (see classify/snooze.ts).
  */
 export async function bucketInBackground(
   deps: AppDeps,
@@ -37,8 +38,10 @@ export async function bucketInBackground(
   log: (msg: string, err?: unknown) => void = logBackground,
 ): Promise<void> {
   try {
-    const { apiKey, model } = deps.repo.getSettings().llm;
-    if (!apiKey || !deps.snoozeAi) return;
+    const { llm, owner } = deps.repo.getSettings();
+    const { apiKey, model } = llm;
+    // Paused with the other model features until Settings > About you is filled in, so the banner there is the truth.
+    if (!apiKey || !deps.snoozeAi || !ownerProfileComplete(owner)) return;
     const changed: string[] = [];
     for (const id of ids.slice(0, MAX_BUCKET_CALLS)) {
       if (overDailyCap(deps.repo)) break;
@@ -68,7 +71,7 @@ export function registerSnoozeAiRoutes(app: FastifyInstance, deps: AppDeps): voi
    * in a waiting_on_* bucket; shown to the owner to copy, and never posted by Nudge. The thread text goes to the model
    * as untrusted data, fetched here (one capped GitHub call) and never from the request.
    */
-  app.post<{ Params: { id: string } }>('/api/items/:id/nudge-draft', async (req) => {
+  app.post<{ Params: { id: string } }>('/api/items/:id/nudge-draft', async (req, reply) => {
     const found = deps.repo.getItem(req.params.id);
     if (!found) throw notFound('Item');
     const g = found.item.github;
@@ -84,12 +87,14 @@ export function registerSnoozeAiRoutes(app: FastifyInstance, deps: AppDeps): voi
     const { apiKey, model } = deps.repo.getSettings().llm;
     if (!apiKey || !deps.snoozeAi)
       throw new HttpError(424, 'Add an Anthropic key in Settings to draft nudges', 'no_key');
+    const settings = deps.repo.getSettings();
+    // The draft is written as the owner: without their profile the model would be guessing who that is.
+    if (!ownerProfileComplete(settings.owner)) return ownerProfileMissing(reply);
     if (overDailyCap(deps.repo)) {
       throw new HttpError(429, 'The daily limit on model spending has been reached', 'cap');
     }
-    const settings = deps.repo.getSettings();
     const mine = new Set(settings.github.myAccounts.map((l) => l.toLowerCase()));
-    let comments: { author: string; isMatt: boolean; text: string }[] = [];
+    let comments: { author: string; isOwner: boolean; text: string }[] = [];
     try {
       const got =
         (await deps.githubClient?.recentComments(
@@ -101,7 +106,7 @@ export function registerSnoozeAiRoutes(app: FastifyInstance, deps: AppDeps): voi
         )) ?? [];
       comments = got.map((c) => ({
         author: c.author,
-        isMatt: mine.has(c.author.toLowerCase()),
+        isOwner: mine.has(c.author.toLowerCase()),
         text: c.text.replace(/\s+/g, ' ').trim(),
       }));
     } catch (e) {
@@ -122,6 +127,7 @@ export function registerSnoozeAiRoutes(app: FastifyInstance, deps: AppDeps): voi
         },
         apiKey,
         model,
+        settings.owner,
       );
       count(deps, model, r.tokens);
       return { text: r.text, bucket: BUCKETS[bucket].label };

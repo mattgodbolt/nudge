@@ -1,6 +1,10 @@
 import Database from 'better-sqlite3';
+import { mkdtempSync, readdirSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { migrate } from './db.js';
+import { migrate, openDb } from './db.js';
+import { createRepo } from './repo.js';
 import { MIGRATIONS } from './migrations.js';
 
 describe('migration 003 (google accounts + reply posts)', () => {
@@ -427,5 +431,141 @@ describe('migration 015 (drop user-defined labels)', () => {
     db.pragma('user_version = 14');
     migrate(db);
     expect(tableNames(db)).not.toContain('labels');
+  });
+});
+
+describe("migration 018 (the owner's turn is 'me')", () => {
+  /** A database at schema 17 with rows as the code before this migration wrote them. */
+  function v17(db = new Database(':memory:')): Database.Database {
+    db.exec(MIGRATIONS.slice(0, 17).join('\n'));
+    db.pragma('user_version = 17');
+    const item = db.prepare(
+      `INSERT INTO items (id, provider, kind, occurred_at, state, state_source, state_changed_at, first_seen_at)
+       VALUES (?, 'github', 'pr', 't', 'inbox', 'sync', 't', 't')`,
+    );
+    const sug = db.prepare(
+      `INSERT INTO suggestions (item_id, state_key, verdict, category, confidence, reason, model, prompt_version,
+         created_at, turn, next_step, thread, thread_count) VALUES (?, 'k', 'needs_reply', 'other', 'high', 'r', 'm',
+         'p0-10', 't', ?, NULL, ?, ?)`,
+    );
+    const thread = JSON.stringify([
+      { author: 'dave', isMatt: false, text: 'Here is a fix' },
+      { author: 'me', isMatt: true, text: 'Thanks' },
+    ]);
+    for (const [id, turn, th] of [
+      ['a', 'matt', thread],
+      ['b', 'them', null],
+      ['c', null, '[]'],
+      ['d', 'nobody', 'not json'],
+      ['e', 'matt', '[{"author":"x","isMatt":true,"text":"y","extra":1},"odd",2]'],
+    ] as const) {
+      item.run(id);
+      sug.run(id, turn, th, th ? 2 : null);
+    }
+    const ev = db.prepare(
+      "INSERT INTO item_events (item_id, at, kind, to_value, source, meta) VALUES ('a', 't', 'state', 'done', 'user', ?)",
+    );
+    for (const meta of [
+      '{"suggested":"reply","suggestedConfidence":"high","suggestedTurn":"matt","reason":"done"}',
+      '{"suggested":"skip","suggestedTurn":"them"}',
+      '{"suggested":"act"}',
+      '{"why":"matt said so","suggestedTurn":"nobody"}',
+      'not json',
+      '["suggestedTurn","matt"]',
+      null,
+    ])
+      ev.run(meta);
+    const note = db.prepare(
+      `INSERT INTO notes (created_at, updated_at, text, original_text, scope, source, item_id, suggestion)
+       VALUES ('t', 't', 'x', 'x', 'item', 'text', 'a', ?)`,
+    );
+    for (const s of [
+      '{"verdict":"needs_reply","action":"reply","turn":"matt","nextStep":"Merge","reason":"r","confidence":"high"}',
+      '{"verdict":"spam","action":"spam","turn":null,"nextStep":null,"reason":"r","confidence":"low"}',
+      'garbage',
+      null,
+    ])
+      note.run(s);
+    return db;
+  }
+  const col = (db: Database.Database, sql: string) =>
+    (db.prepare(sql).all() as Record<string, unknown>[]).map((r) => Object.values(r)[0]);
+
+  it("renames the stored turn 'matt' to 'me' in suggestions, history events and notes, leaving the rest alone", () => {
+    const db = v17();
+    migrate(db);
+    expect(db.pragma('user_version', { simple: true })).toBe(MIGRATIONS.length);
+    expect(col(db, 'SELECT turn FROM suggestions ORDER BY item_id')).toEqual(['me', 'them', null, 'nobody', 'me']);
+    const metas = col(db, 'SELECT meta FROM item_events ORDER BY id') as (string | null)[];
+    expect(JSON.parse(metas[0]!)).toEqual({
+      suggested: 'reply',
+      suggestedConfidence: 'high',
+      suggestedTurn: 'me',
+      reason: 'done',
+    });
+    expect(metas.slice(1)).toEqual([
+      '{"suggested":"skip","suggestedTurn":"them"}',
+      '{"suggested":"act"}',
+      '{"why":"matt said so","suggestedTurn":"nobody"}',
+      'not json',
+      '["suggestedTurn","matt"]',
+      null,
+    ]);
+    const notes = col(db, 'SELECT suggestion FROM notes ORDER BY id') as (string | null)[];
+    expect(JSON.parse(notes[0]!)).toMatchObject({ turn: 'me', nextStep: 'Merge', action: 'reply' });
+    expect(notes.slice(1)).toEqual([
+      '{"verdict":"spam","action":"spam","turn":null,"nextStep":null,"reason":"r","confidence":"low"}',
+      'garbage',
+      null,
+    ]);
+    expect(col(db, "SELECT COUNT(*) FROM suggestions WHERE turn = 'matt'")).toEqual([0]);
+  });
+
+  it('renames isMatt to isOwner in the stored thread excerpts, keeping order, values and anything else', () => {
+    const db = v17();
+    migrate(db);
+    const threads = col(db, 'SELECT thread FROM suggestions ORDER BY item_id') as (string | null)[];
+    expect(JSON.parse(threads[0]!)).toEqual([
+      { author: 'dave', isOwner: false, text: 'Here is a fix' },
+      { author: 'me', isOwner: true, text: 'Thanks' },
+    ]);
+    expect(threads[1]).toBeNull();
+    expect(threads[2]).toBe('[]');
+    expect(threads[3]).toBe('not json');
+    expect(JSON.parse(threads[4]!)).toEqual([{ author: 'x', isOwner: true, text: 'y', extra: 1 }, 'odd', 2]);
+    expect(threads.join('')).not.toContain('isMatt');
+  });
+
+  it('is read back by the current code under the new names, with no alias for the old one', () => {
+    const db = v17();
+    migrate(db);
+    const repo = createRepo(db);
+    expect(repo.suggestions.get(['a', 'b']).get('a')).toMatchObject({ turn: 'me' });
+    expect(
+      repo
+        .listInbox({ view: 'inbox', suggestion: 'me' })
+        .items.map((i) => i.item.id)
+        .sort(),
+    ).toEqual(['a', 'e']);
+    // A row written as 'matt' after the migration (by nothing in the code) is not taken as the owner's turn.
+    db.prepare("UPDATE suggestions SET turn = 'matt' WHERE item_id = 'e'").run();
+    expect(repo.suggestions.get(['e']).get('e')).toMatchObject({ turn: null });
+  });
+
+  it('upgrades a database file only after keeping a copy of it at schema 17', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'nudge-mig18-'));
+    try {
+      const path = join(dir, 'nudge.db');
+      v17(new Database(path)).close();
+      openDb(path).close();
+      const [copy] = readdirSync(join(dir, 'backups')).filter((f) => f.startsWith('pre-migrate-v17-'));
+      expect(copy).toBeDefined();
+      const old = new Database(join(dir, 'backups', copy!), { readonly: true });
+      expect(old.pragma('user_version', { simple: true })).toBe(17);
+      expect(col(old, "SELECT turn FROM suggestions WHERE item_id = 'a'")).toEqual(['matt']);
+      old.close();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

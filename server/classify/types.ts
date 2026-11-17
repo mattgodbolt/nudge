@@ -44,7 +44,7 @@ export interface EvalItem {
     lastCommenter?: string;
     lastCommenterIsMe?: boolean;
     /** Live suggestions only: the last few comments, oldest first, so the model can judge where the thread stands. */
-    recent?: { author: string; isMatt: boolean; text: string }[];
+    recent?: { author: string; isOwner: boolean; text: string }[];
   };
   /** Live suggestions only: why the owner snoozed this item, in his words (shown to the model as data). */
   snoozeNote?: string;
@@ -68,8 +68,11 @@ export type Verdict = (typeof VERDICTS)[number];
 export const CATEGORIES = ['question', 'technical', 'bug', 'idea', 'chat', 'support', 'bot', 'other'] as const;
 export type Category = (typeof CATEGORIES)[number];
 
-/** Whose move it is, judged from the current state of the thread rather than from what the item once was. */
-export const TURNS = ['matt', 'them', 'nobody'] as const;
+/**
+ * Whose move it is, judged from the current state of the thread rather than from what the item once was: `me` is the
+ * owner's (stored as is; migration 018 renamed the old value).
+ */
+export const TURNS = ['me', 'them', 'nobody'] as const;
 export type Turn = (typeof TURNS)[number];
 
 export const CONFIDENCES = ['low', 'medium', 'high'] as const;

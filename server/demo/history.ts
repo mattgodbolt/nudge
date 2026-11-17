@@ -82,7 +82,7 @@ export function seedDemoHistory(db: Db, nowMs: number = Date.now(), seed = 7): b
       outputTokens: 0,
       costUsd: 0,
       createdAt: iso(clockMs),
-      turn: pick === 'reply' ? 'matt' : rng() < 0.7 ? 'them' : 'nobody',
+      turn: pick === 'reply' ? 'me' : rng() < 0.7 ? 'them' : 'nobody',
     };
     repo.suggestions.save(row);
   };

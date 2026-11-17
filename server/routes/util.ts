@@ -1,3 +1,5 @@
+import type { FastifyReply } from 'fastify';
+import { OWNER_PROFILE_MISSING } from '../../shared/owner.js';
 import type { SettingsDTO } from '../../shared/types.js';
 import type { AppDeps } from '../contracts.js';
 
@@ -17,6 +19,14 @@ export class HttpError extends Error {
  */
 export const logBackground = (msg: string, err?: unknown): void =>
   console.warn(msg, err instanceof Error ? err.message : (err ?? ''));
+
+/**
+ * The answer of a route that would call the model while Settings > About you is incomplete (409). The prompts are built
+ * from the profile, so the model is never asked without it.
+ */
+export function ownerProfileMissing(reply: FastifyReply): FastifyReply {
+  return reply.code(409).send({ ...OWNER_PROFILE_MISSING, code: OWNER_PROFILE_MISSING.error });
+}
 
 export const bad = (message: string) => new HttpError(400, message, 'bad_request');
 export const notFound = (what: string) => new HttpError(404, `${what} not found`, 'not_found');

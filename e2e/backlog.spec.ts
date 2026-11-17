@@ -71,9 +71,9 @@ test('the inbox can be filtered by suggestion, and the choice lives in the URL',
   await expect(page.locator('header .count')).toHaveText(`${fmt(st.total - st.done)} items`);
   await expect(page.getByTestId('row-suggestion')).toHaveCount(0);
 
-  await filter.selectOption('matt');
-  await expect(page).toHaveURL(/sug=matt/);
-  const yours = (await inboxPage(request, 'suggestion=matt')).total;
+  await filter.selectOption('me');
+  await expect(page).toHaveURL(/sug=me/);
+  const yours = (await inboxPage(request, 'suggestion=me')).total;
   expect(yours).toBeGreaterThan(10);
   await expect(page.locator('header .count')).toHaveText(`${fmt(yours)} items`);
   await expect(rows(page).first()).toBeVisible();
@@ -84,7 +84,7 @@ test('the inbox can be filtered by suggestion, and the choice lives in the URL',
 
   // It survives a reload (it is the URL), and "any" clears it.
   await page.reload();
-  await expect(page.getByTestId('sug-filter')).toHaveValue('matt');
+  await expect(page.getByTestId('sug-filter')).toHaveValue('me');
   await expect(rows(page).first()).toBeVisible();
   await page.getByTestId('sug-filter').selectOption('them');
   await expect
@@ -168,9 +168,9 @@ test.describe('on a phone', () => {
 
   test('the bulk bar says how many items it will act on, on a phone too', async ({ request, page }) => {
     await settled(request);
-    await page.goto('/inbox?sug=matt');
+    await page.goto('/inbox?sug=me');
     await expect(rows(page).first()).toBeVisible();
-    const total = (await inboxPage(request, 'suggestion=matt')).total;
+    const total = (await inboxPage(request, 'suggestion=me')).total;
     await page.keyboard.press('*');
     await page.keyboard.press('a');
     const bar = page.getByTestId('bulk-bar');

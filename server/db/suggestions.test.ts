@@ -97,16 +97,16 @@ describe('filtering the inbox by suggestion', () => {
       .sort();
 
   beforeEach(() => {
-    repo.suggestions.save(row(1, { verdict: 'needs_reply', turn: 'matt' }));
+    repo.suggestions.save(row(1, { verdict: 'needs_reply', turn: 'me' }));
     repo.suggestions.save(row(2, { verdict: 'no_reply_needed', turn: 'them' }));
-    repo.suggestions.save(row(3, { verdict: 'needs_action', injectionAttempt: true, turn: 'matt' }));
+    repo.suggestions.save(row(3, { verdict: 'needs_action', injectionAttempt: true, turn: 'me' }));
     // Item 4 has none yet.
   });
 
   it('picks items by verdict, by whose turn it is, as suspicious, or as having none yet', () => {
     expect(ids('reply')).toEqual([id(1)]);
     expect(ids('skip')).toEqual([id(2)]);
-    expect(ids('matt')).toEqual([id(1)]);
+    expect(ids('me')).toEqual([id(1)]);
     expect(ids('them')).toEqual([id(2)]);
     expect(ids('suspicious')).toEqual([id(3)]);
     expect(ids('none')).toEqual([id(4)]);
@@ -255,7 +255,7 @@ describe('recording the suggestion with what the owner did', () => {
 describe('habits: suggestion hit rate', () => {
   const turns: Record<number, { suggestedTurn: string }> = {
     1: { suggestedTurn: 'them' },
-    2: { suggestedTurn: 'matt' },
+    2: { suggestedTurn: 'me' },
   };
   function act(
     n: number,
@@ -296,7 +296,7 @@ describe('habits: suggestion hit rate', () => {
         hits: 1,
         ambiguous: 0,
         byAction: { replied: 1, done: 1 },
-        byTurn: { them: 1, matt: 1 },
+        byTurn: { them: 1, me: 1 },
       },
       { suggested: 'act', total: 1, hits: 1, ambiguous: 0, byAction: { snooze: 1 }, byTurn: { none: 1 } },
       { suggested: 'skip', total: 1, hits: 1, ambiguous: 0, byAction: { dismissed: 1 }, byTurn: { none: 1 } },
@@ -304,7 +304,7 @@ describe('habits: suggestion hit rate', () => {
     const text = formatHabits(rep);
     expect(text).toContain('suggested reply: 50.0% (1/2) agreed (replied 1, done 1)');
     expect(text).toContain('suggested skip: 100.0% (1/1) agreed (dismissed 1)');
-    expect(text).toContain('whose turn the model said: them 1, matt 1');
+    expect(text).toContain('whose turn the model said: them 1, me 1');
   });
 
   it('judges skip against dismissed, act against done, and reports a bare old done as ambiguous', () => {

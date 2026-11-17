@@ -9,6 +9,7 @@ import { fakeGoogleAuth } from '../reply/test-helpers.js';
 import { makeEnv } from '../sync/test-helpers.js';
 import type { ServerEvent } from '../../shared/types.js';
 import { MAX_BUCKET_CALLS } from './snoozeAi.js';
+import { SAMPLE_OWNER } from '../classify/test-helpers.js';
 
 // Real repo behind the real routes: the until-activity options of POST /api/snooze, the per-bucket defaults in
 // settings, the bucketing that follows a free-text why, and the nudge draft. The model and GitHub are fakes.
@@ -66,6 +67,7 @@ beforeEach(() => {
   env.repo.updateSettings({
     github: { token: 'tok', myAccounts: ['me'] },
     llm: { apiKey: 'sk', model: 'claude-haiku-5-5' },
+    owner: SAMPLE_OWNER,
   });
   events = [];
   env.bus.subscribe((e) => events.push(e));
@@ -100,7 +102,8 @@ beforeEach(() => {
         bucketCalls.push({ ...input, key, model });
         return bucketAnswer();
       },
-      nudge: async (input) => {
+      nudge: async (input, _key, _model, owner) => {
+        expect(owner).toEqual(SAMPLE_OWNER);
         nudgeCalls.push(input);
         return nudgeAnswer();
       },
@@ -237,6 +240,16 @@ describe('bucketing a free-text why', () => {
     expect(item(3).snoozeBucket).toBeNull();
   });
 
+  it('is a no-op without a profile (About you), like the other model features, and the snooze still works', async () => {
+    env.repo.updateSettings({ owner: { name: 'Priya', about: '' } });
+    const until = new Date(Date.now() + DAY).toISOString();
+    expect((await snooze({ commentIds: [id(1)], until, why: 'wait for them' })).statusCode).toBe(200);
+    await settle();
+    expect(bucketCalls).toEqual([]);
+    expect(item(1)).toMatchObject({ snoozedUntil: until, snoozeBucket: null });
+    expect(env.repo.spend.todayUsd()).toBe(0);
+  });
+
   it('is a no-op without a key, and never fails or delays the snooze when the model fails', async () => {
     env.repo.updateSettings({ llm: { apiKey: null, model: 'claude-haiku-5-5' } });
     const until = new Date(Date.now() + DAY).toISOString();
@@ -327,8 +340,8 @@ describe('POST /api/items/:id/nudge-draft', () => {
       why: 'waiting for carol',
       body: 'adds a thing',
       comments: [
-        { author: 'carol', isMatt: false, text: 'I will look at it' },
-        { author: 'Me', isMatt: true, text: 'thanks' },
+        { author: 'carol', isOwner: false, text: 'I will look at it' },
+        { author: 'Me', isOwner: true, text: 'thanks' },
       ],
     });
     expect(env.repo.usage.today('snooze_ai.call')).toBe(1);
@@ -369,6 +382,34 @@ describe('POST /api/items/:id/nudge-draft', () => {
     res = await send('POST', `/api/items/${encodeURIComponent(id(1))}/nudge-draft`);
     expect([res.statusCode, res.json().code]).toEqual([429, 'cap']);
     expect(nudgeCalls).toEqual([]);
+  });
+
+  it('refuses with 409 owner_profile_missing, calling nothing, until About you is filled in', async () => {
+    await park(1);
+    for (const owner of [
+      { name: '', about: '' },
+      { name: 'Priya', about: '' },
+      { name: '', about: SAMPLE_OWNER.about },
+    ]) {
+      env.repo.updateSettings({ owner });
+      const res = await send('POST', `/api/items/${encodeURIComponent(id(1))}/nudge-draft`);
+      expect(res.statusCode).toBe(409);
+      expect(res.json()).toEqual({
+        error: 'owner_profile_missing',
+        message: 'Set up your profile in Settings > About you first.',
+        code: 'owner_profile_missing',
+      });
+    }
+    expect(nudgeCalls).toEqual([]);
+    expect(env.repo.spend.todayUsd()).toBe(0);
+    // Without a key, the key is what is missing: that answer is unchanged.
+    env.repo.updateSettings({ llm: { apiKey: null, model: 'claude-haiku-5-5' } });
+    const res = await send('POST', `/api/items/${encodeURIComponent(id(1))}/nudge-draft`);
+    expect([res.statusCode, res.json().code]).toEqual([424, 'no_key']);
+    // Filled in: the draft is written as that owner.
+    env.repo.updateSettings({ llm: { apiKey: 'sk', model: 'claude-haiku-5-5' }, owner: SAMPLE_OWNER });
+    expect((await send('POST', `/api/items/${encodeURIComponent(id(1))}/nudge-draft`)).statusCode).toBe(200);
+    expect(nudgeCalls).toHaveLength(1);
   });
 
   it('reports a model failure as 424 without leaking details beyond the message', async () => {

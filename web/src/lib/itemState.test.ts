@@ -37,7 +37,7 @@ describe('suggestedButton', () => {
   it('points at Snooze when the model says it is waiting on them', () => {
     expect(suggestedButton(item({ action: 'reply', turn: 'them' }), 'thread')).toBe('snooze.open');
     expect(suggestedButton(item({ action: 'skip', turn: 'them' }), 'row')).toBe('snooze.open');
-    expect(suggestedButton(item({ action: 'act', turn: 'matt' }), 'row')).toBe('triage.done');
+    expect(suggestedButton(item({ action: 'act', turn: 'me' }), 'row')).toBe('triage.done');
   });
   it('says nothing without a usable suggestion, or once the item is dealt with or asleep', () => {
     expect(suggestedButton(item(null), 'row')).toBeNull();

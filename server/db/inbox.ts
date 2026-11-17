@@ -216,7 +216,7 @@ export function createInbox(deps: InboxDeps): InboxStore {
         act: sg("sx.verdict = 'needs_action'"),
         skip: sg("sx.verdict = 'no_reply_needed'"),
         spam: sg("sx.verdict = 'spam'"),
-        matt: sg("sx.turn = 'matt'"),
+        me: sg("sx.turn = 'me'"),
         them: sg("sx.turn = 'them'"),
         suspicious: 'EXISTS (SELECT 1 FROM suggestions sx WHERE sx.item_id = i.id AND sx.injection_attempt = 1)',
         none: 'NOT EXISTS (SELECT 1 FROM suggestions sx WHERE sx.item_id = i.id)',

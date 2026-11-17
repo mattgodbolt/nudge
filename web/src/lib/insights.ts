@@ -124,7 +124,7 @@ export const ACTION_LABEL: Record<string, string> = {
   snooze: 'Snoozed',
   legacy: 'Done (old)',
 };
-export const TURN_LABEL: Record<string, string> = { matt: 'Your turn', them: 'Their turn', nobody: "Nobody's turn" };
+export const TURN_LABEL: Record<string, string> = { me: 'Your turn', them: 'Their turn', nobody: "Nobody's turn" };
 const PROVIDER_LABEL: Record<string, string> = { github: 'GitHub', youtube: 'YouTube', todo: 'Todos' };
 export const providerLabel = (p: string) => PROVIDER_LABEL[p] ?? p;
 export const kindLabel = (provider: string, kind: string) =>
@@ -297,7 +297,7 @@ export const captions = {
     return r ? `It thinks '${r.category}' means one thing. You overrule it ${pct(r.rate)} of the time.` : null;
   },
   turns(i: Ins): string | null {
-    const r = i.predictions.turns.data?.rows.find((x) => x.turn === 'matt' && x.rate !== null);
+    const r = i.predictions.turns.data?.rows.find((x) => x.turn === 'me' && x.rate !== null);
     return r ? `When it said it was your turn, you replied ${pct(r.rate)} of the time.` : null;
   },
   repos(i: Ins): string | null {

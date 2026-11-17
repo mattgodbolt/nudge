@@ -1,3 +1,4 @@
+import { ownerProfileComplete } from '../../shared/owner.js';
 import type { Repo } from '../contracts.js';
 import type { AddSource } from '../sync/sources.js';
 import { DEMO_OWN_CHANNEL_ID, DEMO_PLAYLIST_A, DEMO_PLAYLIST_B, DEMO_STANDALONE_VIDEOS } from './world.js';
@@ -12,6 +13,18 @@ export async function seedDemo(repo: Repo, addSource: AddSource): Promise<void> 
   await addSource(DEMO_PLAYLIST_A, { importMode: 'recent' });
   await addSource(DEMO_PLAYLIST_B, { importMode: 'recent' });
   for (const id of DEMO_STANDALONE_VIDEOS) await addSource(id, { importMode: 'recent' });
+}
+
+/** The demo's owner (Settings > About you), so the faked model features run without setup. */
+export const DEMO_OWNER = {
+  name: 'Alex',
+  about: 'Alex makes videos about programming and maintains a few open-source projects.',
+} as const;
+
+/** Give a demo database an owner when it has none. A profile someone typed into the demo is left alone. */
+export function seedDemoOwner(repo: Pick<Repo, 'getSettings' | 'updateSettings'>): void {
+  if (ownerProfileComplete(repo.getSettings().owner)) return;
+  repo.updateSettings({ owner: { ...DEMO_OWNER } });
 }
 
 /** Sources in this DB that don't belong to the demo world: demo mode must never run against real data. */

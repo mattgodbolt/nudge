@@ -15,7 +15,7 @@ export function softReason(reason: string): string {
  */
 function turnLead(s: SuggestionDTO): string {
   if (s.turn === 'them') return 'waiting on them';
-  if (s.turn === 'matt' && s.nextStep) return 'your turn';
+  if (s.turn === 'me' && s.nextStep) return 'your turn';
   return s.action ?? '';
 }
 
@@ -23,7 +23,7 @@ function turnLead(s: SuggestionDTO): string {
 export function chipText(s: SuggestionDTO): string {
   if (s.suspicious || !s.action) return 'suspicious';
   if (s.turn === 'them') return turnLead(s);
-  const detail = s.turn === 'matt' && s.nextStep ? softReason(s.nextStep) : softReason(s.reason);
+  const detail = s.turn === 'me' && s.nextStep ? softReason(s.nextStep) : softReason(s.reason);
   return detail ? `${turnLead(s)} · ${detail}` : turnLead(s);
 }
 
@@ -62,7 +62,7 @@ export const SUGGESTION_FILTER_OPTIONS: readonly { value: '' | SuggestionFilter;
   { value: 'reply', label: 'Reply' },
   { value: 'act', label: 'Act' },
   { value: 'skip', label: 'Skip' },
-  { value: 'matt', label: 'Your turn' },
+  { value: 'me', label: 'Your turn' },
   { value: 'them', label: 'Waiting on them' },
   { value: 'spam', label: 'Spam' },
   { value: 'suspicious', label: 'Suspicious' },
@@ -88,6 +88,7 @@ export function progressLine(s: SuggestStatusDTO | null): string | null {
       'rate-limit': `paused until GitHub's rate limit resets${s.paused.until ? ` (${utcTime(s.paused.until)})` : ''}`,
       backoff: 'retrying shortly',
       'key-rejected': 'paused: the assistant key was rejected',
+      'no-profile': 'paused until Settings > About you is filled in',
     }[s.paused.reason];
     return `Suggestions: ${count}, ${why}`;
   }

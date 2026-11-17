@@ -17,7 +17,8 @@ import { createSnoozeAi } from './classify/snooze.js';
 import { createDemoClassifier, demoCapUsd } from './demo/suggest.js';
 import { createSuggestWorker } from './suggest/worker.js';
 import { createLlmClient } from './providers/anthropic/client.js';
-import { decorateDemo, nonDemoSources, seedDemo } from './demo/seed.js';
+import { decorateDemo, nonDemoSources, seedDemo, seedDemoOwner } from './demo/seed.js';
+import { ownerProfileWarning } from './startup.js';
 import { seedDemoHistory } from './demo/history.js';
 import { createDemoPosting } from './demo/post.js';
 import { createWorld } from './demo/world.js';
@@ -133,6 +134,11 @@ async function main(): Promise<void> {
   if (demoComments && repo.getSettings().github.myAccounts.length === 0) {
     repo.updateSettings({ github: { ...repo.getSettings().github, myAccounts: ['demo-owner'] } });
   }
+
+  // Demo mode works out of the box: a made-up owner, so the model-backed features (all faked) are not paused.
+  if (config.demo) seedDemoOwner(repo);
+  const ownerWarning = ownerProfileWarning(repo.getSettings());
+  if (ownerWarning) console.warn(ownerWarning);
 
   const llm = config.demo ? createFakeLlmClient() : createLlmClient();
   const snoozeAi = config.demo ? createFakeSnoozeAi() : createSnoozeAi();

@@ -260,9 +260,9 @@ describe('InboxStore', () => {
     store.toggleSelect('c1');
     store.toggleSelect('c2');
     expect(store.selectedCount).toBe(2);
-    await store.configure('inbox', { suggestion: 'matt' });
+    await store.configure('inbox', { suggestion: 'me' });
     const urls = fetchMock.mock.calls.map((c) => c[0] as string).filter((u) => u.startsWith('/api/inbox'));
-    expect(urls.at(-1)).toContain('suggestion=matt');
+    expect(urls.at(-1)).toContain('suggestion=me');
     expect(store.selectedIds.size).toBe(0);
   });
 

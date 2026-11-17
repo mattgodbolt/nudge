@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { GithubError } from '../contracts.js';
 import type { EventBus, GithubClient, Repo } from '../contracts.js';
 import type { SuggestStatusDTO } from '../../shared/types.js';
+import { ownerProfileComplete, type OwnerProfile } from '../../shared/owner.js';
 import type { RecentComment, SuggestionCandidate } from '../db/suggestions.js';
 import { applyRules, type RuleHit } from '../classify/rules.js';
 import {
@@ -63,16 +64,23 @@ const RECENT_LIMIT = 4;
 const FETCH_RETRY_MS = 15 * 60_000;
 
 /**
- * Fingerprint of what the model is shown: the prompt version, the owner's standing notes (by hash) and the rendered
- * item (which carries the text, thread context, GitHub comment count, the recent comments, a snooze note and any note
- * about the item). Any change to any of them is a reason to ask again; nothing else is.
+ * Fingerprint of what the model is shown: the prompt version, the owner's profile and standing notes (by hash) and the
+ * rendered item (which carries the text, thread context, GitHub comment count, the recent comments, a snooze note and
+ * any note about the item). Any change to any of them is a reason to ask again; nothing else is.
  */
-export function stateKey(item: EvalItem, notesHash = ''): string {
+export function stateKey(item: EvalItem, notesHash = '', ownerHash = ''): string {
   return createHash('sha256')
-    .update(`${PROMPT_VERSION}\n${notesHash}\n${renderItem(item)}`)
+    .update(`${PROMPT_VERSION}\n${ownerHash}\n${notesHash}\n${renderItem(item)}`)
     .digest('hex')
     .slice(0, 32);
 }
+
+/** The profile as the prompt sees it, hashed: editing Settings > About you asks the model again. */
+export const ownerHash = (owner: OwnerProfile): string =>
+  createHash('sha256')
+    .update(JSON.stringify([owner.name.trim(), owner.about.trim()]))
+    .digest('hex')
+    .slice(0, 16);
 
 export interface SuggestWorkerDeps {
   repo: Repo;
@@ -84,8 +92,10 @@ export interface SuggestWorkerDeps {
   githubClient?: Pick<GithubClient, 'recentComments' | 'coreRate'>;
   /** Default: the key in settings. Null means "do nothing at all". */
   getApiKey?: () => string | null;
+  /** Default: Settings > About you. Incomplete means "do nothing at all", as with no key: the prompt needs it. */
+  getOwner?: () => OwnerProfile;
   /** Default: the real Anthropic classifier. Tests and demo mode pass a fake; nothing here ever reaches the network otherwise. */
-  makeClassifier?: (apiKey: string, model: string) => Classifier;
+  makeClassifier?: (apiKey: string, model: string, owner: OwnerProfile) => Classifier;
   now?: () => Date;
   log?: (msg: string, err?: unknown) => void;
   dailyCapUsd?: number;
@@ -103,7 +113,7 @@ export interface PassResult {
   saved: number;
   /** Of those, how many needed a model call. */
   modelCalls: number;
-  /** Set when the pass ended early: 'no-key' | 'key-rejected' | 'backoff' | 'cap' | 'error'. */
+  /** Set when the pass ended early: 'no-key' | 'no-profile' | 'key-rejected' | 'backoff' | 'cap' | 'error'. */
   stopped?: string;
   /** Items it got as far as classifying (or trying to): zero means there was nothing left to do. */
   attempted: number;
@@ -137,7 +147,10 @@ export function createSuggestWorker(deps: SuggestWorkerDeps): SuggestWorker {
   const now = deps.now ?? (() => new Date());
   const log = deps.log ?? ((m, e) => console.warn(`suggestions: ${m}`, e instanceof Error ? e.message : (e ?? '')));
   const getApiKey = deps.getApiKey ?? (() => repo.getSettings().llm.apiKey);
-  const makeClassifier = deps.makeClassifier ?? ((apiKey, model) => createAnthropicClassifier({ apiKey, model }));
+  const getOwner = deps.getOwner ?? (() => repo.getSettings().owner);
+  const hasProfile = (): boolean => ownerProfileComplete(getOwner());
+  const makeClassifier =
+    deps.makeClassifier ?? ((apiKey, model, owner) => createAnthropicClassifier({ apiKey, model, owner }));
   const cap = deps.dailyCapUsd ?? DAILY_CAP_USD;
   const concurrency = deps.concurrency ?? CONCURRENCY;
   const passCap = deps.passCap ?? PASS_CAP;
@@ -156,6 +169,8 @@ export function createSuggestWorker(deps: SuggestWorkerDeps): SuggestWorker {
   let backoffStep = 0;
   let rejectedKey: string | null = null;
   let capLoggedFor = '';
+  /** The missing profile is said once per process: the worker is asked to run on every inbox change. */
+  let noProfileLogged = false;
   /** Items the model answered badly for, by the fingerprint it failed on: not retried until the item changes. */
   const failed = new Map<string, string>();
   /** Recent comments fetched in this process (also kept in the suggestion row once it is saved). */
@@ -199,6 +214,7 @@ export function createSuggestWorker(deps: SuggestWorkerDeps): SuggestWorker {
       p = { reason: 'cap', until: new Date(Date.parse(dayStart(now())) + DAY_MS).toISOString() };
     }
     if (!p && rejectedKey !== null && rejectedKey === getApiKey()) p = { reason: 'key-rejected', until: null };
+    if (enabled && !hasProfile()) p = { reason: 'no-profile', until: null };
     return {
       enabled,
       total,
@@ -333,7 +349,7 @@ export function createSuggestWorker(deps: SuggestWorkerDeps): SuggestWorker {
       const got = await deps.githubClient.recentComments(c.target.repo, c.target.number, comments, token, RECENT_LIMIT);
       const recent = got.slice(-RECENT_LIMIT).map((g) => ({
         author: g.author,
-        isMatt: mine.has(g.author.toLowerCase()),
+        isOwner: mine.has(g.author.toLowerCase()),
         text: g.text.replace(/\s+/g, ' ').trim().slice(0, RECENT_TEXT),
       }));
       w.thread = { recent, count: comments };
@@ -357,12 +373,22 @@ export function createSuggestWorker(deps: SuggestWorkerDeps): SuggestWorker {
     if (paused?.until && Date.parse(paused.until) <= now().getTime()) paused = null;
     const apiKey = getApiKey();
     if (!apiKey) return { ...out, stopped: 'no-key' };
+    const owner = getOwner();
+    if (!ownerProfileComplete(owner)) {
+      // Refuse rather than guess who the inbox belongs to: no prompt is built and nothing is spent.
+      if (!noProfileLogged) {
+        noProfileLogged = true;
+        log('paused: Settings > About you needs a name and a description before the model is asked anything');
+      }
+      return { ...out, stopped: 'no-profile' };
+    }
     if (rejectedKey === apiKey) return { ...out, stopped: 'key-rejected' };
     if (now().getTime() < backoffUntil) return { ...out, stopped: 'backoff' };
 
     const settings = repo.getSettings();
     const mine = new Set(settings.github.myAccounts.map((l) => l.toLowerCase()));
     const notes = repo.notes.standing();
+    const who = ownerHash(owner);
     const cands = repo.suggestions.candidates({
       ...(ids ? { ids } : {}),
       scan: ids ? ids.length : SCAN,
@@ -381,7 +407,7 @@ export function createSuggestWorker(deps: SuggestWorkerDeps): SuggestWorker {
         continue;
       }
       const item = have ? withRecent(c.item, have.recent) : c.item;
-      const key = fetchIt ? null : stateKey(item, notes.hash);
+      const key = fetchIt ? null : stateKey(item, notes.hash, who);
       if (key !== null && (c.storedKey === key || failed.get(c.item.id) === key)) continue;
       work.push({ cand: c, item, key, rule, thread: have, fetchIt });
       if (work.length >= passCap) break;
@@ -396,7 +422,7 @@ export function createSuggestWorker(deps: SuggestWorkerDeps): SuggestWorker {
     };
     if (work.length === 0) return finish();
 
-    const clf = makeClassifier(apiKey, settings.llm.model);
+    const clf = makeClassifier(apiKey, settings.llm.model, owner);
     let next = 0;
     let halt: string | undefined;
     async function lane(): Promise<void> {
@@ -426,7 +452,7 @@ export function createSuggestWorker(deps: SuggestWorkerDeps): SuggestWorker {
               heldBack.add(w.item.id);
               continue;
             }
-            w.key = stateKey(w.item, notes.hash);
+            w.key = stateKey(w.item, notes.hash, who);
             if (w.cand.storedKey === w.key || failed.get(w.item.id) === w.key) {
               out.attempted++; // the fetch was the work: the next pass sees this item as settled
               continue;
@@ -570,11 +596,16 @@ export function createSuggestWorker(deps: SuggestWorkerDeps): SuggestWorker {
     },
     kick() {
       if (stopped || !getApiKey()) return;
+      // Filling in the profile is a reason to look at the whole inbox; until then a pass would only refuse again.
+      if (!hasProfile()) {
+        emitStatus(true);
+        return;
+      }
       backfillWanted = true;
       schedule(debounceMs);
     },
     notify(ids) {
-      if (stopped || !getApiKey()) return;
+      if (stopped || !getApiKey() || !hasProfile()) return;
       for (const id of ids) pending.add(id);
       schedule(debounceMs);
     },

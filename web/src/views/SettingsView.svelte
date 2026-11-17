@@ -36,7 +36,7 @@
           reason: sg.reason,
           confidence: sg.confidence as 'low' | 'medium' | 'high',
           suspicious: false,
-          turn: sg.turn as 'matt' | 'them' | 'nobody' | null,
+          turn: sg.turn as 'me' | 'them' | 'nobody' | null,
           nextStep: sg.nextStep,
         })}`,
       );

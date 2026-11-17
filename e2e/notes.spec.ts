@@ -7,7 +7,7 @@ import { expect, test, type Page } from './fixtures';
 test.describe.configure({ mode: 'serial' });
 
 const rows = (page: Page) => page.getByTestId('inbox-row');
-const withTurn = (page: Page, turn: 'matt' | 'them') =>
+const withTurn = (page: Page, turn: 'me' | 'them') =>
   rows(page).filter({ has: page.locator(`[data-testid=row-suggestion][data-turn=${turn}]`) });
 const SHOTS = process.env.NUDGE_SHOTS;
 const shot = async (page: Page, name: string) => {
@@ -21,7 +21,7 @@ async function openGithub(page: Page) {
   await expect(async () => {
     await page.goto('/inbox?feed=1');
     await expect(rows(page).first()).toBeVisible();
-    await expect(withTurn(page, 'matt').first()).toBeVisible({ timeout: 1_000 });
+    await expect(withTurn(page, 'me').first()).toBeVisible({ timeout: 1_000 });
     await expect(withTurn(page, 'them').first()).toBeVisible({ timeout: 1_000 });
   }).toPass({ timeout: 90_000, intervals: [2_000] });
 }
@@ -55,13 +55,13 @@ async function tell(page: Page, text: string) {
 
 test('a chip says whose turn it is and the next step, and the open item spells it out', async ({ page }) => {
   await openGithub(page);
-  const mine = withTurn(page, 'matt').first().getByTestId('row-suggestion');
+  const mine = withTurn(page, 'me').first().getByTestId('row-suggestion');
   await expect(mine).toHaveText(/^your turn · answer \S+/);
   await expect(mine).toHaveAttribute('title', /^Suggestion: your turn · answer \S+/);
   const theirs = withTurn(page, 'them').first().getByTestId('row-suggestion');
   await expect(theirs).toHaveText('waiting on them');
   await shot(page, 'desktop-chips');
-  await withTurn(page, 'matt').first().click();
+  await withTurn(page, 'me').first().click();
   await expect(page.getByTestId('thread-suggestion')).toContainText('Your turn · answer');
 });
 
@@ -75,7 +75,7 @@ for (const [name, width, height] of [
   test(`suggestions are not clipped or squeezed at ${name} width`, async ({ page }) => {
     await page.setViewportSize({ width, height });
     await openGithub(page);
-    const row = withTurn(page, 'matt').first();
+    const row = withTurn(page, 'me').first();
     const r = (await row.boundingBox())!;
     const chip = (await row.getByTestId('row-suggestion').boundingBox())!;
     expect(chip.x).toBeGreaterThanOrEqual(r.x);
@@ -120,7 +120,7 @@ test('b, Tab, a reason, Enter snoozes with a why that shows in the row and the o
   page,
 }) => {
   await openGithub(page);
-  const target = withTurn(page, 'matt').first();
+  const target = withTurn(page, 'me').first();
   const title = (await target.getByTestId('row-title').innerText()).trim();
   await target.click();
   await expect(page.getByTestId('thread-view')).toBeVisible();
@@ -160,7 +160,7 @@ test('b, Tab, a reason, Enter snoozes with a why that shows in the row and the o
 
 test('the assistant takes a why with the snooze', async ({ page }) => {
   await openGithub(page);
-  const target = withTurn(page, 'matt').first();
+  const target = withTurn(page, 'me').first();
   const title = (await target.getByTestId('row-title').innerText()).trim();
   await target.click();
   await tell(page, 'snooze this tomorrow to chase the maintainer');
@@ -173,7 +173,7 @@ test('"I wouldn\'t have snoozed that" is kept against the item he just snoozed, 
   page,
 }) => {
   await openGithub(page);
-  const target = withTurn(page, 'matt').first();
+  const target = withTurn(page, 'me').first();
   const title = (await target.getByTestId('row-title').innerText()).trim();
   await target.click();
   await page.keyboard.press('b');
@@ -193,7 +193,7 @@ test('a standing note reaches every suggestion, can be edited, switched off and 
   page,
 }) => {
   await openGithub(page);
-  const target = withTurn(page, 'matt').first();
+  const target = withTurn(page, 'me').first();
   await target.click();
   await tell(page, 'alice-maintainer is always important');
   await expect(page.getByText(/^Noted as a standing preference/)).toBeVisible();
@@ -260,7 +260,7 @@ test.describe('on a phone', () => {
 
   test('the snooze sheet has an optional why field that fits and submits with the keyboard Enter', async ({ page }) => {
     await openGithub(page);
-    const target = withTurn(page, 'matt').first();
+    const target = withTurn(page, 'me').first();
     const title = (await target.getByTestId('row-title').innerText()).trim();
     await target.getByTestId('row-snooze').tap();
     const menu = page.getByTestId('snooze-menu');
