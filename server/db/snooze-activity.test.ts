@@ -218,6 +218,116 @@ describe('the fallback date', () => {
   });
 });
 
+describe('undoing a move back to the inbox that cleared a snooze', () => {
+  const HOUR = 3_600_000;
+  const undos = (itemId: string) =>
+    (
+      db
+        .prepare("SELECT from_value, to_value, meta FROM item_events WHERE item_id = ? AND kind = 'undo' ORDER BY id")
+        .all(itemId) as { from_value: string | null; to_value: string | null; meta: string }[]
+    ).map((r) => ({ from: r.from_value, to: r.to_value, ...JSON.parse(r.meta) }));
+  const snoozeEventId = (itemId: string, actionId: number) =>
+    (
+      db
+        .prepare(
+          "SELECT id FROM item_events WHERE item_id = ? AND kind = 'snooze' AND json_extract(meta, '$.actionId') = ?",
+        )
+        .get(itemId, actionId) as { id: number }
+    ).id;
+
+  it('puts the snooze back on an item that was already in the inbox (a bulk move from All)', () => {
+    repo.snooze([id(1)], later(7 * DAY), 'waiting for carol', { bucket: 'waiting_on_them', untilActivity: true });
+    repo.triage([id(2)], 'done');
+    t += 60_000;
+    const back = repo.triage([id(1), id(2)], 'inbox');
+    // Only the done item changes state; the snoozed one just loses its snooze.
+    expect(back.changes).toEqual([{ commentId: id(2), from: 'done', to: 'inbox' }]);
+    expect(gh(1)).toMatchObject({ snoozedUntil: null, snoozeUntilActivity: false });
+
+    const u = repo.undo(back.actionId);
+    expect(u.changes).toEqual([{ commentId: id(2), from: 'inbox', to: 'done' }]);
+    expect(gh(1)).toMatchObject({
+      comment: expect.objectContaining({ state: 'inbox' }),
+      snoozedUntil: '2026-11-19T10:00:00.000Z',
+      snoozeUntilActivity: true,
+      snoozeBucket: 'waiting_on_them',
+      snoozeWhy: 'waiting for carol',
+      snoozedAt: '2026-11-12T10:00:00.000Z',
+    });
+    expect(gh(2).comment.state).toBe('done');
+    expect(u.counts.snoozed).toBe(1);
+    // The history compensates the triage's unsnooze, pointing at it, and adds no state undo for the unmoved item.
+    expect(undos(id(1))).toEqual([
+      {
+        from: null,
+        to: '2026-11-19T10:00:00.000Z',
+        actionId: back.actionId,
+        original: 'snooze',
+        originalEventId: snoozeEventId(id(1), back.actionId),
+      },
+    ]);
+  });
+
+  it('puts back both the state and the snooze of a snoozed item that had been marked done', () => {
+    repo.snooze([id(1)], later(3 * DAY), null, { bucket: 'in_flight' });
+    repo.triage([id(1)], 'done');
+    const back = repo.triage([id(1)], 'inbox');
+    expect(back.changes).toEqual([{ commentId: id(1), from: 'done', to: 'inbox' }]);
+    repo.undo(back.actionId);
+    expect(gh(1)).toMatchObject({ comment: expect.objectContaining({ state: 'done' }), snoozeBucket: 'in_flight' });
+    expect(db.prepare('SELECT snoozed_until FROM items WHERE id = ?').get(id(1))).toEqual({
+      snoozed_until: later(3 * DAY),
+    });
+    expect(undos(id(1)).map((e) => e.original)).toEqual(['state', 'snooze']);
+  });
+
+  it('restores a snooze that has run out since as ended, so it wakes as it would have', () => {
+    repo.snooze([id(1)], later(HOUR), null, { bucket: 'waiting_on_them', untilActivity: true });
+    const back = repo.triage([id(1)], 'inbox');
+    t += 2 * HOUR;
+    repo.undo(back.actionId);
+    // Past its date: not snoozed, still in the inbox, and the waker ends it with the audit nag it would have had.
+    expect(gh(1)).toMatchObject({ snoozedUntil: null, comment: expect.objectContaining({ state: 'inbox' }) });
+    expect(repo.listInbox({ view: 'inbox' }).items.map((i) => i.item.id)).toContain(id(1));
+    expect(repo.wakeSnoozed().woken).toEqual([id(1)]);
+    expect(gh(1)).toMatchObject({ wakeCause: 'fallback', snoozeNag: { bucket: 'waiting_on_them' } });
+    expect(db.prepare('SELECT woke_at FROM items WHERE id = ?').get(id(1))).toEqual({ woke_at: later(-HOUR) });
+  });
+
+  it('does not resurrect a snooze the owner has changed since', () => {
+    repo.snooze([id(1), id(2)], later(DAY));
+    const back = repo.triage([id(1), id(2)], 'inbox');
+    t += 60_000;
+    repo.snooze([id(1)], later(5 * DAY));
+    repo.snooze([id(2)], later(5 * DAY));
+    repo.snooze([id(2)], null);
+    repo.undo(back.actionId);
+    expect(gh(1).snoozedUntil).toBe(later(5 * DAY));
+    expect(gh(2).snoozedUntil).toBeNull();
+    expect(undos(id(1))).toEqual([]);
+    expect(undos(id(2))).toEqual([]);
+  });
+
+  it('undoes in order: undoing a later snooze first, then the move, brings the first snooze back', () => {
+    repo.snooze([id(1)], later(DAY));
+    const back = repo.triage([id(1)], 'inbox');
+    const again = repo.snooze([id(1)], later(5 * DAY));
+    repo.undoSnooze(again.actionId!);
+    repo.undo(back.actionId);
+    expect(gh(1).snoozedUntil).toBe(later(DAY));
+  });
+
+  it('still undoes an action recorded before snoozes were kept', () => {
+    repo.triage([id(1)], 'done');
+    const r = db
+      .prepare("INSERT INTO triage_actions (created_at, to_state, changes) VALUES (?, 'inbox', ?)")
+      .run(later(0), JSON.stringify([{ commentId: id(1), from: 'done', fromSource: 'user', fromReason: null }]));
+    db.prepare("UPDATE items SET state = 'inbox' WHERE id = ?").run(id(1));
+    const u = repo.undo(Number(r.lastInsertRowid));
+    expect(u.changes).toEqual([{ commentId: id(1), from: 'inbox', to: 'done' }]);
+  });
+});
+
 describe('waking on GitHub activity', () => {
   const park = (n: number) =>
     repo.snooze([id(n)], later(7 * DAY), 'waiting', { bucket: 'waiting_on_them', untilActivity: true });
