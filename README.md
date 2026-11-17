@@ -40,8 +40,6 @@ machine (or a box of your own behind Cloudflare Access), and keeps its data in a
 
 ## A closer look
 
-All from the demo. Click one for the full size.
-
 | <a href="docs/screenshots/hall-of-heroes.png"><img src="docs/screenshots/hall-of-heroes.png" width="260" alt="The Hall of Heroes: level, campfire and tiered achievements"></a> |  <a href="docs/screenshots/insights.png"><img src="docs/screenshots/insights.png" width="260" alt="Insights: the week in a sentence and a heatmap of arrivals"></a>   |             <a href="docs/screenshots/snooze-menu.png"><img src="docs/screenshots/snooze-menu.png" width="260" alt="The snooze menu, with Until activity and a reason"></a>              |
 | :-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------: | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------: | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------: |
 |                                                                         Adventure mode's Hall of Heroes                                                                         |                                                                     Insights: when things arrive                                                                      |                                                                                Snooze until someone acts                                                                                 |

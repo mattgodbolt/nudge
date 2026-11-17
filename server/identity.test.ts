@@ -20,7 +20,7 @@ const ALLOWED = new Set([
   'server/db/migrations.test.ts',
   'server/identity.test.ts', // this file: the pattern, and the shapes it must catch
 ]);
-const SKIP_DIRS = new Set(['.git', 'node_modules', 'data', 'screenshots', 'playwright-report']);
+const SKIP_DIRS = new Set(['.git', '.claude', 'node_modules', 'data', 'screenshots', 'playwright-report']);
 const SKIP_DIR_PREFIXES = ['dist', 'test-results'];
 const TEXT = /\.(ts|js|mjs|cjs|svelte|html|css|md|json|ya?ml|sh|toml|txt|example)$|^(Dockerfile|LICENSE|CODEOWNERS)$/;
 
