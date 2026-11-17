@@ -3,12 +3,33 @@ import type { SettingsUpdate } from '../../../../shared/api';
 import { api } from '../api';
 import { toasts } from './toasts.svelte';
 
+const SKIP_KEY = 'nudge.skipYoutubeKey';
+/** Per browser, like the theme: whether this browser has been told "I do not use YouTube". Storage may be blocked. */
+function readSkip(): boolean {
+  try {
+    return localStorage.getItem(SKIP_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
 class SettingsStore {
   value = $state<SettingsDTO | null>(null);
+  /** The owner chose to use Nudge without a YouTube key (GitHub feeds and todos need none). */
+  skippedYoutube = $state(readSkip());
   capabilities = $state<Capabilities>({ canPost: false, postMode: 'handoff' });
 
   get needsKey(): boolean {
-    return !!this.value && !this.value.demo && !this.value.apiKey.configured;
+    return !!this.value && !this.value.demo && !this.value.apiKey.configured && !this.skippedYoutube;
+  }
+
+  skipYoutube() {
+    this.skippedYoutube = true;
+    try {
+      localStorage.setItem(SKIP_KEY, '1');
+    } catch {
+      // storage blocked: the choice lasts until the page reloads
+    }
   }
 
   /** Real mode with a key but no channel marked as mine: time to ask which one is. */

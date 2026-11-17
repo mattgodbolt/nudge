@@ -19,6 +19,30 @@ that setup is described in full below. Cloudflare is one way to do it, not a req
   hostname is refused by the `Host` check, and one that rewrote `Host` to loopback would bypass every check, so do not
   put Nudge behind one.
 
+## Docker, on your own machine (no Cloudflare)
+
+Docker is not only for the Cloudflare setup. This runs the same container on your laptop or a home server, reachable
+only from that machine, with no `NUDGE_ACCESS_*` variables and no login to configure:
+
+```shell
+git clone https://github.com/mattgodbolt/nudge.git && cd nudge
+mkdir -p data && sudo chown 1000:1000 data   # the container runs as uid 1000
+docker compose up -d --build                 # the image build runs the unit tests; no .env is needed
+```
+
+Then open `http://127.0.0.1:4517`. Add your keys in Settings (or copy `.env.example` to `.env` first and set
+`YOUTUBE_API_KEY` there). Do not run `deploy/install-cron.sh`: that is the auto-updater for the Cloudflare setup below.
+
+- **If the container keeps restarting** with `SQLITE_CANTOPEN` / "unable to open database file" in `docker compose logs`,
+  `data/` is not writable by uid 1000. If you did not create it first, Compose creates it owned by root. Fix it with
+  the `chown` above.
+- **A different host port:** edit the `ports:` line in `compose.yaml` (`127.0.0.1:4517:4517`, host side first).
+- **Names:** `compose.yaml` names the image `nudge:latest` and the container `nudge`, so it will collide with anything
+  else you have under those names.
+- **Updating:** `git pull && docker compose up -d --build`.
+- **Settings > Version** shows `dev` unless you export `GIT_SHA` (for example `GIT_SHA=$(git rev-parse --short=8 HEAD)
+docker compose up -d --build`); the Docker build cannot see `.git`.
+
 ## Docker + Cloudflare Access
 
 One box runs the container, published on the host's loopback only. A [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/)
@@ -33,14 +57,28 @@ want that to be a branch you control, not the upstream project's.
 ```shell
 git clone https://github.com/<you>/nudge.git ~/nudge && cd ~/nudge
 mkdir -p data && sudo chown 1000:1000 data   # the container runs as uid 1000 (see compose.yaml)
-cp .env.example .env    # then fill in NUDGE_ACCESS_HOSTS, _TEAM_DOMAIN, _AUD, NUDGE_ALLOWED_USERS and the YouTube key
+cp .env.example .env    # then fill in NUDGE_ACCESS_HOSTS, _TEAM_DOMAIN, _AUD, NUDGE_ALLOWED_USERS (see below)
 docker compose up -d --build            # the image build runs the unit tests
 deploy/install-cron.sh                  # auto-update + nightly backup
 ```
 
-In Cloudflare Zero Trust: create a self-hosted Access application for the hostname with a policy that allows only you,
-copy its audience (AUD) tag into `NUDGE_ACCESS_AUD`, and add a bypass policy for the PWA's static files (listed under
-[Security model](SECURITY-MODEL.md#how-requests-are-checked)). Give the YouTube key in `.env` or Settings.
+In the Cloudflare dashboard (menu names move around, so search for the term if you cannot find it), in this order:
+
+1. **Tunnel.** Zero Trust > Networks > Tunnels: create a tunnel, run the `cloudflared` command it gives you on the box,
+   and add a public hostname (for example `nudge.example.com`) whose service is `http://127.0.0.1:4517`. Put that
+   hostname in `NUDGE_ACCESS_HOSTS`.
+2. **Access application.** Zero Trust > Access > Applications: add a **Self-hosted** application for exactly that
+   hostname, with an Allow policy that includes only your email. Open the application and copy its **Application
+   Audience (AUD) Tag** into `NUDGE_ACCESS_AUD`. Put your email in `NUDGE_ALLOWED_USERS`.
+3. **Team domain.** Your Zero Trust team name, shown under Settings > General, gives `<team>.cloudflareaccess.com`
+   for `NUDGE_ACCESS_TEAM_DOMAIN`.
+4. **Bypass for the PWA files.** Browsers fetch the manifest and icons without your login cookie, so add a second
+   Access application (or a Bypass policy ordered above the Allow policy) on the same hostname for exactly these paths:
+   `/manifest.webmanifest`, `/sw.js`, `/favicon.svg`, `/icon-192.png`, `/icon-512.png`, `/icon-maskable-512.png`,
+   `/badge-96.png` and `/logo-120.png`. They contain nothing private, and Nudge only serves them to GET and HEAD
+   requests (see [Security model](SECURITY-MODEL.md#how-requests-are-checked)). Without this, installing the app on a
+   phone or desktop shows a generic icon.
+5. Fill in `.env` and run `docker compose up -d --build`. Give the YouTube key in `.env` or Settings.
 
 - **Auto-update:** `deploy/update.sh` (cron, every 5 minutes) fetches `origin/main`; on a new commit it takes a
   pre-update snapshot (and skips the update, to retry next time, if none could be made while the app is up), builds (a

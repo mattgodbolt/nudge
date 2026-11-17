@@ -52,6 +52,9 @@ npm start        # production build served from :4517
 `npm install` may ask you to allow the install scripts of `better-sqlite3` and `esbuild`; see
 [Installing](docs/DEVELOPMENT.md#installing) for why, and for what a platform with no prebuilt SQLite module needs.
 
+Prefer Docker? `docker compose up -d --build` runs the same thing, reachable only from your machine, with no Cloudflare
+and no configuration: see [Docker, on your own machine](docs/DEPLOYING.md#docker-on-your-own-machine-no-cloudflare).
+
 `npm run demo` keeps its data in `data/demo.db` and refuses to start against a database that holds real sources.
 `NUDGE_DEMO_GITHUB=1` adds a fake GitHub organisation to it. Data lives in `data/nudge.db` (gitignored) unless
 `NUDGE_DB` says otherwise.
@@ -62,13 +65,13 @@ leave it bound to the loopback address and do not expose the port.
 
 A real instance needs:
 
-- **For YouTube, a YouTube Data API v3 key** (free), given as `YOUTUBE_API_KEY` or in Settings. GitHub-only use needs
-  no YouTube key. [Getting a key](docs/YOUTUBE.md#getting-a-key-and-naming-your-channel) also covers telling Nudge
+- **For YouTube, a YouTube Data API v3 key** (free), given as `YOUTUBE_API_KEY` or in Settings. GitHub-only or
+  todos-only use needs no YouTube key: the first-run card has a skip button. [Getting a key](docs/YOUTUBE.md#getting-a-key-and-naming-your-channel) also covers telling Nudge
   which channel is yours.
 - **For the model features (suggestions, nudge drafts, the assistant), an Anthropic key and the About you profile.**
   Fill in **Settings > You > About you**: what to call you, and a factual sentence or two about who you are and what
   you maintain. Every prompt is built from it, so until both are filled in Nudge makes no model calls at all, Settings
-  says the LLM features are paused, and the server logs a warning at startup. Everything else works without it. Demo
+  says the LLM features are paused, and if an Anthropic key is set the server also logs a warning at startup. Everything else works without it. Demo
   mode comes with a made-up profile.
 
 ## How it works
@@ -109,7 +112,7 @@ key and the GitHub token are entered in Settings only. There are no key files an
 
 **Push.** `NUDGE_PUSH_SUBJECT` is the contact sent to push services with each notification.
 
-**Build info.** `GIT_SHA` is the commit shown in Settings; the build reads it from git when unset.
+**Build info.** `GIT_SHA` is the commit shown in Settings; `npm run build` reads it from git, and with Docker you export it.
 
 ## Documentation
 
