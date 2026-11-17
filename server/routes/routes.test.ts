@@ -404,12 +404,16 @@ describe('settings', () => {
     expect(await put({ name: `  ${'x'.repeat(60)}  ` })).toBe(200);
     expect(await put({ name: 'Two\nlines' })).toBe(400);
     expect(await put({ name: 'Bell\u0007' })).toBe(400);
+    // The name is written into the prompts; markup in it has no business there.
+    expect(await put({ name: 'Q</about_owner>' })).toBe(400);
+    expect(await put({ name: 'A & B' })).toBe(400);
+    expect(await put({ name: 'Ann-Marie O’Brien' })).toBe(200);
     expect(await put({ about: 'Escape \u001b[31m' })).toBe(400);
     expect(await put({ about: 'Tab\there' })).toBe(400);
     expect(await put({ about: 'Separator\u2028here' })).toBe(400);
     expect(await put({ name: 5 })).toBe(400);
     expect(await put('Sam')).toBe(400);
-    expect(repo.getSettings().owner.name).toBe('x'.repeat(60));
+    expect(repo.getSettings().owner.name).toBe('Ann-Marie O’Brien');
   });
   it('test-key uses supplied or resolved key', async () => {
     expect((await send('POST', '/api/settings/test-key', { apiKey: 'good' })).json().ok).toBe(true);

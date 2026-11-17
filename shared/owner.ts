@@ -41,5 +41,7 @@ export function checkOwnerField(field: 'name' | 'about', v: unknown): { value: s
   if ((field === 'name' ? CONTROL_OR_NEWLINE : CONTROL).test(value)) {
     return { error: `"owner.${field}" must not contain control characters` };
   }
+  // The name is written into the system prompts around data blocks (the prompts escape it too).
+  if (field === 'name' && /[<>&]/.test(value)) return { error: '"owner.name" must not contain <, > or &' };
   return { value };
 }
