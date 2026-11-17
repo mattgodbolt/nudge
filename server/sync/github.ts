@@ -27,6 +27,8 @@ export interface GithubPollerDeps {
  */
 const OVERLAP_MS = 15 * 60_000;
 const MAX_BACKOFF_MS = 30 * 60_000;
+/** How long an unanswered lookup may hold the cursor back, so one that never succeeds cannot pin it forever. */
+const MAX_HOLD_MS = 7 * 24 * 3600_000;
 
 const ghTime = (d: Date) => d.toISOString().replace(/\.\d{3}Z$/, 'Z');
 
@@ -107,17 +109,25 @@ export function createGithubPoller(deps: GithubPollerDeps): GithubPoller & { tic
       // question decides whether an item parked until activity wakes, so it shares the lookups (and their cap).
       const meta = repo.githubItemMeta(ups.map((u) => u.id));
       let lookups = 0;
+      // updatedAt of items whose lookup was skipped (cap) or failed: the cursor must not move past them, or once they
+      // leave the search window nothing would ever ask about them again.
+      const unresolved: string[] = [];
       for (const u of ups) {
         const m = meta.get(u.id);
         if (!m || u.sourceState !== 'open' || u.comments <= m.comments) continue;
         if (!(DONE_LIKE.has(m.state) || m.snoozedUntilActivity)) continue;
         // Past the cap, or when the lookup fails, the answer stays unknown (lastCommenterIsMe undefined): the upsert
         // then keeps the old comment count so the next poll asks again, rather than guessing either way.
-        if (lookups++ >= maxLookups) break;
+        if (lookups >= maxLookups) {
+          unresolved.push(u.updatedAt);
+          continue;
+        }
+        lookups++;
         let who: string | null;
         try {
           who = await client.latestCommenter(u.repo, u.number, u.comments, token);
         } catch {
+          unresolved.push(u.updatedAt);
           continue;
         }
         // No comment to be found (deleted since the count was taken): not mine, as before.
@@ -135,13 +145,18 @@ export function createGithubPoller(deps: GithubPollerDeps): GithubPoller & { tic
         if (!(DONE_LIKE.has(m.state) || m.snoozedUntilActivity)) continue;
         if (m.seenUpdatedAt === null || u.updatedAt <= m.seenUpdatedAt) continue;
         if (u.lastCommenterIsMe === false) continue; // someone else's comment brings it back already
-        if (lookups++ >= maxLookups) break;
+        if (lookups >= maxLookups) {
+          unresolved.push(u.updatedAt);
+          continue;
+        }
+        lookups++;
         try {
           const reviews = await client.reviewsSince(u.repo, u.number, m.seenUpdatedAt, token);
           const theirs = reviews.filter((r) => !mine.has(r.login.toLowerCase()) && !isBot(r.login, r.type));
           u.reviewer = theirs.at(-1)?.login ?? null;
         } catch {
           // Left unknown: the upsert keeps the last seen update, so the next poll asks again.
+          unresolved.push(u.updatedAt);
         }
       }
 
@@ -152,6 +167,12 @@ export function createGithubPoller(deps: GithubPollerDeps): GithubPoller & { tic
       // Only the overlap was re-read before the page cap stopped it: never step back into it, or a burst inside those
       // 15 minutes would be read from the same place again and again. Resume from the old cursor instead.
       if (truncated && feed.cursor && cursor < feed.cursor) cursor = feed.cursor;
+      if (unresolved.length > 0) {
+        const oldest = unresolved.reduce((m, t) => (t < m ? t : m));
+        const floor = new Date(now.getTime() - MAX_HOLD_MS).toISOString();
+        const held = oldest < floor ? floor : oldest;
+        if (held < cursor) cursor = held;
+      }
       if (truncated) resumeAt.set(feed.id, cursor);
       else resumeAt.delete(feed.id);
       repo.recordFeedPoll(feed.id, {
@@ -197,7 +218,12 @@ export function createGithubPoller(deps: GithubPollerDeps): GithubPoller & { tic
     announceFeeds();
   }
 
-  const run = (only?: number): Promise<void> => {
+  const isDue = (f: FeedRow) => {
+    const at = clock().toISOString();
+    return (f.nextPollAt ?? '') <= at && (f.backoffUntil ?? '') <= at;
+  };
+
+  const run = (only?: number, manual = true): Promise<void> => {
     // One poll at a time: GitHub's secondary rate limits dislike parallel searches, and it keeps the cursor simple.
     // Each poll handles GitHub's own errors; anything else (the database, the event bus) is logged here and must not
     // leave the chain rejected, or every later poll would return that rejection without polling.
@@ -206,6 +232,9 @@ export function createGithubPoller(deps: GithubPollerDeps): GithubPoller & { tic
         const rows = only === undefined ? repo.enabledFeedRows() : [repo.getFeedRow(only)].filter((f) => f?.enabled);
         for (const f of rows) {
           if (!f) continue;
+          // A tick queues a feed again while a slow poll of it is still running; the poll that ran first has pushed
+          // nextPollAt on by then, so the duplicate finds the feed no longer due. A manual poll (pollNow) is exempt.
+          if (only !== undefined && !manual && !isDue(f)) continue;
           try {
             await pollFeed(f);
           } catch (e) {
@@ -219,9 +248,8 @@ export function createGithubPoller(deps: GithubPollerDeps): GithubPoller & { tic
 
   async function tick(): Promise<void> {
     try {
-      const at = clock().toISOString();
-      const due = repo.enabledFeedRows().filter((f) => (f.nextPollAt ?? '') <= at && (f.backoffUntil ?? '') <= at);
-      await Promise.all(due.map((f) => run(f.id)));
+      const due = repo.enabledFeedRows().filter(isDue);
+      await Promise.all(due.map((f) => run(f.id, false)));
     } catch (e) {
       log('tick failed', e);
     }
