@@ -73,6 +73,12 @@ On first run, paste your channel URL or @handle when asked (or under **Settings 
 are never inbox items, a reply from it auto-clears older comments in the same thread, and its uploads are tracked.
 Ticking "This is my channel" when adding a channel source does exactly the same thing.
 
+The model-backed features (suggestions, nudge drafts and the assistant) need an Anthropic key and a short profile:
+fill in **Settings > About you** (what to call you, and a factual sentence or two about who you are and what you
+maintain). Every prompt is built from it, so until both are filled in Nudge makes no model calls at all, Settings says
+the LLM features are paused, and the server logs a warning at startup. Everything else works without it. Demo mode
+comes with a made-up profile.
+
 ## Configuration
 
 All optional. The YouTube key and the Google OAuth client can also be given in Settings (they then live in the
@@ -101,7 +107,9 @@ database). For Docker, [`.env.example`](.env.example) lists what `compose.yaml` 
 | `E2E_PORT_OFFSET`, `NUDGE_SHOTS`                       | Tests: shift every e2e port (see [CONTRIBUTING.md](CONTRIBUTING.md)); a directory for the specs' screenshots |
 | `ANTHROPIC_API_KEY`                                    | Only for `npm run eval:classify`; the app's own Anthropic key is entered in Settings                         |
 
-GitHub and Anthropic tokens for the app are entered in Settings only. `NUDGE_ALLOWED_HOSTS`, from when Tailscale was a
+GitHub and Anthropic tokens for the app are entered in Settings only, and so is the owner profile (**Settings > About
+you**, stored as the `owner` row of the `settings` table: `{"name": "...", "about": "..."}`; name 1-60 characters,
+about 1-1500, an empty string clears a part). `NUDGE_ALLOWED_HOSTS`, from when Tailscale was a
 way in, is no longer read; Nudge starts anyway and logs a warning naming it.
 
 ## Security model
@@ -303,7 +311,9 @@ None of this runs in the app; it all works on a copy of a database.
 - `scripts/triage-eval/export.mjs <db>` exports a secrets-free slice of items (public text only) as JSONL.
 - `npm run eval:classify` (`server/classify`) evaluates an LLM triage classifier against your own decisions:
   `sample` builds a set to label by hand, `run` classifies it (needs `ANTHROPIC_API_KEY` or `~/.nudge-eval-key`, and
-  asks to confirm the projected cost), `score` compares with your labels; `rank-sample` and `rank-score` do the same
+  asks to confirm the projected cost), `score` compares with your labels; `run` and `score` build the prompt from your
+  profile, read from `--db <copy of nudge.db>` or given as `--owner-name` and `--owner-about`, and stop with a message
+  when there is none; `rank-sample` and `rank-score` do the same
   for a priority ranking built from pairwise comparisons (Bradley-Terry). Output goes under `data/eval/`.
 
 ## Deploying (Docker + Cloudflare Access)
@@ -363,7 +373,8 @@ no action needed, or keep what you said as a note. Each shows a toast with Undo.
 assistant is off or fails, your words are saved as a plain todo, so nothing you say is lost.
 
 - Add an Anthropic API key in **Settings → Assistant** (stored in the database, like the other keys; use a key with a
-  small spend limit). Without one, `c` just saves a todo.
+  small spend limit), and fill in **Settings → About you**. Without a key, `c` just saves a todo; with a key but no
+  profile, Nudge says to fill it in and keeps your words in the box.
 - Dictation uses the browser's built-in speech recognition (Chrome, Android, Safari), which Chrome sends to Google's
   servers. The phone keyboard's own mic button works in the same box if yours has none.
 - A todo with a due time stays hidden (Snoozed) until then, then comes back with a notification. Todos appear under
@@ -375,7 +386,7 @@ assistant is off or fails, your words are saved as a plain todo, so nothing you 
 Besides YouTube comments, Nudge can collect every new pull request and issue in a GitHub user's or organisation's
 repositories, so you can triage them with the same keys (`e` done, `b` snooze, `m` replied).
 
-- **Add a feed:** Sources > GitHub, enter a user or organisation (for example `compiler-explorer`). It starts "from now
+- **Add a feed:** Sources > GitHub, enter a user or organisation (for example `octocat`). It starts "from now
   on" by default; you can also import the last two weeks or everything open. Public repositories work with no token,
   at GitHub's low anonymous rate limit.
 - **Token (optional):** Settings > GitHub. Create a **fine-grained** token (GitHub > Settings > Developer settings >

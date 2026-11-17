@@ -114,7 +114,7 @@ export function createSyncEngine(deps: EngineDeps): SyncEngine {
     bus.emit({ type: 'inbox.changed', counts: repo.counts(), addedIds, changedIds, reason: 'sync' });
   }
   function collect(r: { newCommentIds: string[]; changedIds: string[]; wokenIds?: string[] }): void {
-    // A snoozed thread that got a reply comes back now, not after the debounce: it is the thing he was waiting for.
+    // A snoozed thread that got a reply comes back now, not after the debounce: it is the thing the owner was waiting for.
     if (r.wokenIds?.length) {
       bus.emit({ type: 'inbox.changed', counts: repo.counts(), addedIds: r.wokenIds, changedIds: [], reason: 'woke' });
     }

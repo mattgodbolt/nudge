@@ -75,7 +75,7 @@
 {/if}
 
 <style>
-  /* What he said he would do on return: quiet, but never cut off. */
+  /* What the owner said they would do on return: quiet, but never cut off. */
   .why {
     font-size: var(--fs-meta);
     font-style: italic;

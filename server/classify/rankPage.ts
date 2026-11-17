@@ -1,7 +1,7 @@
 import type { Group } from './rank.js';
 import type { EvalItem } from './types.js';
 
-/** What the owner sees of an item: what a ranker would see, never what he later did with it. */
+/** What the owner sees of an item: what a ranker would see, never what they later did with it. */
 function view(i: EvalItem) {
   return {
     id: i.id,
@@ -23,7 +23,7 @@ function view(i: EvalItem) {
 
 /**
  * A published Artifact page for collecting priority judgements from another device, built for a phone: a handful of
- * items at a time, tapped in the order he would handle them, with an optional "must do today" flag on each. One
+ * items at a time, tapped in the order the owner would handle them, with an optional "must do today" flag on each. One
  * document per group (`groups/g000`...) in the artifact's database so the answers can be read back directly. Item ids
  * stay inside the documents: GitHub ids contain "/" and "#", which are not valid path segments.
  */
@@ -84,7 +84,7 @@ function render(){
   let m=d.provider+' · '+d.kind+' · '+(d.github?d.container:d.container+(d.channel?' ('+d.channel+(d.ownChannel?', yours':'')+')':''))+' · '+(d.author||'')+' · '+ago(d.at);
   if(d.github)m+=' · '+[d.github.authorType,d.github.association].filter(Boolean).join('/')+(d.github.labels.length?' ['+d.github.labels.join(', ')+']':'');
   c.append(el('div','meta',m));
-  for(const x of d.thread.slice(-1))c.append(el('div','msg',(x.own?'Matt: ':'')+x.text.slice(0,140)));
+  for(const x of d.thread.slice(-1))c.append(el('div','msg',(x.own?'You: ':'')+x.text.slice(0,140)));
   const full=(d.title?d.title+' — ':'')+d.text,long=full.length>200,shown=open.has(id)||!long;
   c.append(el('div','text',shown?full:full.slice(0,200)+'…'));
   const s=el('div','small');

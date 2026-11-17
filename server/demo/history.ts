@@ -110,7 +110,7 @@ export function seedDemoHistory(db: Db, nowMs: number = Date.now(), seed = 7): b
     items.forEach((it, k) => {
       const arrival = Math.min(nowMs - HOUR, moment(Math.floor(rng() * SPAN_DAYS), ARRIVAL_HOURS));
       setArrival.run(iso(arrival), iso(arrival - Math.floor(rng() * 20) * 60_000), iso(arrival), it.id, 'inbox');
-      // When he gets to it: the next triage session, a day or three later (or the same day).
+      // When the owner gets to it: the next triage session, a day or three later (or the same day).
       let act = moment(Math.floor((nowMs - arrival) / DAY) - Math.floor(rng() * 3), ACTION_HOURS);
       while (act <= arrival) act += DAY;
       if (act >= nowMs) {

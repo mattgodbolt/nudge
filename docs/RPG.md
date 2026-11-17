@@ -70,7 +70,7 @@ Elder Wyrm, Archaeologist, Necromancer, the Bard's Lute, Backlog Breaker) uses `
 ## 3. Levels
 
 Total XP to reach level _n_ is `300 × (n−1)^1.6`, rounded to the nearest 10 (`LEVEL_CURVE` in `shared/rpg.ts`). The
-first curve (`100 × (n−1)²`) put the owner at level 5 of 20 after his first ten days (1,627 XP, inflated by a one-off
+first curve (`100 × (n−1)²`) put the owner at level 5 of 20 after their first ten days (1,627 XP, inflated by a one-off
 backlog cleanup), so the game felt half over. On this one those 1,627 XP are level 3. At a steady few dozen XP a day,
 level 10 comes after a few months and level 20 after well over a year. Past 20 the titles come round again "of the
 Second Age", "of the Third Age" and so on, and the curve carries on.

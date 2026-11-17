@@ -51,7 +51,7 @@ export const SIZE_BANDS: readonly SizeBand[] = ['0', '1-3', '4-10', '11+'];
 export type AgeBand = '<1d' | '1-7d' | '1-4w' | '1-3m' | '3m+';
 export const AGE_BANDS: readonly AgeBand[] = ['<1d', '1-7d', '1-4w', '1-3m', '3m+'];
 export const SUGGESTED = ['reply', 'act', 'skip', 'spam'] as const;
-/** What he did first, for the confusion table: the five columns. */
+/** What the owner did first, for the confusion table: the five columns. */
 export const FIRST_ACTIONS = ['replied', 'done', 'dismissed', 'snooze', 'legacy'] as const;
 export const CONFIDENCES = ['low', 'medium', 'high'] as const;
 export const TURNS = ['me', 'them', 'nobody'] as const;
@@ -59,11 +59,11 @@ export const TURNS = ['me', 'them', 'nobody'] as const;
 export interface RhythmInsights {
   /** R1: when things arrive (first_seen_at); `written` is the same items by when they were written (occurred_at). */
   arrivals: InsightCard<WeekGrid & { written: WeekGrid; rearrivals: number }>;
-  /** R2: when he acts; a bulk action counts once, at its time. */
+  /** R2: when the owner acts; a bulk action counts once, at its time. */
   actions: InsightCard<WeekGrid & { bulkActions: number }>;
   /** R3: R1 and R2 collapsed to 24 hours (counts). */
   hourly: InsightCard<{ arrivals: number[]; actions: number[] }>;
-  /** R4: arrival to his first action, per provider (rows under rowMin carry nulls) and per arrival hour. */
+  /** R4: arrival to the owner's first action, per provider (rows under rowMin carry nulls) and per arrival hour. */
   firstResponse: InsightCard<{
     rowMin: number;
     byProvider: { provider: string; n: number; medianMs: number | null; p75Ms: number | null }[];
@@ -72,13 +72,13 @@ export interface RhythmInsights {
 }
 
 export interface ResponsesInsights {
-  /** P1: what happened first to things he (or upstream) dealt with in the range; one-at-a-time actions only. */
+  /** P1: what happened first to things the owner (or upstream) dealt with in the range; one-at-a-time actions only. */
   outcomes: InsightCard<{ counts: Record<Outcome, number>; waiting: number; bulk: number }>;
-  /** P2: of the items he resolved himself, how many got a reply, by provider and kind. */
+  /** P2: of the items the owner resolved themselves, how many got a reply, by provider and kind. */
   replyBySource: InsightCard<{ rowMin: number; rows: (RateRow & { provider: string; kind: string })[] }>;
-  /** P3: the same by thread size when he acted (`approx` rows used the current size: from before it was recorded). */
+  /** P3: the same by thread size when the owner acted (`approx` rows used the current size: from before it was recorded). */
   replyBySize: InsightCard<{ rowMin: number; rows: (RateRow & { band: SizeBand })[]; approx: number }>;
-  /** P4: age (since Nudge first saw it) when he resolved it, by how. */
+  /** P4: age (since Nudge first saw it) when the owner resolved it, by how. */
   ageWhenAnswered: InsightCard<{
     rowMin: number;
     rows: {
@@ -102,12 +102,12 @@ export interface ResponsesInsights {
       medianMs: number | null;
     }[];
   }>;
-  /** P6: undos (distinct actions undone) against all his actions. */
+  /** P6: undos (distinct actions undone) against all the owner's actions. */
   undos: InsightCard<{ undos: number; actions: number }>;
 }
 
 export interface PredictionsInsights {
-  /** M1: suggestions judged against his first action (one-at-a-time only; a bare legacy done is not judged). */
+  /** M1: suggestions judged against the owner's first action (one-at-a-time only; a bare legacy done is not judged). */
   agreement: InsightCard<{ hits: number; total: number; ambiguous: number; bulk: number }>;
   /** M2 */
   bySuggestion: InsightCard<{ rowMin: number; rows: (RateRow & { suggested: (typeof SUGGESTED)[number] })[] }>;
@@ -119,13 +119,13 @@ export interface PredictionsInsights {
   }>;
   /** M4: counts, [suggested][first action] in SUGGESTED × FIRST_ACTIONS order. */
   confusion: InsightCard<{ cells: number[][] }>;
-  /** M5: how often he went against the suggestion, by its category. `approx` rows used today's category. */
+  /** M5: how often the owner went against the suggestion, by its category. `approx` rows used today's category. */
   categories: InsightCard<{
     rowMin: number;
     rows: { category: string; n: number; overrides: number; rate: number | null; approx: number }[];
     capturedSince: string | null;
   }>;
-  /** M6: whose turn the model said it was, and how often he then replied. */
+  /** M6: whose turn the model said it was, and how often the owner then replied. */
   turns: InsightCard<{ rowMin: number; rows: (RateRow & { turn: (typeof TURNS)[number] })[] }>;
 }
 
@@ -136,7 +136,7 @@ export interface SourcesInsights {
   videos: InsightCard<{ rows: RankedRow[]; other: number }>;
   /** S3: YouTube channels by arrivals (channels with at least `rowMin`). */
   channels: InsightCard<{ rowMin: number; rows: RankedRow[] }>;
-  /** S4: people who wrote most (distinct items; his own and bots left out); those with at least `rowMin`, top 5. */
+  /** S4: people who wrote most (distinct items; the owner's own and bots left out); those with at least `rowMin`, top 5. */
   regulars: InsightCard<{ rowMin: number; rows: RankedRow[] }>;
   /** S5: the biggest conversations that arrived or were acted on in the range (current size). */
   threads: InsightCard<{ rows: (ItemRef & { size: number })[] }>;
@@ -160,7 +160,7 @@ export interface ExtrasInsights {
   busiestDay: InsightCard<{ day: string; actions: number }>;
   /** F2: the hour with the fewest arrivals per day (needs R1's minimum and a week of range). */
   quietestHour: InsightCard<{ hour: number; perDay: number }>;
-  /** F3: the biggest thread he replied to or closed in the range (current size). */
+  /** F3: the biggest thread the owner replied to or closed in the range (current size). */
   biggestCleared: InsightCard<ItemRef & { size: number }>;
   /** F5: days with a reply on both YouTube and GitHub. */
   polyglot: InsightCard<{ days: number; last: string | null }>;
@@ -249,7 +249,7 @@ export const SENTENCE_MIN_ACTIONS = 10;
 export function insightsSentence(p: {
   range: InsightsRange;
   actions: number;
-  /** Items he resolved in the range (replied, done or dismissed, bulk included), and by provider/kind. */
+  /** Items the owner resolved in the range (replied, done or dismissed, bulk included), and by provider/kind. */
   dealt: number;
   dealtBy: { provider: string; kind: string; n: number }[];
   replied: number;

@@ -10,7 +10,7 @@ const addDays = (now: string, days: number): string => {
 /**
  * Demo/e2e assistant: no network. Understands "snooze this ... [to <why>]", "done"/"mark this done", notes (anything
  * with "always", "never", "wouldn't" or "suggestion" in it: "always"/"never" make it a standing preference, "wouldn't"
- * is about what he just did), and "remind me [in N days] to X" / anything else as a todo ("tomorrow" or "in N days"
+ * is about what the user just did), and "remind me [in N days] to X" / anything else as a todo ("tomorrow" or "in N days"
  * sets a due time).
  */
 export function createFakeLlmClient(): LlmClient {

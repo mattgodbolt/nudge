@@ -46,9 +46,9 @@ export interface EvalItem {
     /** Live suggestions only: the last few comments, oldest first, so the model can judge where the thread stands. */
     recent?: { author: string; isOwner: boolean; text: string }[];
   };
-  /** Live suggestions only: why the owner snoozed this item, in his words (shown to the model as data). */
+  /** Live suggestions only: why the owner snoozed this item, in their words (shown to the model as data). */
   snoozeNote?: string;
-  /** Live suggestions only: the reason bucket he chose, whether he was waiting on activity, and how the wait ended. */
+  /** Live suggestions only: the reason bucket the owner chose, whether they were waiting on activity, and how the wait ended. */
   snooze?: { bucket: string | null; untilActivity: boolean; wokeBy: 'activity' | 'fallback' | null };
   /** Live suggestions only: notes the owner made about this very item (data, newest first). */
   ownerNotes?: string[];
@@ -62,7 +62,7 @@ export const VERDICTS = ['needs_reply', 'needs_action', 'no_reply_needed', 'spam
 export type Verdict = (typeof VERDICTS)[number];
 
 /**
- * Labels agreed with the owner after the first hand-labelled run (praise and banter merged: he treats them alike). The model must pick one (or "other"); it can never invent one.
+ * Labels agreed with the owner after the first hand-labelled run (praise and banter merged: the owner treats them alike). The model must pick one (or "other"); it can never invent one.
  * `bot` is rules-only territory for GitHub but is a valid answer so the model can agree with the rules.
  */
 export const CATEGORIES = ['question', 'technical', 'bug', 'idea', 'chat', 'support', 'bot', 'other'] as const;

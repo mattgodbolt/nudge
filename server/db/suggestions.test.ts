@@ -156,7 +156,7 @@ describe('recording the suggestion with what the owner did', () => {
     });
   });
 
-  it('keeps the category and prompt version the suggestion had when he acted, even after it is replaced', () => {
+  it('keeps the category and prompt version the suggestion had when the owner acted, even after it is replaced', () => {
     repo.suggestions.save(row(1, { verdict: 'no_reply_needed', category: 'chat', promptVersion: 'p1-2' }));
     repo.triage([id(1)], 'done', 'no_action');
     repo.suggestions.save(row(1, { category: 'question', promptVersion: 'p1-3' })); // a later run replaces the row
@@ -308,11 +308,11 @@ describe('habits: suggestion hit rate', () => {
   });
 
   it('judges skip against dismissed, act against done, and reports a bare old done as ambiguous', () => {
-    act(1, 'skip', 'done'); // he did it: the suggestion said nothing was needed
+    act(1, 'skip', 'done'); // the owner did it: the suggestion said nothing was needed
     act(2, 'act', 'done');
     act(3, 'skip', 'legacy_done'); // from before dismissals existed: could be either
     act(4, 'act', 'legacy_done');
-    act(5, 'reply', 'legacy_done'); // not a reply whichever he meant: a miss
+    act(5, 'reply', 'legacy_done'); // not a reply whichever the owner meant: a miss
     const rep = habitsReport(db);
     const by = Object.fromEntries(rep.suggestionHits.map((h) => [h.suggested, h]));
     expect(by.skip).toMatchObject({ total: 1, hits: 0, ambiguous: 1 });

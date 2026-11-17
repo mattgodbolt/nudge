@@ -26,7 +26,7 @@
     void notes.load();
   });
 
-  /** One line saying what Nudge had suggested, and what he had just done, when a note was made. */
+  /** One line saying what Nudge had suggested, and what you had just done, when a note was made. */
   function noteContext(n: (typeof notes.list)[number]): string {
     const bits: string[] = [];
     const sg = n.suggestion;

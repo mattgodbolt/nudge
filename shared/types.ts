@@ -171,7 +171,7 @@ export interface InboxItem {
   snoozedUntil: string | null;
   /** When the last snooze ended. Inbox ordering uses COALESCE(wokeAt, comment.publishedAt) so woken items resurface. */
   wokeAt: string | null;
-  /** Why the owner snoozed it, in his words: set while it is snoozed and after it wakes (null when he gave none). */
+  /** Why the owner snoozed it, in their words: set while it is snoozed and after it wakes (null when none was given). */
   snoozeWhy: string | null;
   /** The reason bucket chosen (or inferred) when it was snoozed; shown while snoozed and after it wakes. */
   snoozeBucket: SnoozeBucket | null;
@@ -301,7 +301,7 @@ export interface NoteDTO {
     reason: string;
     confidence: string;
   } | null;
-  /** The owner's latest action on the item in the hour before: what he did, and the why he gave. */
+  /** The owner's latest action on the item in the hour before: what they did, and the why they gave. */
   lastAction: { kind: 'state' | 'snooze'; to: string | null; at: string; why: string | null } | null;
   context: {
     provider: string;

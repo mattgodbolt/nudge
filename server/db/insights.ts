@@ -43,11 +43,11 @@ import { inboxCountByDay } from './replay.js';
  * good the suggestion model is. Read only: this module prepares SELECTs and nothing else (a test runs it against a
  * database opened read-only, and server/insights-boundary.test.ts checks its source and who imports it).
  *
- * Who is in it: items that reached the inbox, i.e. not his own, not muted and not archived (`world` also leaves out
- * todos, which he writes himself, for everything about arrivals, sources, responses and predictions; his actions on
+ * Who is in it: items that reached the inbox, i.e. not the owner's own, not muted and not archived (`world` also leaves
+ * out todos, which the owner writes, for everything about arrivals, sources, responses and predictions; their actions on
  * todos still count in the rhythm). An "arrival" is an item Nudge saw within LIVE_LAG_MS of it being written (so an
  * import or backfill is not a burst of arrivals), plus an upstream re-arrival (new activity or a reopen). Actions are
- * his own state/snooze/reply events minus anything an undo cancelled; a bulk action counts once, at its time, in the
+ * the owner's own state/snooze/reply events minus anything an undo cancelled; a bulk action counts once, at its time, in the
  * rhythm and is left out of every rate and of the suggestion accuracy. No card shows a number under its minimum.
  */
 
@@ -117,7 +117,7 @@ interface Item {
   id: string;
   provider: string;
   kind: string;
-  /** Reached the inbox: not his own, not muted, not archived. */
+  /** Reached the inbox: not the owner's own, not muted, not archived. */
   inUniverse: boolean;
   /** inUniverse and not a todo: something the world sent. */
   world: boolean;
@@ -401,7 +401,7 @@ export function insightsReport(db: Db, opts: InsightsOptions): Insights {
   }
   const arrivalsN = liveArrivals + rearrivals;
 
-  /* ---- his actions (R2, F1, P6) ---- */
+  /* ---- the owner's actions (R2, F1, P6) ---- */
   const actionsGrid = grid();
   const actionKeys = new Set<string>();
   let bulkActions = 0;
@@ -483,10 +483,10 @@ export function insightsReport(db: Db, opts: InsightsOptions): Insights {
           e.to !== null &&
           !['inbox', 'own', 'archived'].includes(e.to)
         )
-          // auto_replied: he replied further down the YouTube thread, which cleared this one: a reply of his.
+          // auto_replied: the owner replied further down the YouTube thread, which cleared this one: their reply.
           outcome = { e, what: e.to === 'auto_replied' ? 'replied' : 'upstream' };
       }
-      // The suggestion is judged against his first done, dismissal, reply or snooze that carried one (as habits).
+      // The suggestion is judged against the owner's first done, dismissal, reply or snooze that carried one (as habits).
       if (!judgedDone && !cancelled && e.source === 'user' && typeof e.meta.suggested === 'string') {
         const action: (typeof FIRST_ACTIONS)[number] | null =
           e.kind === 'snooze'
@@ -575,7 +575,7 @@ export function insightsReport(db: Db, opts: InsightsOptions): Insights {
         else if (res === 'dismiss') ages.dismissed.push(age);
       }
     }
-    // Polyglot days: every reply of his, not just the first resolution.
+    // Polyglot days: every reply of the owner's, not just the first resolution.
     for (const e of it.events) {
       if (resolutionOf(e) !== 'reply' || !inRange(e.t) || (e.source === 'user' && undos.cancelled(e))) continue;
       if (it.provider === 'youtube') replyDays.youtube.add(clock.day(e.t));

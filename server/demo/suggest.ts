@@ -13,7 +13,7 @@ export function demoClassify(item: EvalItem, standingNotes: string[] = []): Clas
   if (author && standingNotes.some((n) => n.toLowerCase().includes(author))) {
     return { ...c, confidence: 'high', reason: 'Matches one of your standing notes' };
   }
-  // Thread state, as the real model is asked to judge it: his own note about the item first, then why he snoozed it,
+  // Thread state, as the real model is asked to judge it: the owner's own note about the item first, then why it was snoozed,
   // then who wrote last.
   const note = item.ownerNotes?.[0];
   if (note) return { ...c, turn: 'me', nextStep: `Act on your note: ${note.slice(0, 40)}` };
@@ -30,7 +30,7 @@ export function demoClassify(item: EvalItem, standingNotes: string[] = []): Clas
           ...c,
           turn: 'me',
           // As long-winded as the real model gets, so the layout is exercised with text that must wrap or be cut.
-          nextStep: `Answer ${last.author} and merge alongside the companion Compiler Explorer PR`,
+          nextStep: `Answer ${last.author} and merge alongside the companion infrastructure PR`,
           reason: 'A first-time contributor opened a PR adding install targets to the infra repo, which needs review',
         };
   }

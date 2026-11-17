@@ -60,7 +60,7 @@ export function createFakeGithubClient(
       kind: isPr ? 'pr' : 'issue',
       repo,
       number,
-      // One long title (a real one from the Compiler Explorer repos), so layouts get tested against a title that wraps.
+      // One long title, so layouts get tested against a title that wraps.
       title: i === LONG_TITLE_INDEX ? LONG_TITLE : `${TITLES[i % TITLES.length]} (#${number})`,
       author: person.login,
       authorAvatarUrl: null,

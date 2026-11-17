@@ -98,7 +98,7 @@
   const gh = $derived(item.item.provider === 'github' ? item.item : null);
   const todo = $derived(item.item.provider === 'todo' ? item.item : null);
   const chips = $derived(gh ? [reasonChip(gh), authorChip(gh), statusChip(gh)].filter((x) => x !== null) : []);
-  /** Why it was snoozed, in his words: shown while snoozed and once it is back, until he deals with it. */
+  /** Why it was snoozed, in the owner's words: shown while snoozed and once it is back, until it is dealt with. */
   const why = $derived(c.state === 'inbox' ? item.snoozeWhy : null);
   /** Came back because the wait ran out with nothing happening: "Still waiting on them (7d, no activity)". */
   const nag = $derived(c.state === 'inbox' && !item.snoozedUntil ? item.snoozeNag : null);

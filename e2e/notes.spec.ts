@@ -169,7 +169,7 @@ test('the assistant takes a why with the snooze', async ({ page }) => {
   await expect(rows(page).filter({ hasText: title }).getByTestId('row-why')).toContainText('chase the maintainer');
 });
 
-test('"I wouldn\'t have snoozed that" is kept against the item he just snoozed, with what he did and why', async ({
+test('"I wouldn\'t have snoozed that" is kept against the item just snoozed, with what was done and why', async ({
   page,
 }) => {
   await openGithub(page);
@@ -180,7 +180,7 @@ test('"I wouldn\'t have snoozed that" is kept against the item he just snoozed, 
   await page.getByTestId('snooze-why').fill('wait for CI');
   await page.keyboard.press('Enter');
   await expect(page.getByTestId('toast').filter({ hasText: 'Snoozed until' })).toBeVisible();
-  // The selection has moved on to the next row by now: "that" is still the one he just snoozed.
+  // The selection has moved on to the next row by now: "that" is still the one just snoozed.
   await tell(page, "I wouldn't have snoozed that, it's from my friend Bob");
   await expect(page.getByText(/^Noted: I wouldn't have snoozed that/)).toBeVisible();
   await page.goto('/settings');

@@ -228,7 +228,7 @@ describe('reply events', () => {
       replyPostId: post,
     });
     expect(events('t1')).toEqual([
-      // threadSize is the thread as he saw it when he answered: one reply, not counting his own.
+      // threadSize is the thread as the owner saw it when they answered: one reply, not counting their own.
       {
         itemId: 't1',
         kind: 'state',
@@ -300,7 +300,7 @@ describe('reply events', () => {
   });
 });
 
-describe('thread size at the moment he acted (threadSize)', () => {
+describe('thread size at the moment the owner acted (threadSize)', () => {
   const metaOf = (itemId: string, kind: string) => events(itemId).find((e) => e.kind === kind)?.meta ?? null;
 
   it('a YouTube reply in a thread carries the thread reply count; so does its top comment', () => {

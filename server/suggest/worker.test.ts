@@ -303,7 +303,7 @@ describe('suggestion worker', () => {
       });
     });
 
-    it('gives the model what he said when he snoozed it, once it is back, and asks again', async () => {
+    it('gives the model what the owner said when snoozing it, once it is back, and asks again', async () => {
       const w = worker();
       await w.runOnce([id(1)]);
       const first = rows().find((r) => r.item_id === id(1))!.state_key;

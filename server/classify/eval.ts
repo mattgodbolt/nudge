@@ -253,7 +253,7 @@ function cmdScore(): void {
 /**
  * Priority study (#27), step 1: pick the items worth ranking (things the owner wanted to see, from the labelled
  * rounds), group them four at a time (time neighbours first, since priority is mostly a daily question) and build the
- * page he answers them on.
+ * page the owner answers them on.
  */
 function cmdRankSample(): void {
   const nItems = Number(arg('items', '60'));
@@ -292,7 +292,7 @@ function cmdRankSample(): void {
 }
 
 /**
- * Priority study, step 2: turn the owner's answered groups into comparisons, fit them, report how consistent he is,
+ * Priority study, step 2: turn the owner's answered groups into comparisons, fit them, report how consistent they are,
  * and score candidate rankers against them. `--groups` is a JSON array of answered groups ({ids, order, today?,
  * repeat?}); `--scores` an optional JSON map of item id to a candidate's priority (higher matters more).
  */

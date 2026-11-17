@@ -62,7 +62,7 @@ export const QUESTIONS = [
   'Is this guaranteed by the standard or just something compilers happen to do?',
   'Hi! I am a beginner, where would you suggest starting with {topic}?',
   'Why is the second loop faster than the first even though it does more work?',
-  'Can you share the Compiler Explorer link for this example?',
+  'Can you share the online playground link for this example?',
   'At [{ts}] you said it would be slower, but my benchmark says otherwise. What am I missing?',
 ];
 
@@ -93,7 +93,7 @@ export const REACTIONS = [
 
 export const LINKS = [
   'You might like this related talk: https://www.youtube.com/watch?v=dQw4w9WgXcQ',
-  'There is a good write-up of this on https://godbolt.org/z/abc123 if anyone wants to experiment.',
+  'There is a good write-up of this on https://playground.example.org/z/abc123 if anyone wants to experiment.',
   'The GCC docs cover this here: https://gcc.gnu.org/onlinedocs/gcc/Optimize-Options.html',
   'Relevant paper: https://research.example.org/papers/branch-prediction.pdf (section 3 especially).',
   'I made a small repo to reproduce this: https://github.com/example/demo-repro\nPRs welcome!',
@@ -125,7 +125,7 @@ export const REPLIES = [
   'Seconded.',
   'This should be pinned.',
   'The standard says nothing about it AFAIK.',
-  'You can check on Compiler Explorer, the link is in the description.',
+  'You can check in the online playground, the link is in the description.',
   'Not on ARM, the instruction selection is different.',
   'Works for me with GCC 13.',
   'Did you build with debug info? That changes things.',
@@ -138,7 +138,7 @@ export const OWN_REPLIES = [
   'Good question! Short answer: yes, but it depends on the compiler version. I will try to cover it in a follow-up.',
   'Thank you! That means a lot.',
   'Great catch. I have pinned a correction in the description.',
-  'The code is on Compiler Explorer, the link is in the description.',
+  'The code is in the online playground, the link is in the description.',
   'It is x86-64 here, but ARM64 is similar. Try it with -mcpu=native and see.',
   'Ha, yes, that one bit me too. Thanks for watching!',
   'Not silly at all! `lea` computes an address without touching memory, which is why compilers love it for arithmetic.',
@@ -212,7 +212,7 @@ export const OWN_TITLES = [
   'The ABI nobody told you about',
   'Memory ordering without tears',
   'Benchmarking: you are doing it wrong',
-  'How Compiler Explorer works',
+  'How an online compiler works',
   'A tour of the x86-64 instruction set',
   'Strings and SSO internals',
   'Switch statements and jump tables',

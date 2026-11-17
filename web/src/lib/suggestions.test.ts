@@ -57,7 +57,7 @@ describe('suggestion text', () => {
         'Suggestion: waiting on them · wait for the reporter · asks a direct question',
       );
     });
-    it('falls back to the action and reason when it is his turn but there is no next step, or nobody has one', () => {
+    it('falls back to the action and reason when it is your turn but there is no next step, or nobody has one', () => {
       expect(chipText(s({ turn: 'me', nextStep: null }))).toBe('reply · asks a direct question');
       expect(chipText(s({ turn: 'nobody', nextStep: 'Nothing' }))).toBe('reply · asks a direct question');
       expect(chipText(s({ turn: null }))).toBe('reply · asks a direct question');

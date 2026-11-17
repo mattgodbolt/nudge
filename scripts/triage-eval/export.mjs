@@ -54,7 +54,7 @@ for (const c of allComments) {
 }
 function authorHistory(authorId, at) {
   const earlier = (byAuthor.get(authorId) ?? []).filter((x) => x.published_at < at);
-  // Earlier comments by this person that the owner answered (his reply came after theirs and before now).
+  // Earlier comments by this person that the owner answered (the owner's reply came after theirs and before now).
   const answered = earlier.filter((x) =>
     (ownByThread.get(x.thread_id) ?? []).some((t) => t > x.published_at && t < at),
   );
@@ -90,7 +90,7 @@ for (const r of rows) {
     const before = me < 0 ? [] : t.slice(Math.max(0, me - THREAD_CONTEXT), me);
     const later = me < 0 ? [] : t.slice(me + 1).filter((x) => x.is_own);
     out.channel = cap(r.channel_title, 80) || null;
-    // Whether the video is on one of the owner's own channels: he can commit to making content there, not elsewhere.
+    // Whether the video is on one of the owner's own channels: the owner can commit to making content there, not elsewhere.
     out.ownChannel = !!r.own_channel;
     out.meta = {
       ...authorHistory(r.author_channel_id, r.occurred_at),

@@ -69,7 +69,7 @@ function simulate(noise: number, seed = 3): Comparison[] {
   const r = (): number => (s = (s * 1664525 + 1013904223) >>> 0) / 4294967296;
   const out: Comparison[] = [];
   for (const g of buildGroups(ids, 4, 6, 0, 1)) {
-    // The owner orders each group by the true value, with some noise in what he perceives.
+    // The owner orders each group by the true value, with some noise in what they perceive.
     const seenValue = new Map(g.ids.map((id) => [id, truth(Number(id.slice(1))) + (r() - 0.5) * noise * 20]));
     const order = [...g.ids].sort((x, y) => seenValue.get(y)! - seenValue.get(x)!);
     out.push(...groupsToComparisons([{ ids: g.ids, order }]));

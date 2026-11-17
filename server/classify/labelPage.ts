@@ -52,12 +52,12 @@ button.on kbd{color:#fff;border-color:#fff8}
 </style></head><body><main>
 <div class="bar"><span id="pos"></span><span><button id="dl">Download labels.json</button></span></div>
 <div class="card"><div class="meta" id="meta"></div><div id="thread"></div><div class="text" id="text"></div></div>
-<div class="hint">Would Matt need to act on this? (what a perfect assistant should put in his inbox)</div>
+<div class="hint">Would you need to act on this? (what a perfect assistant should put in your inbox)</div>
 <div class="row" id="verdicts"></div>
 <div class="hint">Best label (optional)</div>
 <div class="row" id="cats"></div>
 <details class="hint"><summary>What do the labels mean?</summary><ul>
-<li><b>question</b>: asks Matt something</li>
+<li><b>question</b>: asks you something</li>
 <li><b>technical</b>: corrects, adds to or disagrees with technical content (what the video or PR says), without asking anything</li>
 <li><b>bug</b>: reports something broken</li>
 <li><b>idea</b>: asks for a feature or a future video</li>
@@ -83,7 +83,7 @@ function render(){
  if(d.github)m+=' · '+[d.github.authorType,d.github.association].filter(Boolean).join('/')+(d.github.labels.length?' · ['+d.github.labels.join(', ')+']':'');
  $('meta').textContent=m;
  const t=$('thread');t.replaceChildren();
- for(const x of d.thread)t.append(el('div','msg',(x.own?'Matt: ':'')+x.text));
+ for(const x of d.thread)t.append(el('div','msg',(x.own?'You: ':'')+x.text));
  $('text').textContent=(d.title?d.title+'\\n\\n':'')+d.text;
  const v=$('verdicts');v.replaceChildren();
  for(const [k,key,name] of VERDICTS){const b=el('button',l.verdict===k?'on':'');b.append(el('kbd','',key),name);b.onclick=()=>set({verdict:k});v.append(b)}
@@ -140,12 +140,12 @@ button.on kbd{color:var(--acc-fg);border-color:currentColor}
 <main>
 <div class="bar"><span id="pos">Loading...</span><span id="status" class="hint"></span></div>
 <div class="card"><div class="meta" id="meta"></div><div id="thread"></div><div class="text" id="text"></div></div>
-<div class="hint">Would Matt need to act on this? (what a perfect assistant should put in his inbox)</div>
+<div class="hint">Would you need to act on this? (what a perfect assistant should put in your inbox)</div>
 <div class="row" id="verdicts"></div>
 <div class="hint">Best label (optional)</div>
 <div class="row" id="cats"></div>
 <details class="hint"><summary>What do the labels mean?</summary><ul>
-<li><b>question</b>: asks Matt something</li>
+<li><b>question</b>: asks you something</li>
 <li><b>technical</b>: corrects, adds to or disagrees with technical content (what the video or PR says), without asking anything</li>
 <li><b>bug</b>: reports something broken</li>
 <li><b>idea</b>: asks for a feature or a future video</li>
@@ -171,7 +171,7 @@ function render(){
  if(d.github)m+=' · '+[d.github.authorType,d.github.association].filter(Boolean).join('/')+(d.github.labels.length?' · ['+d.github.labels.join(', ')+']':'');
  $('meta').textContent=m;
  const t=$('thread');t.replaceChildren();
- for(const x of d.thread)t.append(el('div','msg',(x.own?'Matt: ':'')+x.text));
+ for(const x of d.thread)t.append(el('div','msg',(x.own?'You: ':'')+x.text));
  $('text').textContent=(d.title?d.title+'\\n\\n':'')+d.text;
  const v=$('verdicts');v.replaceChildren();
  for(const [k,kk,name] of VERDICTS){const b=el('button',l.verdict===k?'on':'');b.append(el('kbd','',kk),name);b.onclick=()=>set({verdict:k},false);v.append(b)}

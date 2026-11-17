@@ -2,16 +2,16 @@
 // Bradley-Terry fit turns them into one score per item, which is the reference a model's priority is measured against.
 import { rng } from './sample.js';
 
-/** A small set shown together; the owner orders it (as he would handle it) and may flag what must happen today. */
+/** A small set shown together; the owner orders it (as they would handle it) and may flag what must happen today. */
 export interface Group {
   /** Position in the sequence shown: the answer document is `g<n>`. */
   n: number;
   ids: string[];
-  /** A deliberate re-ask of an earlier group with the order reshuffled, to measure his own consistency. */
+  /** A deliberate re-ask of an earlier group with the order reshuffled, to measure the owner's own consistency. */
   repeat?: boolean;
 }
 
-/** One answered group: `order` is best-first among the items he ranked; anything left out is "the rest, equal". */
+/** One answered group: `order` is best-first among the items the owner ranked; anything left out is "the rest, equal". */
 export interface GroupAnswer {
   ids: string[];
   order: string[];

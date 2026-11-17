@@ -118,7 +118,7 @@ describe('the assistant records notes', () => {
     expect(kicks).toEqual(['kick']);
   });
 
-  it('attaches "that" to the item he just snoozed when the selection has moved on, and records the why he gave', async () => {
+  it('attaches "that" to the item just snoozed when the selection has moved on, and records the why given', async () => {
     const until = new Date(Date.now() + 3_600_000).toISOString();
     env.repo.snooze([id(1)], until, 'review the proposed fix');
     actions = [note("I wouldn't have snoozed that", 'item', 'last_action')];

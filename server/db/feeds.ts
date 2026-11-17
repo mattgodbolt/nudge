@@ -409,7 +409,7 @@ export function createFeedsRepo(deps: FeedsDeps) {
         // Whether the newest comment is mine decides what happens to a Done or parked item. When the poller could not
         // find out (a failed lookup, or past its per-poll cap) the growth is not taken in at all: the stored count stays
         // where it was, so the next poll sees the same growth and asks again. Treating "unknown" as "someone else"
-        // would bring the owner's items back on his own comments.
+        // would bring the owner's items back on their own comments.
         const unknown =
           counted &&
           u.sourceState === 'open' &&

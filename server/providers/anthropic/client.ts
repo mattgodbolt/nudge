@@ -122,7 +122,7 @@ const words = (s: string): string[] =>
     .filter(Boolean);
 
 /**
- * Did the owner say this note himself? A standing note reaches the classifier's prompt for every item (an item note,
+ * Did the owner say this note themselves? A standing note reaches the classifier's prompt for every item (an item note,
  * for its item), so one may only come from the command's own words, never from an item title the model was shown
  * (which a stranger may have written). The model tidies dictation, so most rather than all of the note's words must
  * appear in the command.

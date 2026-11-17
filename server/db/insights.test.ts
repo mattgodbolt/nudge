@@ -292,7 +292,7 @@ describe('what counts', () => {
     expect(r.responses.outcomes).toMatchObject({ n: 0, data: null });
     expect(r.predictions.agreement.n).toBe(0);
     expect(r.responses.replyBySource.n).toBe(0);
-    // The sentence still knows he cleared them.
+    // The sentence still knows the owner cleared them.
     expect(r.extras.busiestDay.data).toEqual({ day: '2026-11-15', actions: 1 });
   });
 
@@ -323,7 +323,7 @@ describe('what counts', () => {
     expect(leg?.[2]?.[4]).toBe(15); // skip × legacy
   });
 
-  it('outcomes: closed upstream before he got to it, or cleared by his own reply further down the thread', () => {
+  it('outcomes: closed upstream before the owner got to it, or cleared by their own reply further down the thread', () => {
     const f = fixture();
     for (let i = 0; i < 10; i++) {
       f.item(`u${i}`, { seen: ago(3) });
@@ -364,7 +364,7 @@ describe('what counts', () => {
     expect(f.report().rhythm.arrivals.n).toBe(2);
   });
 
-  it('leaves out archived and muted items, his own, and their events, everywhere', () => {
+  it('leaves out archived and muted items, your own, and their events, everywhere', () => {
     const f = fixture();
     f.item('muted', { seen: ago(1), muted: true, state: 'archived' });
     f.item('archived', { seen: ago(1), state: 'archived' });
@@ -494,10 +494,10 @@ describe('the cards', () => {
     ]);
   });
 
-  it('reply rate by thread size uses the size when he acted, and says how many were from today’s size', () => {
+  it('reply rate by thread size uses the size when the owner acted, and says how many were from today’s size', () => {
     const f = fixture();
     for (let i = 0; i < 10; i++) {
-      f.item(`s${i}`, { seen: ago(5), data: { comments: 50 } }); // big now, small when he acted
+      f.item(`s${i}`, { seen: ago(5), data: { comments: 50 } }); // big now, small when the owner acted
       f.replied(`s${i}`, ago(4), { threadSize: 2 });
     }
     for (let i = 0; i < 10; i++) {
@@ -604,7 +604,7 @@ describe('the cards', () => {
     expect(p.categories.data!.capturedSince).toBe(iso(ago(4)));
   });
 
-  it('sources: noisiest repos with the rest folded, regulars without bots, his accounts or the few', () => {
+  it('sources: noisiest repos with the rest folded, regulars without bots, your accounts or the few', () => {
     const f = fixture();
     f.db
       .prepare("INSERT INTO settings (key, value) VALUES ('github', ?)")
@@ -695,7 +695,7 @@ describe('the cards', () => {
     expect(e.polyglot.data).toEqual({ days: 1, last: '2026-11-15' });
   });
 
-  it('the sentence names what he did, when, the loudest source and the robot, once the numbers are there', () => {
+  it('the sentence names what the owner did, when, the loudest source and the robot, once the numbers are there', () => {
     const f = fixture();
     for (let i = 0; i < 60; i++) {
       f.item(`i${i}`, { seen: ago(2), container: i < 40 ? 'org/loud' : 'org/quiet' });

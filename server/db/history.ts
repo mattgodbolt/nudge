@@ -242,8 +242,8 @@ export function bulkIndex(
 }
 
 /**
- * How the owner resolved an item with this event, if it is a resolution of his: a reply (sent from Nudge, the
- * copy-and-open hand-off, or seen by GitHub sync from one of his accounts), a done, a dismissal, or a bare legacy done.
+ * How the owner resolved an item with this event, if it is a resolution of theirs: a reply (sent from Nudge, the
+ * copy-and-open hand-off, or seen by GitHub sync from one of their accounts), a done, a dismissal, or a bare legacy done.
  */
 export type Resolution = 'reply' | 'done' | 'legacy' | 'dismiss';
 export function resolutionOf(e: HistEvent): Resolution | null {

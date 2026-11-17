@@ -53,7 +53,9 @@ async function main(): Promise<void> {
   await page.screenshot({ path: `${out}/inbox.png` });
 
   await page.keyboard.press('r');
-  await page.getByTestId('composer').fill('Thanks! The code is linked in the description, and on Compiler Explorer.');
+  await page
+    .getByTestId('composer')
+    .fill('Thanks! The code is linked in the description, and in the online playground.');
   await page.waitForTimeout(300);
   await page.screenshot({ path: `${out}/youtube-reply.png` });
   await page.keyboard.press('Escape');

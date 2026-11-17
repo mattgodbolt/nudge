@@ -1,4 +1,4 @@
-// Print how the owner triages, from the item_events history. Counts and durations only, never item text (apart from his own latest notes):
+// Print how the owner triages, from the item_events history. Counts and durations only, never item text (apart from the owner's own latest notes):
 //
 //   npm run report:habits -- <db>
 //

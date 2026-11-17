@@ -36,7 +36,7 @@
   <p class="meta muted">
     Every new pull request and issue in a GitHub user's or organisation's repositories lands in your inbox, so you can
     press <kbd class="mono">e</kbd> on the ones that need nothing. Give <span class="mono">owner/repo</span> (e.g.
-    compiler-explorer/compiler-explorer) instead to follow just one repository, then widen to the whole owner later.
+    octocat/hello-world) instead to follow just one repository, then widen to the whole owner later.
     {#if !configured}
       No token yet: public repositories work, with a low rate limit. Add a read-only token in
       <a

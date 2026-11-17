@@ -6,7 +6,7 @@ export { LEGACY_DONE };
 /**
  * Read-only summary of how the owner triages, computed from item_events (and items for provider/kind/arrival time).
  * Counts and durations only: no item text, titles, authors or ids appear in the output. The one exception is the
- * latest few notes the owner made himself (clipped), which he asked to see.
+ * latest few notes the owner made themselves (clipped), which the owner asked to see.
  */
 export interface SuggestionHit {
   suggested: string;
@@ -35,8 +35,8 @@ export interface HabitsReport {
   };
   /**
    * What snoozing "until activity" is worth: snoozes by reason bucket (`none` = no bucket), how each until-activity
-   * snooze ended (something happened, the fallback date arrived with nothing, or the owner unsnoozed it himself),
-   * how long it took, and what he did next with items that came back with no activity.
+   * snooze ended (something happened, the fallback date arrived with nothing, or the owner unsnoozed it themselves),
+   * how long it took, and what the owner did next with items that came back with no activity.
    */
   snoozeBuckets: {
     byBucket: Record<string, number>;
@@ -50,9 +50,9 @@ export interface HabitsReport {
   passedOver: { pairs: number; laterActioned: number; left: number };
   /**
    * Suggestion hit rate: for each item that had a suggestion when the owner first dealt with it (done, replied or
-   * snoozed), what the suggestion was against what he did. `hits` counts the agreeing actions: reply is hit by
+   * snoozed), what the suggestion was against what the owner did. `hits` counts the agreeing actions: reply is hit by
    * replied; act by done or snooze; skip and spam by dismissed ("no action needed"). Items with no suggestion are not
-   * counted. A done from before dismissals existed does not say whether he meant "I did it" or "nothing needed", so
+   * counted. A done from before dismissals existed does not say whether the owner meant "I did it" or "nothing needed", so
    * for act, skip and spam it is reported as `ambiguous` and left out of total and hits.
    */
   suggestionHits: SuggestionHit[];
@@ -67,7 +67,7 @@ export interface HabitsReport {
     single: { total: number; hits: number; ambiguous: number };
     bulk: { total: number; hits: number; ambiguous: number };
   };
-  /** What the owner has told the assistant. The text of the latest few is included, clipped (he asked to see them). */
+  /** What the owner has told the assistant. The text of the latest few is included, clipped (the owner asked to see them). */
   notes: {
     total: number;
     standing: number;
@@ -142,7 +142,7 @@ export function habitsReport(db: Db): HabitsReport {
     byItemKind: {},
   };
   const snoozeAt: { item: string; at: number }[] = [];
-  // Until-activity bookkeeping: the item's latest user snooze, how its waits ended, and what he did after each fallback.
+  // Until-activity bookkeeping: the item's latest user snooze, how its waits ended, and what the owner did after each fallback.
   const lastSnooze = new Map<string, { at: number; untilActivity: boolean }>();
   const byBucket: Record<string, number> = {};
   let untilActivity = 0;
@@ -209,7 +209,7 @@ export function habitsReport(db: Db): HabitsReport {
               : 'other',
       });
       if (isSnooze && !r.to_value && meta.cause === 'manual') {
-        // He ended a wait for activity himself.
+        // The owner ended a wait for activity themselves.
         const last = lastSnooze.get(r.item_id);
         if (last?.untilActivity) {
           wakeCauses.manual++;
@@ -324,7 +324,7 @@ export function habitsReport(db: Db): HabitsReport {
     h.byTurn[j.turn] = (h.byTurn[j.turn] ?? 0) + 1;
     h.byAction[j.action] = (h.byAction[j.action] ?? 0) + 1;
     hitsBy[side].set(j.suggested, h);
-    // Only a reply suggestion is certainly missed by a bare done (he did not reply); the rest could have been right.
+    // Only a reply suggestion is certainly missed by a bare done (the owner did not reply); the rest could have been right.
     if (j.action === LEGACY_DONE && j.suggested !== 'reply') {
       h.ambiguous++;
       summary[side].ambiguous++;
@@ -403,7 +403,7 @@ function hitLines(out: string[], hits: SuggestionHit[]): void {
     out.push(`    suggested ${h.suggested}: ${pct(h.hits, h.total)} agreed (${acts})`);
     if (h.ambiguous > 0) {
       out.push(
-        `      ${h.ambiguous} more not counted: ${LEGACY_DONE}, so not known whether he meant done or no action`,
+        `      ${h.ambiguous} more not counted: ${LEGACY_DONE}, so not known whether you meant done or no action`,
       );
     }
     const turns = Object.entries(h.byTurn)
@@ -456,7 +456,7 @@ export function formatHabits(r: HabitsReport): string {
     }; until activity: ${sb.untilActivity}`,
     `  how until-activity snoozes ended (${wcTotal}): activity ${pct(wc.activity, wcTotal)}, fallback with no activity ${pct(wc.fallback, wcTotal)}, unsnoozed by hand ${pct(wc.manual, wcTotal)}`,
     `  median time to wake: activity ${fmtDuration(sb.medianMsToWake.activity)}, fallback ${fmtDuration(sb.medianMsToWake.fallback)}, manual ${fmtDuration(sb.medianMsToWake.manual)}`,
-    `  after a fallback wake he: ${Object.entries(sb.afterFallback)
+    `  after a fallback wake you: ${Object.entries(sb.afterFallback)
       .map(([k, n]) => `${k} ${n}`)
       .join(', ')}`,
   );

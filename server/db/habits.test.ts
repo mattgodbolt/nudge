@@ -173,7 +173,7 @@ describe('snoozing until activity', () => {
         source: 'auto',
         meta: { reason: 'wake', ...meta },
       });
-    // a: waited on them, activity after 60 min. b: waited on them, nothing for 7 days, then he marked it done.
+    // a: waited on them, activity after 60 min. b: waited on them, nothing for 7 days, then the owner marked it done.
     // c: waited on merge, nothing, then dismissed. d: in flight, nothing, snoozed again. e: until activity, unsnoozed by hand.
     snooze('a', 0, { bucket: 'waiting_on_them', untilActivity: true });
     wake('a', 60, { cause: 'activity', untilActivity: true });
@@ -208,7 +208,7 @@ describe('snoozing until activity', () => {
     return habitsReport(db);
   }
 
-  it('counts snoozes by bucket, how the waits ended, how long they took, and what he did after a fallback', () => {
+  it('counts snoozes by bucket, how the waits ended, how long they took, and what the owner did after a fallback', () => {
     const sb = world().snoozeBuckets;
     expect(sb.byBucket).toEqual({ waiting_on_them: 2, waiting_on_merge: 1, in_flight: 2, none: 1 });
     expect(sb.untilActivity).toBe(6);
@@ -228,7 +228,7 @@ describe('snoozing until activity', () => {
       'activity 20.0% (1/5), fallback with no activity 60.0% (3/5), unsnoozed by hand 20.0% (1/5)',
     );
     expect(text).toContain('median time to wake: activity 1.0h, fallback 7.0d, manual 30.0m');
-    expect(text).toContain('after a fallback wake he: done 1, dismissed 1, resnoozed 1');
+    expect(text).toContain('after a fallback wake you: done 1, dismissed 1, resnoozed 1');
     expect(text).not.toContain('SECRET');
   });
 

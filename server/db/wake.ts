@@ -12,7 +12,7 @@ import type { Events } from './events.js';
  * activity: the thread has moved since, so "no activity" would no longer be true.
  *
  * `keepInbox` makes the item stay in the inbox against the sync's own rules (used when the item was closed upstream:
- * the owner parked it on purpose, so he should see what happened rather than have it filed away as resolved).
+ * the owner parked it on purpose, so they should see what happened rather than have it filed away as resolved).
  * Returns the ids that woke.
  */
 export function wakeOnActivity(

@@ -117,8 +117,8 @@ export function registerTodoRoutes(app: FastifyInstance, deps: AppDeps): void {
       } else if (a.type === 'note') {
         // Checked here too, so no LlmClient can store words the owner never said.
         if (!groundedInCommand(a.text, text)) continue;
-        // What he said about a suggestion or an item is kept whatever else happens. "That" is the item he is on, or the
-        // one he has just dealt with (the selection has usually moved on by then).
+        // What the owner said about a suggestion or an item is kept whatever else happens. "That" is the item they are
+        // on, or the one they have just dealt with (the selection has usually moved on by then).
         const latest = repo.notes.recentAction();
         const itemId =
           a.about === 'last_action'

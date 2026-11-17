@@ -334,7 +334,7 @@ Two feed kinds, because GitHub has two kinds of attention:
    - into the inbox: `review_requested, mention, team_mention, assign, author` (activity on my threads), `comment`,
      `ci_activity`, `security_alert`, `approval_requested`;
    - recorded but archived (search and label folders only, never in the inbox): `subscribed` (watching
-     compiler-explorer would otherwise flood the inbox), `state_change` (my own action);
+     a busy organisation would otherwise flood the inbox), `state_change` (my own action);
    - per-feed config: a reason allow-list and repo/owner allow/deny lists. This is how "my projects" versus
      "another organisation" works: one token, filtered feeds, or two feeds over the same token with different owner
      filters, each with its own sidebar entry and count.

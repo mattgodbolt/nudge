@@ -7,7 +7,7 @@
 export const SNOOZE_BUCKETS = ['waiting_on_them', 'waiting_on_merge', 'in_flight', 'lower_priority'] as const;
 export type SnoozeBucket = (typeof SNOOZE_BUCKETS)[number];
 
-/** What ended a snooze that was waiting on activity. `manual` = the owner unsnoozed it himself. */
+/** What ended a snooze that was waiting on activity. `manual` = the owner unsnoozed it themselves. */
 export const WAKE_CAUSES = ['activity', 'fallback', 'manual'] as const;
 export type WakeCause = (typeof WAKE_CAUSES)[number];
 

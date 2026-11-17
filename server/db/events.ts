@@ -41,7 +41,7 @@ import { ACTION_OF } from './suggestions.js';
  *  - open:         the owner opened the item's detail. to_value is the view it was opened from; meta: { input,
  *                  dwellMs? } where dwellMs is how long it stayed open (sent on close, dropped under 300 ms).
  *
- * A user state event to `done` carries `meta.reason`: 'done' (he dealt with it) or 'no_action' ("no action needed", a
+ * A user state event to `done` carries `meta.reason`: 'done' (the owner dealt with it) or 'no_action' ("no action needed", a
  * dismissal; the stored state is still `done`, with items.done_reason = 'no_action'). A done event with no `reason` was
  * written before dismissals existed and may have meant either. The decision event's `to` is 'dismissed' for the latter.
  *
@@ -51,7 +51,7 @@ import { ACTION_OF } from './suggestions.js';
  * written since 2026-11-16, absent before). Items with no suggestion, or one flagged as an injection attempt, get none
  * of these keys.
  *
- * The owner's state and reply events also carry `threadSize` (since 2026-11-16): the conversation's size when he acted
+ * The owner's state and reply events also carry `threadSize` (since 2026-11-16): the conversation's size when the owner acted
  * (a GitHub item's `data.comments`, a YouTube thread's total_reply_count; absent for todos and unknown items).
  *
  * Bulk actions: items changed by one triage/snooze action share `meta.actionId` on their state/snooze rows, and the
@@ -154,7 +154,7 @@ export function createEvents(db: Db): Events {
   }
 
   /**
-   * How big the item's conversation was at the moment he acted: a GitHub item's comment count, or a YouTube thread's
+   * How big the item's conversation was at the moment the owner acted: a GitHub item's comment count, or a YouTube thread's
    * reply count. Only "current size" is stored anywhere else, which drifts after the fact. Todos have no thread.
    */
   function threadSizeMeta(itemId: string): Record<string, unknown> {

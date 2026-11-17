@@ -184,7 +184,7 @@ export function createSuggestions(db: Db, clock: () => Date = () => new Date()):
       // Only an item that came back from a snooze: an old note on one that was never snoozed again is not news.
       const note =
         typeof r.snooze_why === 'string' && r.snooze_why && r.woke_at ? { snoozeNote: cap(r.snooze_why, 200) } : {};
-      // The bucket rides along with the note, or alone when he gave no words.
+      // The bucket rides along with the note, or alone when the owner gave no words.
       const bucket = r.woke_at && typeof r.snooze_bucket === 'string' ? r.snooze_bucket : null;
       const waited = !!r.woke_at && r.snooze_until_activity === 1;
       const snooze =
