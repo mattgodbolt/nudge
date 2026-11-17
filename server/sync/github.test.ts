@@ -5,30 +5,13 @@ import { createGithubPoller } from './github.js';
 import { createRepo } from '../db/repo.js';
 import { openDb } from '../db/db.js';
 import { makeBus, makeClock } from './test-helpers.js';
+import { githubPr, orgFeed, prId } from '../db/test-fixtures.js';
 
 let clock = makeClock(new Date('2026-11-08T12:00:00.000Z'));
 const T = (min: number) => new Date(clock.now().getTime() + min * 60_000).toISOString();
 
-const item = (n: number, over: Partial<GithubItemUpsert> = {}): GithubItemUpsert => ({
-  id: githubItemId('org', 'app', n),
-  kind: 'pr',
-  repo: 'org/app',
-  number: n,
-  title: `Change ${n}`,
-  author: 'carol',
-  authorAvatarUrl: null,
-  authorType: 'User',
-  association: 'CONTRIBUTOR',
-  bodyPlain: '',
-  url: `https://github.com/org/app/pull/${n}`,
-  createdAt: T(10),
-  updatedAt: T(10),
-  sourceState: 'open',
-  draft: false,
-  comments: 0,
-  labels: [],
-  ...over,
-});
+const item = (n: number, over: Partial<GithubItemUpsert> = {}): GithubItemUpsert =>
+  githubPr(n, { title: `Change ${n}`, bodyPlain: '', createdAt: T(10), updatedAt: T(10), ...over });
 
 interface Script {
   pages: GithubItemUpsert[][];
@@ -130,7 +113,7 @@ describe('GitHub poller', () => {
 
   it('first import of "everything" asks for open items only', async () => {
     repo.deleteFeed(feedId);
-    feedId = repo.addFeed({ owner: 'org', prs: true, issues: true, importMode: 'all' }).id;
+    feedId = orgFeed(repo).id;
     await poller().pollNow();
     expect(script.queries[0]).toMatch(/is:pr updated:>=1970-01-01T00:00:00Z is:open$/);
     expect(script.queries[1]).toMatch(/is:issue updated:>=1970-01-01T00:00:00Z is:open$/);
@@ -177,7 +160,7 @@ describe('GitHub poller', () => {
     script.pages = [[item(1)]];
     const p = poller();
     await p.pollNow();
-    repo.triage([githubItemId('org', 'app', 1)], 'done');
+    repo.triage([prId(1)], 'done');
     repo.updateSettings({ github: { token: null, myAccounts: ['Me-Bot'] } });
 
     script.pages = [[item(1, { comments: 2 })]];
@@ -189,13 +172,13 @@ describe('GitHub poller', () => {
     script.commenter = 'someone-else';
     await p.pollNow();
     expect(repo.listInbox({ view: 'inbox' }).total).toBe(1);
-    expect(bus.of('inbox.changed').at(-1)!.addedIds).toEqual([githubItemId('org', 'app', 1)]);
+    expect(bus.of('inbox.changed').at(-1)!.addedIds).toEqual([prId(1)]);
     // The lookup the poller already makes names the commenter for the chip, at no extra cost.
     expect(repo.listInbox({ view: 'inbox' }).items[0]!.item.github?.lastCommenter).toBe('someone-else');
   });
 
   it('wakes an item parked until activity when someone else comments, but not for my own comment', async () => {
-    const id = githubItemId('org', 'app', 1);
+    const id = prId(1);
     script.pages = [[item(1)]];
     const p = poller();
     await p.pollNow();
@@ -232,7 +215,7 @@ describe('GitHub poller', () => {
       maxCommenterLookups: 1,
     });
     await p.pollNow();
-    const ids = [1, 2, 3].map((n) => githubItemId('org', 'app', n));
+    const ids = [1, 2, 3].map((n) => prId(n));
     repo.snooze([ids[0]!, ids[1]!], T(7 * 24 * 60), null, { untilActivity: true });
     repo.snooze([ids[2]!], T(7 * 24 * 60)); // an ordinary timed snooze needs no lookup
     script.pages = [[item(1, { comments: 1 }), item(2, { comments: 1 }), item(3, { comments: 1 })]];
@@ -335,7 +318,7 @@ describe('GitHub poller: a busy window', () => {
 });
 
 describe('GitHub poller: was the newest comment mine?', () => {
-  const ID = githubItemId('org', 'app', 1);
+  const ID = prId(1);
   async function doneWithComments(p: ReturnType<typeof poller>) {
     script.pages = [[item(1)]];
     await p.pollNow();
@@ -405,7 +388,7 @@ describe('GitHub poller: was the newest comment mine?', () => {
     });
     script.pages = [[item(1), item(2)]];
     await p.pollNow();
-    const ids = [1, 2].map((n) => githubItemId('org', 'app', n));
+    const ids = [1, 2].map((n) => prId(n));
     repo.triage(ids, 'done');
     repo.updateSettings({ github: { token: null, myAccounts: ['me'] } });
     script.pages = [[item(1, { comments: 1 }), item(2, { comments: 1 })]];
@@ -441,7 +424,7 @@ describe('GitHub poller: overlapping ticks', () => {
 });
 
 describe('GitHub poller: lookups that outlive the search window', () => {
-  const ids = [1, 2, 3].map((n) => githubItemId('org', 'app', n));
+  const ids = [1, 2, 3].map((n) => prId(n));
   async function threeDoneItems(over: Parameters<typeof poller>[0] = {}, asked: number[] = []) {
     const p = poller({
       client: { ...fakeClient(script), latestCommenter: async (_r: string, n: number) => (asked.push(n), 'carol') },
@@ -519,7 +502,7 @@ describe('GitHub poller: lookups that outlive the search window', () => {
 describe('GitHub poller: reviews and inline comments on a pull request', () => {
   // GitHub's search `comments` count leaves reviews and inline review comments out, so a PR that moved while Done or
   // parked is asked about its reviews (inline comments arrive as review envelopes) once per move.
-  const ID = githubItemId('org', 'app', 1);
+  const ID = prId(1);
   type Review = { login: string; type: string | null; at: string };
   let reviews: Review[];
   let asked: { n: number; since: string }[];
@@ -601,7 +584,7 @@ describe('GitHub poller: reviews and inline comments on a pull request', () => {
   it('makes no extra request for an unchanged PR, an issue, an inbox PR or a plain Done PR without a move', async () => {
     script.pages = [[pr(), item(2, { kind: 'issue', updatedAt: at(10) }), item(3, { updatedAt: at(10) })]];
     await p().pollNow();
-    repo.triage([ID, githubItemId('org', 'app', 2)], 'done');
+    repo.triage([ID, prId(2)], 'done');
     clock.advance(30 * 60_000);
     reviews = [{ login: 'dave', type: 'User', at: at(25) }];
     // 1: Done but not updated since last seen. 2: an issue that moved (issues keep the comment rule only).
@@ -610,7 +593,7 @@ describe('GitHub poller: reviews and inline comments on a pull request', () => {
     await p().pollNow();
     expect(asked).toEqual([]);
     expect(repo.getItem(ID)!.state).toBe('done');
-    expect(repo.getItem(githubItemId('org', 'app', 2))!.state).toBe('done');
+    expect(repo.getItem(prId(2))!.state).toBe('done');
   });
 
   it('does not spend a review lookup when a new comment from someone else already brings it back', async () => {
@@ -643,7 +626,7 @@ describe('GitHub poller: reviews and inline comments on a pull request', () => {
   it('shares the per-poll lookup cap with comment lookups', async () => {
     script.pages = [[pr(), item(2, { updatedAt: at(10) })]];
     await p().pollNow();
-    repo.triage([ID, githubItemId('org', 'app', 2)], 'done');
+    repo.triage([ID, prId(2)], 'done');
     clock.advance(30 * 60_000);
     const capped = createGithubPoller({
       repo,

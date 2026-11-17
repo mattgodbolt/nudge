@@ -6,6 +6,7 @@ import { githubItemId } from './feeds.js';
 import { openDb, migrate, type Db } from './db.js';
 import { MIGRATIONS } from './migrations.js';
 import { createRepo } from './repo.js';
+import { githubPr, orgFeed, prId } from './test-fixtures.js';
 
 const OWN = 'UCown';
 let nowMs = Date.parse('2026-11-08T12:00:00.000Z');
@@ -321,8 +322,8 @@ describe('thread size at the moment the owner acted (threadSize)', () => {
   });
 
   it('a GitHub item carries its comment count; snooze, sync and auto events do not get one', () => {
-    const feedId = repo.addFeed({ owner: 'org', prs: true, issues: true, importMode: 'all' }).id;
-    const gid = githubItemId('org', 'app', 7);
+    const feedId = orgFeed(repo).id;
+    const gid = prId(7);
     repo.upsertGithubItems(feedId, [
       {
         id: gid,
@@ -396,27 +397,15 @@ describe('failed changes write no events', () => {
 
 describe('GitHub sync events', () => {
   let feedId: number;
-  const up = (n: number, over: Partial<GithubItemUpsert> = {}): GithubItemUpsert => ({
-    id: githubItemId('org', 'app', n),
-    kind: 'pr',
-    repo: 'org/app',
-    number: n,
-    title: `Change ${n}`,
-    author: 'carol',
-    authorAvatarUrl: null,
-    authorType: 'User',
-    association: 'CONTRIBUTOR',
-    bodyPlain: `Body of ${n}`,
-    url: `https://github.com/org/app/pull/${n}`,
-    createdAt: new Date(nowMs + HOUR).toISOString(),
-    updatedAt: new Date(nowMs + HOUR).toISOString(),
-    sourceState: 'open',
-    draft: false,
-    comments: 0,
-    labels: [],
-    ...over,
-  });
-  const id1 = githubItemId('org', 'app', 1);
+  const up = (n: number, over: Partial<GithubItemUpsert> = {}): GithubItemUpsert =>
+    githubPr(n, {
+      title: `Change ${n}`,
+      bodyPlain: `Body of ${n}`,
+      createdAt: new Date(nowMs + HOUR).toISOString(),
+      updatedAt: new Date(nowMs + HOUR).toISOString(),
+      ...over,
+    });
+  const id1 = prId(1);
 
   beforeEach(() => {
     repo = createRepo(db, clock);
@@ -517,7 +506,7 @@ describe('mute events', () => {
   });
 
   it('an item rule is recorded against the item', () => {
-    const id = githubItemId('org', 'app', 7);
+    const id = prId(7);
     repo.upsertGithubItems(feedId, [
       {
         id,
@@ -756,7 +745,7 @@ describe('migration 009 (item_events)', () => {
 });
 
 describe('mergeSnoozeMeta', () => {
-  const id1 = githubItemId('org', 'app', 1);
+  const id1 = prId(1);
   beforeEach(() => {
     repo = createRepo(db, clock);
     const feedId = repo.addFeed({ owner: 'org', prs: true, issues: true, importMode: 'none' }).id;

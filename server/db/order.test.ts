@@ -4,30 +4,14 @@ import { makeClock } from '../sync/test-helpers.js';
 import { githubItemId } from './feeds.js';
 import { openDb } from './db.js';
 import { createRepo } from './repo.js';
+import { githubPr, orgFeed, prId } from './test-fixtures.js';
 
 const clock = makeClock(new Date('2026-11-08T12:00:00.000Z'));
 let repo: Repo;
 let feedId: number;
 
-const pr = (n: number, createdAt: string): GithubItemUpsert => ({
-  id: githubItemId('org', 'app', n),
-  kind: 'pr',
-  repo: 'org/app',
-  number: n,
-  title: `PR ${n}`,
-  author: 'carol',
-  authorAvatarUrl: null,
-  authorType: 'User',
-  association: 'CONTRIBUTOR',
-  bodyPlain: '',
-  url: `https://github.com/org/app/pull/${n}`,
-  createdAt,
-  updatedAt: createdAt,
-  sourceState: 'open',
-  draft: false,
-  comments: 0,
-  labels: [],
-});
+const pr = (n: number, createdAt: string): GithubItemUpsert =>
+  githubPr(n, { bodyPlain: '', createdAt, updatedAt: createdAt });
 
 /** Page through a whole list `size` at a time, as the web app does, and return the titles in order. */
 function walk(order: 'newest' | 'oldest' | 'arrived' | 'source', size: number): string[] {
@@ -44,7 +28,7 @@ function walk(order: 'newest' | 'oldest' | 'arrived' | 'source', size: number): 
 
 beforeEach(() => {
   repo = createRepo(openDb(':memory:'), clock.now);
-  feedId = repo.addFeed({ owner: 'org', prs: true, issues: true, importMode: 'all' }).id;
+  feedId = orgFeed(repo).id;
   // Arrival order differs from age: PR 1 is the oldest PR but arrives last; the todo arrives in between.
   repo.upsertGithubItems(feedId, [pr(2, '2026-11-02T00:00:00.000Z')]);
   clock.advance(60_000);
@@ -81,10 +65,10 @@ describe('inbox order', () => {
 
 describe('inbox by ids', () => {
   it('returns just those ids that still match the view and filters, so a client can patch rows it has loaded', () => {
-    const ids = [githubItemId('org', 'app', 1), githubItemId('org', 'app', 3), 'no-such-item'];
+    const ids = [prId(1), prId(3), 'no-such-item'];
     const titles = (q: Parameters<Repo['listInbox']>[0]) => repo.listInbox(q).items.map((i) => i.item.title);
     expect(titles({ view: 'inbox', ids })).toEqual(['PR 3', 'PR 1']);
-    repo.triage([githubItemId('org', 'app', 3)], 'done');
+    repo.triage([prId(3)], 'done');
     expect(titles({ view: 'inbox', ids })).toEqual(['PR 1']);
     expect(titles({ view: 'done', ids })).toEqual(['PR 3']);
     expect(titles({ view: 'inbox', ids, kind: 'issue' })).toEqual([]);

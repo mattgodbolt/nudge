@@ -3,31 +3,20 @@ import type { GithubItemUpsert, Repo } from '../contracts.js';
 import { githubItemId } from './feeds.js';
 import { createRepo } from './repo.js';
 import { openDb } from './db.js';
+import { githubPr, prId } from './test-fixtures.js';
 
 let now = new Date('2026-11-08T12:00:00.000Z');
 let repo: Repo;
 let feedId: number;
 
-const up = (n: number, over: Partial<GithubItemUpsert> = {}): GithubItemUpsert => ({
-  id: githubItemId('org', 'app', n),
-  kind: 'pr',
-  repo: 'org/app',
-  number: n,
-  title: `Change ${n}`,
-  author: 'carol',
-  authorAvatarUrl: null,
-  authorType: 'User',
-  association: 'CONTRIBUTOR',
-  bodyPlain: `Body of ${n}`,
-  url: `https://github.com/org/app/pull/${n}`,
-  createdAt: '2026-11-08T11:00:00.000Z',
-  updatedAt: '2026-11-08T11:00:00.000Z',
-  sourceState: 'open',
-  draft: false,
-  comments: 0,
-  labels: [],
-  ...over,
-});
+const up = (n: number, over: Partial<GithubItemUpsert> = {}): GithubItemUpsert =>
+  githubPr(n, {
+    title: `Change ${n}`,
+    bodyPlain: `Body of ${n}`,
+    createdAt: '2026-11-08T11:00:00.000Z',
+    updatedAt: '2026-11-08T11:00:00.000Z',
+    ...over,
+  });
 const state = (id: string) => repo.listInbox({ view: 'all' }).items.find((i) => i.item.id === id)?.comment.state;
 const inbox = () => repo.listInbox({ view: 'inbox' }).items.map((i) => i.item.id);
 
@@ -44,7 +33,7 @@ describe('arrival rules', () => {
     // Created before the feed was added would be archived, so make the baseline older for this one.
     repo.updateFeed(feedId, {});
     const r = repo.upsertGithubItems(feedId, [up(1, { createdAt: '2026-11-08T12:30:00.000Z' })]);
-    expect(r.added).toEqual([githubItemId('org', 'app', 1)]);
+    expect(r.added).toEqual([prId(1)]);
     const [row] = repo.listInbox({ view: 'inbox' }).items;
     expect(row!.item).toMatchObject({
       provider: 'github',
@@ -71,7 +60,7 @@ describe('arrival rules', () => {
 
   it('archives items older than the feed baseline, so only what arrives from now on is news', () => {
     repo.upsertGithubItems(feedId, [up(1, { createdAt: '2026-11-01T00:00:00.000Z' })]);
-    expect(state(githubItemId('org', 'app', 1))).toBe('archived');
+    expect(state(prId(1))).toBe('archived');
     expect(inbox()).toEqual([]);
   });
 
@@ -81,8 +70,8 @@ describe('arrival rules', () => {
       up(1, { author: 'me', createdAt: '2026-11-08T12:10:00.000Z' }),
       up(2, { sourceState: 'merged', createdAt: '2026-11-08T12:10:00.000Z' }),
     ]);
-    expect(state(githubItemId('org', 'app', 1))).toBeUndefined(); // 'own' never appears in "all"
-    expect(state(githubItemId('org', 'app', 2))).toBe('resolved');
+    expect(state(prId(1))).toBeUndefined(); // 'own' never appears in "all"
+    expect(state(prId(2))).toBe('resolved');
     expect(repo.counts().done).toBe(1);
   });
 
@@ -253,7 +242,7 @@ describe('mute rules', () => {
       fresh(3, { author: 'dependabot[bot]', authorType: 'Bot' }),
       fresh(4),
     ]);
-    expect(inbox()).toEqual([githubItemId('org', 'app', 4)]);
+    expect(inbox()).toEqual([prId(4)]);
     const archived = repo.listInbox({ view: 'all', q: 'Change' }).items.filter((i) => i.comment.state === 'archived');
     expect(archived).toHaveLength(3);
     expect(archived.every((i) => i.item.muted && i.item.reason === 'muted')).toBe(true);
@@ -262,11 +251,11 @@ describe('mute rules', () => {
   it('a new rule reports what it covers in the inbox, and deleting it stops muting new arrivals', () => {
     repo.upsertGithubItems(feedId, [fresh(1, { author: 'dave' }), fresh(2)]);
     const { rule, affectedIds } = repo.addMuteRule('author', 'dave');
-    expect(affectedIds).toEqual([githubItemId('org', 'app', 1)]);
+    expect(affectedIds).toEqual([prId(1)]);
     expect(repo.listMuteRules()).toEqual([expect.objectContaining({ id: rule.id, kind: 'author', value: 'dave' })]);
     expect(repo.deleteMuteRule(rule.id)).toBe(true);
     repo.upsertGithubItems(feedId, [fresh(3, { author: 'dave' })]);
-    expect(inbox()).toContain(githubItemId('org', 'app', 3));
+    expect(inbox()).toContain(prId(3));
   });
 
   it('an owner rule mutes every repository of that organisation, whatever the case, and nothing else', () => {
@@ -280,7 +269,7 @@ describe('mute rules', () => {
     ]);
     const { affectedIds } = repo.addMuteRule('owner', 'ORG');
     // Existing items are covered at once; "org-two" and "orgs" merely start with the same letters.
-    expect(affectedIds.sort()).toEqual([githubItemId('org', 'app', 1), githubItemId('org', 'tools', 2)].sort());
+    expect(affectedIds.sort()).toEqual([prId(1), githubItemId('org', 'tools', 2)].sort());
     expect(repo.listMuteRules()).toEqual([expect.objectContaining({ kind: 'owner', value: 'ORG' })]);
     // And new arrivals land archived.
     repo.upsertGithubItems(feedId, [other(5, 'org', 'brand-new'), other(6, 'orgs', 'app')]);
@@ -292,14 +281,14 @@ describe('mute rules', () => {
     const rule = repo.listMuteRules()[0]!;
     expect(repo.deleteMuteRule(rule.id)).toBe(true);
     repo.upsertGithubItems(feedId, [other(7, 'org', 'app')]);
-    expect(inbox()).toContain(githubItemId('org', 'app', 7));
+    expect(inbox()).toContain(prId(7));
   });
 
   it('existing repo, author and bots rules are unchanged by owner rules', () => {
     repo.addMuteRule('owner', 'elsewhere');
     repo.addMuteRule('author', 'dave');
     repo.upsertGithubItems(feedId, [fresh(1, { author: 'dave' }), fresh(2)]);
-    expect(inbox()).toEqual([githubItemId('org', 'app', 2)]);
+    expect(inbox()).toEqual([prId(2)]);
   });
 
   it('adding the same rule twice keeps one', () => {
@@ -399,7 +388,7 @@ describe('repo feeds', () => {
   it('a repo feed keeps its own items, and removing it removes them', () => {
     const r = repo.addFeed({ owner: 'org/app', prs: true, issues: true, importMode: 'none' });
     repo.upsertGithubItems(r.id, [inRepo('app', 1)]);
-    expect(feedOf(githubItemId('org', 'app', 1))).toBe(r.id);
+    expect(feedOf(prId(1))).toBe(r.id);
     expect(repo.deleteFeed(r.id)).toBe(true);
     expect(repo.listInbox({ view: 'all' }).total).toBe(0);
   });
@@ -408,7 +397,7 @@ describe('repo feeds', () => {
     const r = repo.addFeed({ owner: 'org/app', prs: true, issues: true, importMode: 'none' });
     repo.upsertGithubItems(r.id, [inRepo('app', 1), inRepo('other', 2)]);
     const o = repo.addFeed({ owner: 'ORG', prs: true, issues: true, importMode: 'none' });
-    expect(feedOf(githubItemId('org', 'app', 1))).toBe(o.id);
+    expect(feedOf(prId(1))).toBe(o.id);
     expect(feedOf(githubItemId('org', 'other', 2))).toBe(o.id);
     expect(repo.deleteFeed(r.id)).toBe(true);
     expect(repo.listInbox({ view: 'all' }).total).toBe(2);
@@ -419,7 +408,7 @@ describe('repo feeds', () => {
     const r = repo.addFeed({ owner: 'org/app', prs: true, issues: true, importMode: 'none' });
     const o = repo.addFeed({ owner: 'org', prs: true, issues: true, importMode: 'none' });
     repo.upsertGithubItems(r.id, [inRepo('app', 3)]);
-    expect(feedOf(githubItemId('org', 'app', 3))).toBe(o.id);
+    expect(feedOf(prId(3))).toBe(o.id);
     repo.deleteFeed(r.id);
     expect(repo.listInbox({ view: 'all' }).total).toBe(1);
   });
@@ -429,7 +418,7 @@ describe('repo feeds', () => {
     const r = repo.addFeed({ owner: 'org/app', prs: true, issues: true, importMode: 'none' });
     repo.upsertGithubItems(o.id, [inRepo('app', 1), inRepo('other', 2)]);
     repo.deleteFeed(o.id);
-    expect(feedOf(githubItemId('org', 'app', 1))).toBe(r.id);
-    expect(repo.listInbox({ view: 'all' }).items.map((i) => i.item.id)).toEqual([githubItemId('org', 'app', 1)]);
+    expect(feedOf(prId(1))).toBe(r.id);
+    expect(repo.listInbox({ view: 'all' }).items.map((i) => i.item.id)).toEqual([prId(1)]);
   });
 });
