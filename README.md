@@ -486,4 +486,5 @@ The app was called Youtubey. Existing setups keep working: `YOUTUBEY_*` environm
 
 ## License
 
-[MIT](LICENSE).
+[MIT](LICENSE). Some of the icons are copied or adapted from [Feather](https://github.com/feathericons/feather)
+(MIT, Cole Bemis): see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

@@ -32,6 +32,7 @@
     | 'chevron-up'
     | 'chevron-down';
   let { name, size = 16 }: { name: Name; size?: number } = $props();
+  // Several of these are copied or adapted from Feather Icons (MIT, Cole Bemis): see THIRD_PARTY_NOTICES.md.
   const paths: Record<Name, string> = {
     // A circle struck through: "nothing here for me". Deliberately unlike the check marks of Done and Replied.
     dismiss: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM5.6 5.6l12.8 12.8',
