@@ -5,6 +5,9 @@
 # Every failure exits non-zero with an ERROR line in the log (data/update.log under cron); unexpected ones are caught by
 # the ERR trap. deploy/test-update.sh rehearses all of this against fake git remotes and a fake docker.
 #
+# The build is stopped if it prints nothing for NUDGE_BUILD_STALL_SECS (default 300) or runs past NUDGE_BUILD_TIMEOUT
+# (default 25m, any `timeout` duration). Either is retried once; only then is the commit marked bad.
+#
 # The body is a function called on the last line, so bash has read all of it before `git merge` replaces this file.
 set -Eeuo pipefail
 
@@ -51,11 +54,21 @@ main() {
   fi
 
   docker tag nudge:latest nudge:prev 2>/dev/null || true
-  # A stalled download (e.g. compiling better-sqlite3) must not block every later update, so the build has a deadline.
   # The image has no .git, so hand it the commit for Settings > About.
   GIT_SHA=$(git rev-parse --short=8 HEAD)
   export GIT_SHA
-  if ! timeout 25m docker compose build; then
+  # Builds on the deploy host occasionally sit idle until killed (#29). That is transient, so a stalled or timed-out
+  # build is tried once more before the commit is marked bad. A build or test that really fails exits by itself, and
+  # is not retried: it would fail the same way again.
+  local build_rc
+  build_rc=0
+  build_image 1 || build_rc=$?
+  if [ "$build_rc" = 124 ]; then
+    log "WARN: build stalled or timed out for ${remote:0:8}; retrying once"
+    build_rc=0
+    build_image 2 || build_rc=$?
+  fi
+  if [ "$build_rc" != 0 ]; then
     log "ERROR: build or tests FAILED (or timed out) for ${remote:0:8}; keeping the running version"
     echo "$remote" > data/.failed-sha
     git reset -q --hard "$local_sha"
@@ -102,6 +115,49 @@ main() {
     log "ERROR: rolled-back build is not healthy and there is no pre-update snapshot; check data/backups"
   fi
   exit 1
+}
+
+# build_image <attempt>: `docker compose build` with a deadline and a stall watchdog. Its output goes to data/build.log
+# (kept, so a hang leaves evidence) and then into this log. Returns 124 if the build stalled or hit the deadline,
+# otherwise the build's own exit status.
+build_image() {
+  local out=data/build.log stall=${NUDGE_BUILD_STALL_SECS:-300} pid size last_size=-1 last_change=$SECONDS rc=0
+  local stalled=""
+  log "building (attempt $1; output in $out)"
+  # timeout puts itself and everything under it in a process group of its own (pgid = its pid), which is what lets
+  # stop_build reach docker and its children; -k makes the deadline escalate to SIGKILL as well.
+  timeout -k 1m "${NUDGE_BUILD_TIMEOUT:-25m}" docker compose build > "$out" 2>&1 < /dev/null &
+  pid=$!
+  while kill -0 "$pid" 2> /dev/null; do
+    size=$(stat -c %s "$out" 2> /dev/null || echo 0)
+    if [ "$size" != "$last_size" ]; then
+      last_size=$size
+      last_change=$SECONDS
+    elif [ $((SECONDS - last_change)) -ge "$stall" ]; then
+      log "WARN: no build output for ${stall}s; stopping the build"
+      stalled=1
+      stop_build "$pid"
+      break
+    fi
+    sleep 5
+  done
+  wait "$pid" || rc=$?
+  cat "$out" 2> /dev/null || true
+  [ -n "$stalled" ] && return 124
+  # 137: the deadline's TERM was ignored and -k had to KILL it, which is a hang too.
+  [ "$rc" = 137 ] && return 124
+  return "$rc"
+}
+
+# stop_build <pid>: TERM the build's process group, then KILL it if it is still there a minute later.
+stop_build() {
+  kill -TERM -- "-$1" 2> /dev/null || kill -TERM "$1" 2> /dev/null || true
+  for _ in $(seq 1 12); do
+    kill -0 "$1" 2> /dev/null || return 0
+    sleep 5
+  done
+  log "WARN: the build ignored SIGTERM; killing it"
+  kill -KILL -- "-$1" 2> /dev/null || kill -KILL "$1" 2> /dev/null || true
 }
 
 # Every deploy leaves the previous `latest` untagged, plus build cache; without this the disk fills up eventually.
