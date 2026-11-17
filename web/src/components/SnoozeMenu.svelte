@@ -6,7 +6,7 @@
     fallbackDate,
     type SnoozeBucket,
   } from '../../../shared/snooze';
-  import { keymap } from '../lib/keys/keymap.svelte';
+  import { modalScope } from '../lib/keys/modalScope';
   import { inbox } from '../lib/stores/inbox.svelte';
   import { settings } from '../lib/stores/settings.svelte';
   import { ui } from '../lib/stores/ui.svelte';
@@ -125,35 +125,28 @@
     why = '';
     bucket = null;
     wake = false;
-    void tick().then(() => dialog?.focus());
-    const unscope = keymap.pushScope('modal');
-    const bind = (id: string, keys: string[], run: () => void, repeat = false) => ({
-      id: `snooze.menu.${id}`,
-      keys,
-      scope: 'modal' as const,
-      group: 'App' as const,
+    return modalScope({
+      id: 'snooze.menu',
       description: 'Snooze menu',
-      palette: false,
-      repeat,
-      run,
+      focus: () => dialog,
+      bindings: [
+        { id: 'close', keys: ['Escape'], run: close },
+        { id: 'down', keys: ['ArrowDown', 'j'], run: () => (active = step(1)), repeat: true },
+        { id: 'up', keys: ['ArrowUp', 'k'], run: () => (active = step(-1)), repeat: true },
+        { id: 'enter', keys: ['Enter'], run: enter },
+        // Skipping the reason costs nothing; Tab is the way in to it from the keyboard.
+        { id: 'why', keys: ['Tab'], run: () => whyInput?.focus() },
+        // One digit per row, the same numbers the rows show (slot + 1).
+        ...Array.from({ length: ACTIVITY + 1 }, (_, i) => ({
+          id: `n${i + 1}`,
+          keys: [String(i + 1)],
+          run: () => choose(i),
+        })),
+        // Letters pick why it is parked; u also wakes it early on activity. None of them snoozes by itself.
+        ...SNOOZE_BUCKETS.map((b) => ({ id: `bucket.${b}`, keys: [BUCKETS[b].key], run: () => pickBucket(b) })),
+        { id: 'wake', keys: ['u'], run: () => (wake = !wake) },
+      ],
     });
-    const unreg = keymap.register([
-      bind('close', ['Escape'], close),
-      bind('down', ['ArrowDown', 'j'], () => (active = step(1)), true),
-      bind('up', ['ArrowUp', 'k'], () => (active = step(-1)), true),
-      bind('enter', ['Enter'], enter),
-      // Skipping the reason costs nothing; Tab is the way in to it from the keyboard.
-      bind('why', ['Tab'], () => whyInput?.focus()),
-      // One digit per row, the same numbers the rows show (slot + 1).
-      ...Array.from({ length: ACTIVITY + 1 }, (_, i) => bind(`n${i + 1}`, [String(i + 1)], () => choose(i))),
-      // Letters pick why it is parked; u also wakes it early on activity. None of them snoozes by itself.
-      ...SNOOZE_BUCKETS.map((b) => bind(`bucket.${b}`, [BUCKETS[b].key], () => pickBucket(b))),
-      bind('wake', ['u'], () => (wake = !wake)),
-    ]);
-    return () => {
-      unreg();
-      unscope();
-    };
   });
 
   const count = $derived(ui.snoozeFor?.length ?? 0);
@@ -161,7 +154,7 @@
 
 {#if ui.snoozeFor}
   <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-  <div class="scrim" transition:fade={{ duration: 100 }} onclick={close}>
+  <div class="scrim sheet" transition:fade={{ duration: 100 }} onclick={close}>
     <div
       class="menu panel"
       data-testid="snooze-menu"
@@ -299,16 +292,6 @@
 {/if}
 
 <style>
-  .scrim {
-    position: fixed;
-    inset: 0;
-    background: var(--scrim);
-    z-index: 70;
-    display: flex;
-    justify-content: center;
-    align-items: flex-start;
-    padding: 14vh var(--s4) 0;
-  }
   .menu {
     width: min(360px, 100%);
     box-shadow: var(--shadow-pop);
@@ -401,10 +384,6 @@
   }
   /* Phone: a bottom sheet, full width, safe-area aware, thumb-reachable. */
   @media (max-width: 899px) {
-    .scrim {
-      align-items: flex-end;
-      padding: 0;
-    }
     .menu {
       width: 100%;
       max-height: 80vh;

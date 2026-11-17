@@ -1,12 +1,11 @@
 <script lang="ts">
-  import { keymap } from '../lib/keys/keymap.svelte';
+  import { modalScope } from '../lib/keys/modalScope';
   import { feeds } from '../lib/stores/feeds.svelte';
   import { inbox } from '../lib/stores/inbox.svelte';
   import { ui } from '../lib/stores/ui.svelte';
   import type { MuteKind } from '../../../shared/types';
   import Kbd from './Kbd.svelte';
   import { fade } from 'svelte/transition';
-  import { tick } from 'svelte';
 
   interface Option {
     id: string;
@@ -95,35 +94,29 @@
   $effect(() => {
     if (!ui.muteFor) return;
     active = 0;
-    void tick().then(() => dialog?.focus());
-    const unscope = keymap.pushScope('modal');
-    const bind = (id: string, keys: string[], run: () => void, repeat = false) => ({
-      id: `mute.menu.${id}`,
-      keys,
-      scope: 'modal' as const,
-      group: 'App' as const,
+    return modalScope({
+      id: 'mute.menu',
       description: 'Mute menu',
-      palette: false,
-      repeat,
-      run,
+      focus: () => dialog,
+      bindings: [
+        { id: 'close', keys: ['Escape'], run: close },
+        {
+          id: 'down',
+          keys: ['ArrowDown', 'j'],
+          run: () => (active = Math.min(active + 1, options.length - 1)),
+          repeat: true,
+        },
+        { id: 'up', keys: ['ArrowUp', 'k'], run: () => (active = Math.max(active - 1, 0)), repeat: true },
+        { id: 'enter', keys: ['Enter'], run: () => choose(active) },
+        ...['1', '2', '3', '4', '5'].map((k, i) => ({ id: `n${k}`, keys: [k], run: () => choose(i) })),
+      ],
     });
-    const unreg = keymap.register([
-      bind('close', ['Escape'], close),
-      bind('down', ['ArrowDown', 'j'], () => (active = Math.min(active + 1, options.length - 1)), true),
-      bind('up', ['ArrowUp', 'k'], () => (active = Math.max(active - 1, 0)), true),
-      bind('enter', ['Enter'], () => choose(active)),
-      ...['1', '2', '3', '4', '5'].map((k, i) => bind(`n${k}`, [k], () => choose(i))),
-    ]);
-    return () => {
-      unreg();
-      unscope();
-    };
   });
 </script>
 
 {#if ui.muteFor && item}
   <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-  <div class="scrim" transition:fade={{ duration: 100 }} onclick={close}>
+  <div class="scrim sheet" transition:fade={{ duration: 100 }} onclick={close}>
     <div
       class="menu panel"
       data-testid="mute-menu"
@@ -161,16 +154,6 @@
 {/if}
 
 <style>
-  .scrim {
-    position: fixed;
-    inset: 0;
-    background: var(--scrim);
-    z-index: 70;
-    display: flex;
-    justify-content: center;
-    align-items: flex-start;
-    padding: 14vh var(--s4) 0;
-  }
   .menu {
     width: min(380px, 100%);
     box-shadow: var(--shadow-pop);
@@ -214,10 +197,6 @@
     padding: var(--s2) var(--s3);
   }
   @media (max-width: 899px) {
-    .scrim {
-      align-items: flex-end;
-      padding: 0;
-    }
     .menu {
       width: 100%;
       border-radius: var(--radius-lg) var(--radius-lg) 0 0;

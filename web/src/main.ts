@@ -2,6 +2,7 @@ import '@fontsource-variable/inter';
 import '@fontsource-variable/jetbrains-mono';
 import './styles/tokens.css';
 import './styles/base.css';
+import './styles/scrim.css';
 import { mount } from 'svelte';
 import App from './App.svelte';
 import { openFromNotification } from './lib/push';
