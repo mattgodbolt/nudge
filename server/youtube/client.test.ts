@@ -212,6 +212,72 @@ describe('retries', () => {
   });
 });
 
+describe('timeouts', () => {
+  const stall = (signal: AbortSignal) =>
+    new Promise<never>((_, reject) => {
+      if (signal.aborted) reject(signal.reason);
+      else signal.addEventListener('abort', () => reject(signal.reason));
+    });
+  const make = (fetchImpl: typeof fetch, sleeps: number[] = []) =>
+    createHttpClient({
+      getApiKey: () => 'SECRETKEY',
+      quota: { charge() {} } as unknown as QuotaTracker,
+      random: () => 0,
+      sleep: async (ms) => void sleeps.push(ms),
+      timeoutMs: 20,
+      fetchImpl,
+    });
+
+  it('aborts a stalled request, retries it, then gives up as network with the key redacted', async () => {
+    const sleeps: number[] = [];
+    const fetchImpl = vi.fn(async (_u: unknown, init?: RequestInit) => {
+      expect(init?.signal).toBeInstanceOf(AbortSignal);
+      return stall(init?.signal as AbortSignal);
+    }) as unknown as typeof fetch;
+    const err = await make(fetchImpl, sleeps)
+      .getVideos(['abcdefghijk'])
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(YtError);
+    expect(err).toMatchObject({ reason: 'network' });
+    expect((err as Error).message).not.toContain('SECRETKEY');
+    expect(fetchImpl).toHaveBeenCalledTimes(4);
+    expect(sleeps).toEqual([1000, 2000, 4000]);
+  });
+
+  it('aborts a stalled body read and recovers on retry', async () => {
+    let n = 0;
+    const fetchImpl = vi.fn(async (_u: unknown, init?: RequestInit) => {
+      if (n++ > 0) return json(videos);
+      const signal = init?.signal as AbortSignal;
+      const body = new ReadableStream({
+        start(c) {
+          signal.addEventListener('abort', () => c.error(signal.reason));
+        },
+      });
+      return new Response(body, { status: 200 });
+    }) as unknown as typeof fetch;
+    const out = await make(fetchImpl).getVideos(['abcdefghijk']);
+    expect(out.length).toBeGreaterThan(0);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
+  it('testKey reports a stalled request as a network error', async () => {
+    const f = ((u: string, init?: RequestInit) => stall(init?.signal as AbortSignal)) as unknown as typeof fetch;
+    // Fake timers don't cover AbortSignal.timeout, so shorten it instead.
+    const spy = vi
+      .spyOn(AbortSignal, 'timeout')
+      .mockImplementation(() => AbortSignal.abort(new DOMException('t', 'TimeoutError')));
+    try {
+      const r = await testKey('SECRETKEY', f);
+      expect(r.ok).toBe(false);
+      expect(r.message).toMatch(/^Network error/);
+      expect(r.message).not.toContain('SECRETKEY');
+    } finally {
+      spy.mockRestore();
+    }
+  });
+});
+
 describe('concurrency', () => {
   it('never has more than 4 requests in flight', async () => {
     let inFlight = 0;
