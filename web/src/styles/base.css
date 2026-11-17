@@ -119,6 +119,13 @@ code,
   filter: brightness(1.08);
   background: var(--accent);
 }
+/* A disabled primary (say, Save with nothing to save) must not look like a call to action waiting to be pressed. */
+.btn.primary:disabled {
+  background: var(--bg-sunken);
+  border-color: var(--border-strong);
+  color: var(--text-faint);
+  opacity: 1;
+}
 .btn.ghost {
   border-color: transparent;
   background: transparent;
@@ -143,6 +150,12 @@ code,
   border: 1px solid var(--border-strong);
   background: var(--bg-elev);
   min-width: 0;
+}
+/* The fixed control height would hold a textarea to one line whatever its rows say. */
+textarea.input {
+  height: auto;
+  padding-block: var(--s2);
+  line-height: 1.45;
 }
 .input::placeholder {
   color: var(--text-faint);
