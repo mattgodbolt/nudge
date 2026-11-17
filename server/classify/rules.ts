@@ -24,7 +24,6 @@ const INJECTION_PATTERNS: RegExp[] = [
   /^\s*(?:system|assistant|developer)\s*:\s*\S/im,
   /\[\s*(?:system|assistant|inst)\s*\]|<\|(?:im_start|system|assistant)\|>/i,
   /\b(?:reveal|show|print|repeat|leak)\s+(?:me\s+)?(?:your|the)\s+(?:system\s+prompt|instructions)\b/i,
-  /\bsystem\s+prompt\b/i,
 ];
 
 /** Does this text look like an attempt to instruct the model? Exported for tests. */
