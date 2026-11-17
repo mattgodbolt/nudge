@@ -101,6 +101,8 @@
     inset: 0;
     background: var(--scrim);
     display: grid;
+    /* The shared .scrim centres its flex content; here that would shrink the grid track to the dialog's content. */
+    justify-content: normal;
     place-items: center;
     z-index: 60;
     padding: var(--s4);
