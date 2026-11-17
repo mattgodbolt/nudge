@@ -7,6 +7,7 @@ import type {
   MuteKind,
   MuteRuleDTO,
 } from '../../shared/types.js';
+import { IN_INBOX_NOW } from './common.js';
 import type { Db } from './db.js';
 import type { Events } from './events.js';
 import { wakeOnActivity } from './wake.js';
@@ -89,8 +90,7 @@ export function createFeedsRepo(deps: FeedsDeps) {
   }
 
   const FEED_SELECT = `SELECT f.*,
-      (SELECT COUNT(*) FROM items i WHERE i.feed_id = f.id AND i.state = 'inbox'
-         AND (i.snoozed_until IS NULL OR i.snoozed_until <= @now)) AS inbox_count,
+      (SELECT COUNT(*) FROM items i WHERE i.feed_id = f.id AND ${IN_INBOX_NOW}) AS inbox_count,
       (SELECT COUNT(*) FROM items i WHERE i.feed_id = f.id) AS item_count
     FROM feeds f`;
 

@@ -9,7 +9,7 @@ import type {
 } from '../../shared/types.js';
 import type { NewSource, Repo, SourceRow, VideoSyncRow, YtComment, YtThread, YtVideo } from '../contracts.js';
 import { tierFor, unitsPerDay } from '../sync/tiers.js';
-import { iso, type Row } from './common.js';
+import { IN_INBOX_NOW, iso, type Row } from './common.js';
 import type { Db } from './db.js';
 import type { Events } from './events.js';
 import { htmlToPlain } from './text.js';
@@ -18,8 +18,9 @@ import { wakeOnActivity } from './wake.js';
 const EPOCH = '1970-01-01T00:00:00.000Z';
 const OWN_FEED_UNITS_PER_DAY = 144; // allThreadsRelatedToChannelId every 10 min
 
-/** A video row plus its inbox count, as videoDto wants it. */
-export const VIDEO_SELECT = `SELECT v.*, (SELECT COUNT(*) FROM items i WHERE i.provider = 'youtube' AND i.container_key = v.id AND i.state = 'inbox') AS inbox_count
+/** A video row plus its inbox count (snoozed items left out), as videoDto wants it; bind @now. */
+export const VIDEO_SELECT = `SELECT v.*,
+    (SELECT COUNT(*) FROM items i WHERE i.provider = 'youtube' AND i.container_key = v.id AND ${IN_INBOX_NOW}) AS inbox_count
   FROM videos v`;
 
 export function videoDto(r: Row, at: Date): VideoDTO {
@@ -235,13 +236,13 @@ export function createYoutube(deps: YoutubeDeps): YoutubeStore {
   function videoRows(sourceId?: number): Row[] {
     return (
       sourceId === undefined
-        ? db.prepare(`${VIDEO_SELECT} ORDER BY v.published_at DESC, v.id`).all()
+        ? db.prepare(`${VIDEO_SELECT} ORDER BY v.published_at DESC, v.id`).all({ now: now() })
         : db
             .prepare(
-              `${VIDEO_SELECT} JOIN source_videos sv ON sv.video_id = v.id AND sv.source_id = ?
+              `${VIDEO_SELECT} JOIN source_videos sv ON sv.video_id = v.id AND sv.source_id = @sourceId
                ORDER BY v.published_at DESC, v.id`,
             )
-            .all(sourceId)
+            .all({ now: now(), sourceId })
     ) as Row[];
   }
 
@@ -253,7 +254,7 @@ export function createYoutube(deps: YoutubeDeps): YoutubeStore {
   function setVideoTier(id: string, t: PollTier | null): VideoDTO {
     const res = db.prepare('UPDATE videos SET poll_tier = ? WHERE id = ?').run(t, id);
     if (res.changes === 0) throw new Error(`Unknown video ${id}`);
-    return videoDto(db.prepare(`${VIDEO_SELECT} WHERE v.id = ?`).get(id) as Row, clock());
+    return videoDto(db.prepare(`${VIDEO_SELECT} WHERE v.id = @id`).get({ now: now(), id }) as Row, clock());
   }
 
   function dueVideos(at: Date, limit: number): VideoSyncRow[] {
@@ -355,9 +356,9 @@ export function createYoutube(deps: YoutubeDeps): YoutubeStore {
         db
           .prepare(
             `SELECT sv.source_id, COUNT(*) AS n FROM items i JOIN source_videos sv ON sv.video_id = i.container_key
-             WHERE i.provider = 'youtube' AND i.state = 'inbox' GROUP BY sv.source_id`,
+             WHERE i.provider = 'youtube' AND ${IN_INBOX_NOW} GROUP BY sv.source_id`,
           )
-          .all() as Row[]
+          .all({ now: now() }) as Row[]
       ).map((r) => [r.source_id, r.n]),
     );
     const agg = new Map<number, { count: number; units: number }>();
