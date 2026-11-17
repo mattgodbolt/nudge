@@ -14,7 +14,7 @@ export const PROMPT_VERSION = 'p0-11';
  * not a stranger's, so they sit in the system prompt; still escaped, so they cannot open or close a tag.
  */
 export function ownerIntro(owner: OwnerProfile): string {
-  return `In their own words:\n<about_owner>${esc(owner.about.trim())}</about_owner>`;
+  return `${owner.name.trim()} in their own words:\n<about_owner>${esc(owner.about.trim())}</about_owner>`;
 }
 
 /**

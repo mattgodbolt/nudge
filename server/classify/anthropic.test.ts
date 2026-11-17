@@ -194,7 +194,7 @@ describe('thread state in the prompt', () => {
 describe('the system prompt is built from the profile', () => {
   const prompt = classifierSystem(SAMPLE_OWNER);
   it('takes the identity from "about" and names the owner, with the guidance intact', () => {
-    expect(prompt).toMatch(/^You triage the inbox of Priya \(the owner\)\. In their own words:\n<about_owner>/);
+    expect(prompt).toMatch(/^You triage the inbox of Priya \(the owner\)\. Priya in their own words:\n<about_owner>/);
     expect(prompt).toContain(`<about_owner>${IDENTITY}</about_owner>`);
     expect(prompt).toContain('For each item decide what Priya needs to do, by calling record_verdict.');
     expect(prompt).toContain("is_owner marks Priya's own comments");

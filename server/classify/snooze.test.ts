@@ -122,7 +122,7 @@ describe('drafting a nudge', () => {
   it('is written in the voice of the profile: its name and own description, never gendered', () => {
     const p = nudgeSystem(SAMPLE_OWNER);
     expect(p).toMatch(/^You draft one short follow-up comment that Priya, a maintainer, may paste/);
-    expect(p).toContain(`<about_owner>${IDENTITY}</about_owner>`);
+    expect(p).toContain(`Priya in their own words:\n<about_owner>${IDENTITY}</about_owner>`);
     expect(p).toContain('Write it in the first person as Priya:');
     expect(p).toContain('nothing you write is posted anywhere: Priya reads it first.');
     expect(p).not.toMatch(/\bmatt\b|godbolt|compiler explorer/i);
