@@ -630,6 +630,30 @@ describe('counts', () => {
     expect(repo.counts().bySource).toEqual({ [sourceId]: 1, [s2.id]: 1 });
     expect(repo.counts().inbox).toBe(1);
   });
+
+  // Issue #15: the Sources screen and the sidebar disagreed because only the sidebar left out snoozed items.
+  const inboxCounts = () => ({
+    sidebar: repo.counts().bySource[sourceId],
+    source: repo.listSources().find((s) => s.id === sourceId)!.inboxCount,
+    video: repo.listVideos(sourceId).find((v) => v.id === 'vid1')!.inboxCount,
+    sourceVideo: repo.listVideos().find((v) => v.id === 'vid1')!.inboxCount,
+    thread: repo.getThread('a')!.video!.inboxCount,
+  });
+
+  it('leaves snoozed items out of source and video inbox counts, as the sidebar does', () => {
+    repo.upsertThread(thread('a'));
+    repo.upsertThread(thread('b'));
+    repo.snooze(['b'], at(24));
+    expect(inboxCounts()).toEqual({ sidebar: 1, source: 1, video: 1, sourceVideo: 1, thread: 1 });
+  });
+
+  it('counts an item again once its snooze has expired', () => {
+    repo.upsertThread(thread('a'));
+    repo.upsertThread(thread('b'));
+    repo.snooze(['b'], at(24));
+    advance(hours(24));
+    expect(inboxCounts()).toEqual({ sidebar: 2, source: 2, video: 2, sourceVideo: 2, thread: 2 });
+  });
 });
 
 describe('getThread', () => {

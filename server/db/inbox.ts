@@ -3,7 +3,7 @@ import { SNOOZE_BUCKETS, WAKE_CAUSES, isSnoozeBucket, wholeDays } from '../../sh
 import type { CommentDTO, Counts, DoneReason, InboxItem, SnoozeBucket, ThreadDetail } from '../../shared/types.js';
 import { permalink } from '../../shared/youtube-urls.js';
 import type { Repo } from '../contracts.js';
-import type { Row } from './common.js';
+import { IN_INBOX_NOW, type Row } from './common.js';
 import type { Db } from './db.js';
 import { suggestionDto } from './suggestions.js';
 import { VIDEO_SELECT, videoDto } from './youtube.js';
@@ -98,8 +98,7 @@ export function createInbox(deps: InboxDeps): InboxStore {
     LEFT JOIN threads t ON t.id = c.thread_id
     LEFT JOIN comments p ON p.id = c.parent_id`;
 
-  /** SQL fragments for "needs attention now" (inbox state and not currently snoozed); bind @now. */
-  const NOT_SNOOZED = '(i.snoozed_until IS NULL OR i.snoozed_until <= @now)';
+  /** SQL fragments for ordering the inbox. */
   const SORT_VALUE = 'COALESCE(i.woke_at, i.occurred_at)';
   const ARRIVED_VALUE = 'COALESCE(i.woke_at, i.first_seen_at)';
   const RANK = "(CASE i.provider WHEN 'todo' THEN 0 WHEN 'github' THEN 1 ELSE 2 END)";
@@ -168,7 +167,7 @@ export function createInbox(deps: InboxDeps): InboxStore {
     const where: string[] = [];
     const at = now();
     const args: Record<string, unknown> = { now: at };
-    if (q.view === 'inbox') where.push(`i.state = 'inbox' AND ${NOT_SNOOZED}`);
+    if (q.view === 'inbox') where.push(IN_INBOX_NOW);
     else if (q.view === 'snoozed') where.push("i.state = 'inbox' AND i.snoozed_until > @now");
     else if (q.view === 'done') where.push("i.state IN ('done','replied','auto_replied','resolved')");
     else where.push("i.state != 'own'");
@@ -289,7 +288,7 @@ export function createInbox(deps: InboxDeps): InboxStore {
   function getThread(threadId: string): ThreadDetail | null {
     const t = db.prepare('SELECT * FROM threads WHERE id = ?').get(threadId) as Row | undefined;
     if (!t) return null;
-    const v = db.prepare(`${VIDEO_SELECT} WHERE v.id = ?`).get(t.video_id) as Row;
+    const v = db.prepare(`${VIDEO_SELECT} WHERE v.id = @id`).get({ now: now(), id: t.video_id }) as Row;
     const rows = db
       .prepare(
         `SELECT comments.*, i.state, i.state_source, i.done_reason,
@@ -332,7 +331,7 @@ export function createInbox(deps: InboxDeps): InboxStore {
     for (const r of db
       .prepare(
         `SELECT sv.source_id, COUNT(*) AS n FROM items i JOIN source_videos sv ON sv.video_id = i.container_key
-         WHERE i.provider = 'youtube' AND i.state = 'inbox' AND ${NOT_SNOOZED} GROUP BY sv.source_id`,
+         WHERE i.provider = 'youtube' AND ${IN_INBOX_NOW} GROUP BY sv.source_id`,
       )
       .all({ now: at }) as Row[]) {
       bySource[r.source_id] = r.n;
@@ -341,22 +340,22 @@ export function createInbox(deps: InboxDeps): InboxStore {
     for (const f of db.prepare('SELECT id FROM feeds').all() as Row[]) byFeed[f.id] = 0;
     for (const r of db
       .prepare(
-        `SELECT i.feed_id, COUNT(*) AS n FROM items i WHERE i.feed_id IS NOT NULL AND i.state = 'inbox'
-           AND ${NOT_SNOOZED} GROUP BY i.feed_id`,
+        `SELECT i.feed_id, COUNT(*) AS n FROM items i WHERE i.feed_id IS NOT NULL AND ${IN_INBOX_NOW}
+           GROUP BY i.feed_id`,
       )
       .all({ now: at }) as Row[]) {
       byFeed[r.feed_id] = r.n;
     }
     const todos = (
       db
-        .prepare(`SELECT COUNT(*) AS n FROM items i WHERE i.provider = 'todo' AND i.state = 'inbox' AND ${NOT_SNOOZED}`)
+        .prepare(`SELECT COUNT(*) AS n FROM items i WHERE i.provider = 'todo' AND ${IN_INBOX_NOW}`)
         .get({ now: at }) as Row
     ).n as number;
     const byRepo: Record<string, number> = {};
     for (const r of db
       .prepare(
-        `SELECT i.container_key AS repo, COUNT(*) AS n FROM items i WHERE i.provider = 'github' AND i.state = 'inbox'
-           AND ${NOT_SNOOZED} GROUP BY i.container_key`,
+        `SELECT i.container_key AS repo, COUNT(*) AS n FROM items i WHERE i.provider = 'github' AND ${IN_INBOX_NOW}
+           GROUP BY i.container_key`,
       )
       .all({ now: at }) as Row[]) {
       byRepo[r.repo] = r.n;

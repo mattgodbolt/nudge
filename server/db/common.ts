@@ -10,6 +10,13 @@ export function iso(s: string): string {
   return Number.isNaN(d.getTime()) ? s : d.toISOString();
 }
 
+/**
+ * "Needs attention now" for an item aliased `i`: in the inbox and not currently snoozed; bind @now (the repo clock).
+ * Every inbox count shares it so the sidebar, Sources, Feeds and video counts never disagree.
+ */
+export const NOT_SNOOZED = '(i.snoozed_until IS NULL OR i.snoozed_until <= @now)';
+export const IN_INBOX_NOW = `i.state = 'inbox' AND ${NOT_SNOOZED}`;
+
 const UNDO_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 export type UndoErrorCode = 'not_found' | 'already_undone' | 'expired';
