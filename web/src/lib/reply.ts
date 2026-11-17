@@ -199,10 +199,10 @@ export async function deleteReply(comment: Pick<CommentDTO, 'id' | 'threadId'>):
   try {
     await api.deleteReply(comment.id);
   } catch (e) {
-    toasts.error(e instanceof Error ? e.message : 'Could not delete the reply');
+    toasts.fail(e, 'Could not delete the reply');
     return false;
   }
-  toasts.push({ message: 'Reply deleted from YouTube', kind: 'success', timeoutMs: 4000 });
+  toasts.success('Reply deleted from YouTube', 4000);
   thread.invalidate();
   void thread.show(comment.threadId);
   void inbox.refreshTop();

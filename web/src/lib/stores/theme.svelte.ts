@@ -1,16 +1,12 @@
 import { settings } from './settings.svelte';
+import { loadRaw, saveRaw } from '../storage';
 
 export type ThemePref = 'system' | 'light' | 'dark';
 const KEY = 'yt-theme';
 
 function stored(): ThemePref {
-  try {
-    const v = localStorage.getItem(KEY);
-    if (v === 'light' || v === 'dark' || v === 'system') return v;
-  } catch {
-    /* ignore */
-  }
-  return 'system';
+  const v = loadRaw(KEY);
+  return v === 'light' || v === 'dark' || v === 'system' ? v : 'system';
 }
 
 class ThemeStore {
@@ -38,11 +34,7 @@ class ThemeStore {
   }
 
   private persist() {
-    try {
-      localStorage.setItem(KEY, this.preference);
-    } catch {
-      /* ignore */
-    }
+    saveRaw(KEY, this.preference);
   }
 
   apply() {

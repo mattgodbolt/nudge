@@ -28,7 +28,7 @@
     }
     value = '';
     void sources.load().catch(() => {});
-    toasts.push({ message: 'Channel added as yours', kind: 'success', timeoutMs: 3000 });
+    toasts.success('Channel added as yours', 3000);
     onadded?.();
   }
 </script>

@@ -36,7 +36,7 @@
     try {
       stats = await api.refreshStats();
     } catch (e) {
-      toasts.error(e instanceof Error ? e.message : 'Could not fetch video details');
+      toasts.fail(e, 'Could not fetch video details');
     } finally {
       refreshing = false;
     }

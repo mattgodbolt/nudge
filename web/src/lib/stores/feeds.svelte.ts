@@ -23,10 +23,10 @@ class FeedsStore {
       const f = await api.addFeed({ owner, ...opts });
       // The first poll's result may already have arrived over the event stream, and is newer than this response.
       if (!this.list.some((x) => x.id === f.id)) this.list = [...this.list, f];
-      toasts.push({ message: `Added ${f.owner}`, kind: 'success', timeoutMs: 3500 });
+      toasts.success(`Added ${f.owner}`, 3500);
       return true;
     } catch (e) {
-      toasts.error(e instanceof Error ? e.message : 'Could not add feed');
+      toasts.fail(e, 'Could not add feed');
       return false;
     }
   }
@@ -39,7 +39,7 @@ class FeedsStore {
       this.list = this.list.map((x) => (x.id === id ? f : x));
     } catch (e) {
       this.list = prev;
-      toasts.error(e instanceof Error ? e.message : 'Could not update feed');
+      toasts.fail(e, 'Could not update feed');
     }
   }
 
@@ -48,7 +48,7 @@ class FeedsStore {
       await api.deleteFeed(id);
       this.list = this.list.filter((f) => f.id !== id);
     } catch (e) {
-      toasts.error(e instanceof Error ? e.message : 'Could not remove feed');
+      toasts.fail(e, 'Could not remove feed');
     }
   }
 
@@ -56,7 +56,7 @@ class FeedsStore {
     try {
       await api.pollFeed(id);
     } catch (e) {
-      toasts.error(e instanceof Error ? e.message : 'Could not poll');
+      toasts.fail(e, 'Could not poll');
     }
   }
 
@@ -83,14 +83,14 @@ class FeedsStore {
                 this.mutes = this.mutes.filter((m) => m.id !== rule.id);
                 void inbox.load();
               } catch (e) {
-                toasts.error(e instanceof Error ? e.message : 'Could not undo the mute');
+                toasts.fail(e, 'Could not undo the mute');
               }
             })();
           },
         },
       });
     } catch (e) {
-      toasts.error(e instanceof Error ? e.message : 'Could not mute');
+      toasts.fail(e, 'Could not mute');
     }
   }
 
@@ -99,7 +99,7 @@ class FeedsStore {
       await api.deleteMute(id);
       this.mutes = this.mutes.filter((m) => m.id !== id);
     } catch (e) {
-      toasts.error(e instanceof Error ? e.message : 'Could not remove the mute');
+      toasts.fail(e, 'Could not remove the mute');
     }
   }
 }

@@ -127,7 +127,7 @@ class PushStore {
       }
       this.status = 'off';
     } catch (e) {
-      toasts.error(e instanceof Error ? e.message : 'Could not turn off notifications');
+      toasts.fail(e, 'Could not turn off notifications');
     } finally {
       this.busy = false;
     }
@@ -143,7 +143,7 @@ class PushStore {
       this.prefs = state.prefs;
     } catch (e) {
       this.prefs = before;
-      toasts.error(e instanceof Error ? e.message : 'Could not save');
+      toasts.fail(e, 'Could not save');
     }
   }
 
@@ -152,13 +152,13 @@ class PushStore {
       const sub = await this.#subscription();
       if (!sub) throw new Error('This device is not subscribed');
       const { result } = await api.pushTest(sub.endpoint);
-      if (result === 'ok') toasts.push({ message: 'Test notification sent', kind: 'success' });
+      if (result === 'ok') toasts.success('Test notification sent');
       else if (result === 'gone') {
         toasts.error('The push service no longer knows this device. Turn notifications off and on again.');
         await this.refresh();
       } else toasts.error('The push service did not accept the test. Check the server log.');
     } catch (e) {
-      toasts.error(e instanceof Error ? e.message : 'Could not send a test');
+      toasts.fail(e, 'Could not send a test');
     }
   }
 

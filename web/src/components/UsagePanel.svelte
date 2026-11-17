@@ -21,7 +21,7 @@
       .catch((e) => {
         if (d !== days) return;
         failed = true;
-        toasts.error(e instanceof Error ? e.message : 'Could not load usage');
+        toasts.fail(e, 'Could not load usage');
       });
   });
 

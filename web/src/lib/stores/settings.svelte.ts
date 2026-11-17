@@ -2,15 +2,12 @@ import type { Capabilities, GoogleAuthDTO, ImportMode, SettingsDTO } from '../..
 import type { SettingsUpdate } from '../../../../shared/api';
 import { api } from '../api';
 import { toasts } from './toasts.svelte';
+import { loadRaw, saveRaw } from '../storage';
 
 const SKIP_KEY = 'nudge.skipYoutubeKey';
 /** Per browser, like the theme: whether this browser has been told "I do not use YouTube". Storage may be blocked. */
 function readSkip(): boolean {
-  try {
-    return localStorage.getItem(SKIP_KEY) === '1';
-  } catch {
-    return false;
-  }
+  return loadRaw(SKIP_KEY) === '1';
 }
 
 class SettingsStore {
@@ -25,11 +22,7 @@ class SettingsStore {
 
   skipYoutube() {
     this.skippedYoutube = true;
-    try {
-      localStorage.setItem(SKIP_KEY, '1');
-    } catch {
-      // storage blocked: the choice lasts until the page reloads
-    }
+    saveRaw(SKIP_KEY, '1'); // with storage blocked the choice lasts until the page reloads
   }
 
   /** Real mode with a key but no channel marked as mine: time to ask which one is. */
@@ -50,7 +43,7 @@ class SettingsStore {
     try {
       this.value = await api.removeOwnChannel(id);
     } catch (e) {
-      toasts.error(e instanceof Error ? e.message : 'Could not remove that channel');
+      toasts.fail(e, 'Could not remove that channel');
     }
   }
 
@@ -75,7 +68,7 @@ class SettingsStore {
       window.location.assign(url);
       return true;
     } catch (e) {
-      toasts.error(e instanceof Error ? e.message : 'Could not start Google sign-in');
+      toasts.fail(e, 'Could not start Google sign-in');
       return false;
     }
   }
@@ -84,7 +77,7 @@ class SettingsStore {
     try {
       this.#setGoogle(await api.authLogout(channelId));
     } catch (e) {
-      toasts.error(e instanceof Error ? e.message : 'Could not disconnect');
+      toasts.fail(e, 'Could not disconnect');
     }
   }
 
@@ -92,7 +85,7 @@ class SettingsStore {
     try {
       this.#setGoogle(await api.authDefault(channelId));
     } catch (e) {
-      toasts.error(e instanceof Error ? e.message : 'Could not change the default channel');
+      toasts.fail(e, 'Could not change the default channel');
     }
   }
 
@@ -113,7 +106,7 @@ class SettingsStore {
       return true;
     } catch (e) {
       this.value = prev;
-      toasts.error(e instanceof Error ? e.message : 'Could not save settings');
+      toasts.fail(e, 'Could not save settings');
       return false;
     }
   }

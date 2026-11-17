@@ -1,22 +1,7 @@
 import { inbox } from './inbox.svelte';
+import { load, save } from '../storage';
 
 /** Ephemeral UI state shared between bindings and components. */
-function load<T>(key: string, fallback: T): T {
-  try {
-    const v = localStorage.getItem(key);
-    return v === null ? fallback : (JSON.parse(v) as T);
-  } catch {
-    return fallback;
-  }
-}
-function save(key: string, value: unknown) {
-  try {
-    localStorage.setItem(key, JSON.stringify(value));
-  } catch {
-    /* storage unavailable */
-  }
-}
-
 class UiStore {
   ownBannerDismissed = $state(load('yt-own-banner-dismissed', false));
   /** Hint chips with the model's suggestion on each row. A per-device display choice, so it lives in the browser. */

@@ -38,7 +38,7 @@
       const err = await settings.addOwnChannel(value.trim(), importMode);
       if (err) toasts.error(err);
       else {
-        toasts.push({ message: 'Channel added as yours', kind: 'success', timeoutMs: 3500 });
+        toasts.success('Channel added as yours', 3500);
         await sources.load().catch(() => {});
         value = '';
         isOwn = false;

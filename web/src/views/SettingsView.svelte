@@ -2,6 +2,7 @@
   import { BUCKETS, SNOOZE_BUCKETS, SNOOZE_DAYS_MAX, SNOOZE_DAYS_MIN, type SnoozeBucket } from '../../../shared/snooze';
   import { BUILD_VERSION } from '../lib/version';
   import { api } from '../lib/api';
+  import type { SettingsUpdate } from '../../../shared/api';
   import { settings } from '../lib/stores/settings.svelte';
   import { inbox } from '../lib/stores/inbox.svelte';
   import Icon from '../components/Icon.svelte';
@@ -74,7 +75,7 @@
     ownerBusy = true;
     const ok = await settings.save({ owner: { name: ownerName.trim(), about: ownerAbout.trim() } });
     ownerBusy = false;
-    if (ok) toasts.push({ message: 'Saved', kind: 'success', timeoutMs: 2500 });
+    if (ok) toasts.success('Saved', 2500);
   }
   /** Scroll to a section of this page, and put the cursor where the reader is sent to type. */
   function goTo(id: string, focusId?: string) {
@@ -119,41 +120,31 @@
   let chanError = $state('');
   let chanBusy = $state(false);
 
-  async function saveKey(key: string) {
-    const ok = await settings.save({ apiKey: key });
-    if (ok) toasts.push({ message: 'API key saved', kind: 'success', timeoutMs: 2500 });
-    return ok;
+  /** The save and remove handlers of a secret field: `patch` builds the settings update, null clears the stored value. */
+  function secretHandlers(patch: (value: string | null) => SettingsUpdate, saved: string, removed: string) {
+    return {
+      async save(value: string) {
+        const ok = await settings.save(patch(value));
+        if (ok) toasts.success(saved, 2500);
+        return ok;
+      },
+      async remove() {
+        if (await settings.save(patch(null))) toasts.push({ message: removed, timeoutMs: 2500 });
+      },
+    };
   }
-  async function removeKey() {
-    if (await settings.save({ apiKey: null })) toasts.push({ message: 'Stored API key removed', timeoutMs: 2500 });
-  }
-  async function saveLlmKey(key: string) {
-    const ok = await settings.save({ llm: { apiKey: key } });
-    if (ok) toasts.push({ message: 'Anthropic key saved', kind: 'success', timeoutMs: 2500 });
-    return ok;
-  }
-  async function removeLlmKey() {
-    if (await settings.save({ llm: { apiKey: null } }))
-      toasts.push({ message: 'Anthropic key removed', timeoutMs: 2500 });
-  }
-  async function saveGithubToken(token: string) {
-    const ok = await settings.save({ github: { token } });
-    if (ok) toasts.push({ message: 'GitHub token saved', kind: 'success', timeoutMs: 2500 });
-    return ok;
-  }
+  const youtubeKey = secretHandlers((v) => ({ apiKey: v }), 'API key saved', 'Stored API key removed');
+  const llmKey = secretHandlers((v) => ({ llm: { apiKey: v } }), 'Anthropic key saved', 'Anthropic key removed');
+  const githubToken = secretHandlers((v) => ({ github: { token: v } }), 'GitHub token saved', 'GitHub token removed');
   async function resetUsage() {
     if (!window.confirm('Delete all usage counts? This cannot be undone. Your inbox and its history are not touched.'))
       return;
     try {
       await api.resetUsage();
-      toasts.push({ message: 'Usage data deleted', kind: 'success', timeoutMs: 2500 });
+      toasts.success('Usage data deleted', 2500);
     } catch (e) {
-      toasts.error(e instanceof Error ? e.message : 'Could not delete usage data');
+      toasts.fail(e, 'Could not delete usage data');
     }
-  }
-  async function removeGithubToken() {
-    if (await settings.save({ github: { token: null } }))
-      toasts.push({ message: 'GitHub token removed', timeoutMs: 2500 });
   }
   async function addAccount(e: Event) {
     e.preventDefault();
@@ -223,7 +214,7 @@
     clientBusy = false;
     if (!clientError) {
       clientJson = '';
-      toasts.push({ message: 'OAuth client saved', kind: 'success', timeoutMs: 2500 });
+      toasts.success('OAuth client saved', 2500);
     }
   }
   async function removeClient() {
@@ -642,8 +633,8 @@
         replaceable={s.apiKey.source === 'settings'}
         label="API key"
         test={(k) => api.testKey(k)}
-        save={saveKey}
-        remove={removeKey}
+        save={youtubeKey.save}
+        remove={youtubeKey.remove}
       >
         {#snippet status()}
           Key <code>…{s.apiKey.last4}</code>, {sourceLabel[s.apiKey.source ?? 'settings']}.
@@ -664,8 +655,8 @@
         configured={s.llm.configured}
         label="Anthropic API key"
         test={(k) => api.testLlm(k)}
-        save={saveLlmKey}
-        remove={removeLlmKey}
+        save={llmKey.save}
+        remove={llmKey.remove}
         inputTestId="llm-key"
         saveTestId="llm-save"
         resultTestId="llm-result"
@@ -691,8 +682,8 @@
         label="GitHub token"
         placeholder="Paste a token…"
         test={(k) => api.testGithub(k)}
-        save={saveGithubToken}
-        remove={removeGithubToken}
+        save={githubToken.save}
+        remove={githubToken.remove}
         inputTestId="github-token"
         saveTestId="github-save"
         resultTestId="github-result"

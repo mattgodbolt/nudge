@@ -20,6 +20,7 @@ import { usage } from '../usage';
 import { decisions } from '../decisions';
 import { formatSnoozeTime } from '../snooze';
 import { FILTER_KEYS, sameFilters, type InboxFilters } from '../filters';
+import { loadRaw, saveRaw } from '../storage';
 
 export type { InboxFilters };
 
@@ -109,12 +110,8 @@ export function compareItems(
 const ORDER_KEY = 'nudge-inbox-order';
 const ORDERS: readonly InboxOrder[] = ['newest', 'oldest', 'arrived', 'source'];
 function savedOrder(): InboxOrder {
-  try {
-    const v = localStorage.getItem(ORDER_KEY);
-    return ORDERS.find((o) => o === v) ?? 'newest';
-  } catch {
-    return 'newest';
-  }
+  const v = loadRaw(ORDER_KEY);
+  return ORDERS.find((o) => o === v) ?? 'newest';
 }
 
 export class InboxStore {
@@ -202,11 +199,7 @@ export class InboxStore {
   async setOrder(order: InboxOrder): Promise<void> {
     if (order === this.order) return;
     this.order = order;
-    try {
-      localStorage.setItem(ORDER_KEY, order);
-    } catch {
-      /* storage unavailable */
-    }
+    saveRaw(ORDER_KEY, order);
     this.nextCursor = null;
     await this.load();
   }
@@ -296,7 +289,7 @@ export class InboxStore {
       this.nextCursor = page.nextCursor;
       this.total = page.total;
     } catch (e) {
-      toasts.error(e instanceof Error ? e.message : 'Could not load more');
+      toasts.fail(e, 'Could not load more');
     } finally {
       this.#loadingMore = false;
     }
