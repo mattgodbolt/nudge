@@ -1,15 +1,10 @@
-import { expect, test, type APIRequestContext, type Page } from './fixtures';
+import { expect, SHOTS, shot as shotAt, test, type APIRequestContext, type Page } from './fixtures';
 import type { Insights } from '../shared/insights';
 
 // Insights on Stats (docs/INSIGHTS.md), on a private demo server seeded with weeks of made-up history
 // (NUDGE_DEMO_HISTORY=1) plus the fake GitHub feed. The history is written once, shortly after start-up, so every
 // test first waits for it. Screenshots go to $NUDGE_SHOTS when it is set.
-const SHOTS = process.env.NUDGE_SHOTS;
-const shot = async (page: Page, name: string) => {
-  if (!SHOTS) return;
-  await page.waitForTimeout(300);
-  await page.screenshot({ path: `${SHOTS}/${name}.png`, fullPage: false });
-};
+const shot = (page: Page, name: string) => shotAt(page, name, { settleMs: 300 });
 
 async function seeded(request: APIRequestContext) {
   await expect

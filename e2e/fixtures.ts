@@ -1,4 +1,4 @@
-import { test as base } from '@playwright/test';
+import { test as base, type Page } from '@playwright/test';
 
 export * from '@playwright/test';
 
@@ -44,3 +44,15 @@ export const test = base.extend<{ cspGuard: void }>({
     { auto: true },
   ],
 });
+
+/** Screenshots (for the docs and README) go to this directory when NUDGE_SHOTS is set; otherwise `shot` does nothing. */
+export const SHOTS = process.env.NUDGE_SHOTS;
+
+export const rows = (page: Page) => page.getByTestId('inbox-row');
+
+/** Saves a screenshot when NUDGE_SHOTS is set. `settleMs` lets animations finish first; it is only paid when shooting. */
+export const shot = async (page: Page, name: string, opts: { settleMs?: number; fullPage?: boolean } = {}) => {
+  if (!SHOTS) return;
+  if (opts.settleMs) await page.waitForTimeout(opts.settleMs);
+  await page.screenshot({ path: `${SHOTS}/${name}.png`, fullPage: opts.fullPage ?? false });
+};

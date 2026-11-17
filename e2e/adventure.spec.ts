@@ -1,4 +1,4 @@
-import { expect, test, type APIRequestContext, type Page } from './fixtures';
+import { expect, SHOTS, shot as shotAt, test, type APIRequestContext, type Page } from './fixtures';
 
 // Adventure mode (docs/RPG.md) on a private demo server: the chip, the Hall of Heroes, the level-up toast (and its
 // chime, through a stand-in AudioContext: nothing can be heard in CI), a missed campfire day (the demo can run the
@@ -10,12 +10,7 @@ test.use({ timezoneId: 'UTC' });
 const H = { 'x-nudge': '1' };
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
-const SHOTS = process.env.NUDGE_SHOTS;
-const shot = async (page: Page, name: string) => {
-  if (!SHOTS) return;
-  await page.waitForTimeout(400);
-  await page.screenshot({ path: `${SHOTS}/${name}.png` });
-};
+const shot = (page: Page, name: string) => shotAt(page, name, { settleMs: 400 });
 
 /** Records what the level-up chime asks of the audio API, in place of the real one. */
 const stubAudio = () => {

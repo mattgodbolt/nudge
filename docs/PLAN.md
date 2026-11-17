@@ -45,7 +45,7 @@ Searches found nothing open source that combines a self-hosted web UI, a unified
 /web/tsconfig.json         extends @tsconfig/svelte
 /vite.config.ts            root: "web", outDir ../dist/web, dev proxy /api -> http://127.0.0.1:4517 (SSE included)
 /vitest.config.ts          projects: "server" (env node, server/**/*.test.ts, shared/**), "web" (jsdom + @testing-library/svelte, web/**/*.test.ts)
-/playwright.config.ts      webServer: `npm run demo:e2e`, baseURL http://127.0.0.1:4518
+/playwright.config.ts      one table of demo servers (webServer + projects), the first at http://127.0.0.1:4518
 /eslint.config.js          flat config: typescript-eslint + eslint-plugin-svelte; /.prettierrc (+ prettier-plugin-svelte, printWidth 120)
 /shared/types.ts           ALL domain + DTO types (contract, see section 5)
 /shared/api.ts             route path constants, request/response type map, SSE event union
@@ -86,7 +86,6 @@ Searches found nothing open source that combines a self-hosted web UI, a unified
 - `build`: `vite build && tsc -p server`
 - `start`: `npm run build && node dist/server/index.js` (serves `dist/web` plus SPA fallback on 4517).
 - `demo`: `NUDGE_DEMO=1 NUDGE_DB=data/demo.db npm run dev`
-- `demo:e2e`: `NUDGE_DEMO=1 NUDGE_DB=:memory: NUDGE_PORT=4518 NUDGE_DEMO_CLOCK=fixed vite build && tsx server/index.ts`
 - `test`: `vitest run`
 - `test:e2e`: `playwright test`
 - `typecheck`: `tsc -b && svelte-check`

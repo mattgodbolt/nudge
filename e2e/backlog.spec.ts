@@ -1,4 +1,4 @@
-import { expect, test, type APIRequestContext, type Page } from './fixtures';
+import { expect, rows, shot, test, type APIRequestContext } from './fixtures';
 
 // A demo server with a 300-item backlog on top of the usual GitHub items, comment threads, the fake suggestion source,
 // and a daily cap that bites after 1,100 suggestions (NUDGE_DEMO_BACKLOG / NUDGE_DEMO_SUGGEST_CAP_AFTER). So the worker
@@ -6,12 +6,7 @@ import { expect, test, type APIRequestContext, type Page } from './fixtures';
 // change shared state at the end (bulk Done), so they run in order.
 test.describe.configure({ mode: 'serial' });
 
-const SHOTS = process.env.NUDGE_SHOTS;
 const H = { 'x-nudge': '1' };
-const rows = (page: Page) => page.getByTestId('inbox-row');
-const shot = async (page: Page, name: string) => {
-  if (SHOTS) await page.screenshot({ path: `${SHOTS}/${name}.png` });
-};
 
 interface Status {
   enabled: boolean;

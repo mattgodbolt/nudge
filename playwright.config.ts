@@ -26,7 +26,58 @@ const use = {
 };
 
 // Several demo servers, so specs that change shared state cannot disturb each other (the specs run in parallel). Each
-// project below says which server it talks to; the webServer list at the end starts them all.
+// row is one server, the Playwright project that talks to it, and the spec it exists for (`spec` is the file name
+// without `.spec.ts`; the `handoff` project, on the first row, takes every spec no other row claims).
+interface Server {
+  name: string;
+  port: number;
+  spec?: string;
+  env?: Record<string, string>;
+}
+const servers: Server[] = [
+  { name: 'handoff', port: 4518 },
+  // inbox.spec.ts marks items done and snoozes them; on the shared 4518 server that emptied rows out from under the
+  // specs there (a long-pressed row vanishing mid-test, stats totals moving), so it has a server of its own.
+  { name: 'triage', port: 4526, spec: 'inbox' },
+  { name: 'organise', port: 4520, spec: 'snooze' },
+  // Snoozing until activity: comments are delivered on demand and the snooze waker is run as if days had passed.
+  { name: 'activity', port: 4528, spec: 'snooze-activity', env: { NUDGE_DEMO_GITHUB: '1', NUDGE_DEMO_COMMENTS: '1' } },
+  { name: 'api', port: 4519, spec: 'reply-api', env: { NUDGE_DEMO_POST: 'api' } },
+  { name: 'assistant', port: 4522, spec: 'assistant' },
+  { name: 'suggestions', port: 4523, spec: 'suggestions', env: { NUDGE_DEMO_GITHUB: '1', NUDGE_DEMO_SUGGEST: '1' } },
+  {
+    name: 'notes',
+    port: 4524,
+    spec: 'notes',
+    env: { NUDGE_DEMO_GITHUB: '1', NUDGE_DEMO_SUGGEST: '1', NUDGE_DEMO_COMMENTS: '1' },
+  },
+  {
+    name: 'backlog',
+    port: 4525,
+    spec: 'backlog',
+    env: {
+      NUDGE_DEMO_GITHUB: '1',
+      NUDGE_DEMO_SUGGEST: '1',
+      NUDGE_DEMO_COMMENTS: '1',
+      NUDGE_DEMO_BACKLOG: '300',
+      NUDGE_DEMO_SUGGEST_CAP_AFTER: '1100',
+    },
+  },
+  // A server that claims a newer web build than the page loaded, to show the "New version available" prompt.
+  { name: 'update', port: 4527, spec: 'update', env: { NUDGE_DEMO_BUILD_ID: '/assets/index-e2e-newer.js' } },
+  // Adventure mode: levels earned from triage, a demo clock for missed campfire days, and the off switch.
+  { name: 'adventure', port: 4529, spec: 'adventure' },
+  // Insights on Stats: a demo with weeks of made-up history plus the fake GitHub feed.
+  { name: 'insights', port: 4530, spec: 'insights', env: { NUDGE_DEMO_GITHUB: '1', NUDGE_DEMO_HISTORY: '1' } },
+  // Live updates: items are finished "on another device" through the API while the page is mid-list or reading.
+  { name: 'live', port: 4531, spec: 'live' },
+  // own-channel.spec.ts un-marks and re-marks the demo's own channel; on the shared 4518 server that raced
+  // stats.spec.ts, whose "My channels" scope switch is only offered while a channel is marked as mine.
+  { name: 'channel', port: 4532, spec: 'own-channel' },
+  { name: 'github', port: 4521, spec: 'github', env: { NUDGE_DEMO_GITHUB: '1' } },
+];
+const claimed = servers.flatMap((s) => (s.spec ? [s.spec] : []));
+
 export default defineConfig({
   testDir: 'e2e',
   // A run with an offset gets its own output folder too, so two runs in one checkout do not clear each other's.
@@ -34,183 +85,24 @@ export default defineConfig({
   // A stray test.only must not turn a CI run green while skipping everything else.
   forbidOnly: !!process.env.CI,
   reporter: process.env.CI ? [['list'], ['html', { open: 'never' }]] : 'list',
-  projects: [
-    {
-      name: 'handoff',
-      testIgnore:
-        /(inbox|reply-api|snooze|snooze-activity|github|assistant|suggestions|notes|backlog|update|adventure|insights|live|own-channel)\.spec\.ts/,
-      use: { ...use, baseURL: `${base(4518)}` },
+  projects: servers.map((s) => ({
+    name: s.name,
+    ...(s.spec
+      ? { testMatch: new RegExp(`${s.spec}\\.spec\\.ts`) }
+      : { testIgnore: new RegExp(`(${claimed.join('|')})\\.spec\\.ts`) }),
+    use: { ...use, baseURL: base(s.port) },
+  })),
+  webServer: servers.map((s) => ({
+    command: 'npx tsx server/index.ts',
+    env: {
+      NUDGE_DEMO: '1',
+      NUDGE_DB: ':memory:',
+      NUDGE_DEMO_CLOCK: 'fixed',
+      ...s.env,
+      NUDGE_PORT: String(port(s.port)),
     },
-    {
-      // inbox.spec.ts marks items done and snoozes them; on the shared 4518 server that emptied rows out from under the
-      // specs there (a long-pressed row vanishing mid-test, stats totals moving), so it has a server of its own.
-      name: 'triage',
-      testMatch: /inbox\.spec\.ts/,
-      use: { ...use, baseURL: `${base(4526)}` },
-    },
-    {
-      name: 'organise',
-      testMatch: /snooze\.spec\.ts/,
-      use: { ...use, baseURL: `${base(4520)}` },
-    },
-    {
-      // Snoozing until activity: comments are delivered on demand and the snooze waker is run as if days had passed.
-      name: 'activity',
-      testMatch: /snooze-activity\.spec\.ts/,
-      use: { ...use, baseURL: `${base(4528)}` },
-    },
-    {
-      name: 'api',
-      testMatch: /reply-api\.spec\.ts/,
-      use: { ...use, baseURL: `${base(4519)}` },
-    },
-    {
-      name: 'assistant',
-      testMatch: /assistant\.spec\.ts/,
-      use: { ...use, baseURL: `${base(4522)}` },
-    },
-    {
-      name: 'suggestions',
-      testMatch: /suggestions\.spec\.ts/,
-      use: { ...use, baseURL: `${base(4523)}` },
-    },
-    {
-      name: 'notes',
-      testMatch: /notes\.spec\.ts/,
-      use: { ...use, baseURL: `${base(4524)}` },
-    },
-    {
-      name: 'backlog',
-      testMatch: /backlog\.spec\.ts/,
-      use: { ...use, baseURL: `${base(4525)}` },
-    },
-    {
-      // A server that claims a newer web build than the page loaded, to show the "New version available" prompt.
-      name: 'update',
-      testMatch: /update\.spec\.ts/,
-      use: { ...use, baseURL: `${base(4527)}` },
-    },
-    {
-      // Adventure mode: levels earned from triage, a demo clock for missed campfire days, and the off switch.
-      name: 'adventure',
-      testMatch: /adventure\.spec\.ts/,
-      use: { ...use, baseURL: `${base(4529)}` },
-    },
-    {
-      // Insights on Stats: a demo with weeks of made-up history (NUDGE_DEMO_HISTORY=1) plus the fake GitHub feed.
-      name: 'insights',
-      testMatch: /insights\.spec\.ts/,
-      use: { ...use, baseURL: `${base(4530)}` },
-    },
-    {
-      // Live updates: items are finished "on another device" through the API while the page is mid-list or reading.
-      name: 'live',
-      testMatch: /live\.spec\.ts/,
-      use: { ...use, baseURL: `${base(4531)}` },
-    },
-    {
-      // own-channel.spec.ts un-marks and re-marks the demo's own channel; on the shared 4518 server that raced
-      // stats.spec.ts, whose "My channels" scope switch is only offered while a channel is marked as mine.
-      name: 'channel',
-      testMatch: /own-channel\.spec\.ts/,
-      use: { ...use, baseURL: `${base(4532)}` },
-    },
-    {
-      name: 'github',
-      testMatch: /github\.spec\.ts/,
-      use: { ...use, baseURL: `${base(4521)}` },
-    },
-  ],
-  webServer: [
-    {
-      command: 'npm run demo:e2e',
-      url: `${base(4518)}/api/bootstrap`,
-      reuseExistingServer: false,
-      timeout: 120000,
-    },
-    {
-      command: 'npm run demo:e2e:triage',
-      url: `${base(4526)}/api/bootstrap`,
-      reuseExistingServer: false,
-      timeout: 120000,
-    },
-    {
-      command: 'npm run demo:e2e:organise',
-      url: `${base(4520)}/api/bootstrap`,
-      reuseExistingServer: false,
-      timeout: 120000,
-    },
-    {
-      command: 'npm run demo:e2e:activity',
-      url: `${base(4528)}/api/bootstrap`,
-      reuseExistingServer: false,
-      timeout: 120000,
-    },
-    {
-      command: 'npm run demo:e2e:api',
-      url: `${base(4519)}/api/bootstrap`,
-      reuseExistingServer: false,
-      timeout: 120000,
-    },
-    {
-      command: 'npm run demo:e2e:assistant',
-      url: `${base(4522)}/api/bootstrap`,
-      reuseExistingServer: false,
-      timeout: 120000,
-    },
-    {
-      command: 'npm run demo:e2e:suggest',
-      url: `${base(4523)}/api/bootstrap`,
-      reuseExistingServer: false,
-      timeout: 120000,
-    },
-    {
-      command: 'npm run demo:e2e:notes',
-      url: `${base(4524)}/api/bootstrap`,
-      reuseExistingServer: false,
-      timeout: 120000,
-    },
-    {
-      command: 'npm run demo:e2e:backlog',
-      url: `${base(4525)}/api/bootstrap`,
-      reuseExistingServer: false,
-      timeout: 120000,
-    },
-    {
-      command: 'npm run demo:e2e:update',
-      url: `${base(4527)}/api/bootstrap`,
-      reuseExistingServer: false,
-      timeout: 120000,
-    },
-    {
-      command: 'npm run demo:e2e:adventure',
-      url: `${base(4529)}/api/bootstrap`,
-      reuseExistingServer: false,
-      timeout: 120000,
-    },
-    {
-      command: 'npm run demo:e2e:insights',
-      url: `${base(4530)}/api/bootstrap`,
-      reuseExistingServer: false,
-      timeout: 120000,
-    },
-    {
-      command: 'npm run demo:e2e:live',
-      url: `${base(4531)}/api/bootstrap`,
-      reuseExistingServer: false,
-      timeout: 120000,
-    },
-    {
-      command: 'npm run demo:e2e:channel',
-      url: `${base(4532)}/api/bootstrap`,
-      reuseExistingServer: false,
-      timeout: 120000,
-    },
-    {
-      command: 'npm run demo:e2e:github',
-      url: `${base(4521)}/api/bootstrap`,
-      reuseExistingServer: false,
-      timeout: 120000,
-    },
-  ],
+    url: `${base(s.port)}/api/bootstrap`,
+    reuseExistingServer: false,
+    timeout: 120000,
+  })),
 });
