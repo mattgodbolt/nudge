@@ -19,6 +19,7 @@
   import SuggestProgress from '../components/SuggestProgress.svelte';
   import { ui } from '../lib/stores/ui.svelte';
   import { onMount, untrack } from 'svelte';
+  import { OWNER_ABOUT_MAX, OWNER_NAME_MAX, ownerProfileComplete } from '../../../shared/owner';
 
   onMount(() => {
     void push.init();
@@ -50,6 +51,36 @@
   }
 
   const s = $derived(settings.value);
+
+  // About you: the fields follow what is saved (here or in another tab) until edited, and are saved together.
+  const savedName = $derived(s?.owner.name ?? '');
+  const savedAbout = $derived(s?.owner.about ?? '');
+  let ownerName = $state('');
+  let ownerAbout = $state('');
+  let ownerBusy = $state(false);
+  $effect(() => {
+    ownerName = savedName;
+  });
+  $effect(() => {
+    ownerAbout = savedAbout;
+  });
+  const ownerDirty = $derived(ownerName.trim() !== savedName || ownerAbout.trim() !== savedAbout);
+  /** Model features wait for the profile; only worth shouting about when there is a key to use. */
+  const llmPaused = $derived(!!s && s.llm.configured && !ownerProfileComplete(s.owner));
+  async function saveOwner(e: Event) {
+    e.preventDefault();
+    if (ownerBusy || !ownerDirty) return;
+    ownerBusy = true;
+    const ok = await settings.save({ owner: { name: ownerName.trim(), about: ownerAbout.trim() } });
+    ownerBusy = false;
+    if (ok) toasts.push({ message: 'Saved', kind: 'success', timeoutMs: 2500 });
+  }
+  function showAboutYou(e: Event) {
+    e.preventDefault();
+    const sec = document.getElementById('about-you');
+    sec?.scrollIntoView({ block: 'start' });
+    document.getElementById('owner-name')?.focus({ preventScroll: true });
+  }
 
   let keyInput = $state('');
   let keyBusy = $state(false);
@@ -248,6 +279,13 @@
 <div class="page">
   <h1>Settings</h1>
   {#if s}
+    {#if llmPaused}
+      <div class="paused" role="status" data-testid="profile-banner">
+        <strong>LLM features are paused until your profile is filled in.</strong>
+        Suggestions, nudge drafts and the assistant make no model calls until
+        <a class="link" href="#about-you" onclick={showAboutYou}>About you</a> has a name and a description.
+      </div>
+    {/if}
     <section class="panel sec" data-testid="settings-key">
       <h2>YouTube API key</h2>
       <p class="muted meta">
@@ -484,6 +522,48 @@
       {/each}
     </section>
 
+    <section class="panel sec" id="about-you" data-testid="settings-about">
+      <h2>About you</h2>
+      <p class="muted meta">
+        Suggestions, nudge drafts and the assistant are written for you, so the model is told who you are. Until both
+        fields are filled in, nothing is sent to the model at all.
+      </p>
+      <form class="owner" onsubmit={saveOwner}>
+        <label class="stack" for="owner-name"
+          ><span>What should the assistant call you?</span>
+          <input
+            id="owner-name"
+            class="input"
+            maxlength={OWNER_NAME_MAX}
+            placeholder="e.g. Alex"
+            autocomplete="given-name"
+            bind:value={ownerName}
+            data-testid="owner-name"
+          />
+        </label>
+        <label class="stack" for="owner-about"
+          ><span
+            >A short paragraph about who you are and what you maintain. It is sent to the model with every
+            classification, so keep it factual.</span
+          >
+          <textarea
+            id="owner-about"
+            class="input about"
+            rows="4"
+            maxlength={OWNER_ABOUT_MAX}
+            placeholder="e.g. Alex runs a YouTube channel about programming and maintains a few open-source libraries."
+            bind:value={ownerAbout}
+            data-testid="owner-about"></textarea>
+        </label>
+        <div class="line">
+          <span class="faint meta grow">{ownerAbout.trim().length} / {OWNER_ABOUT_MAX}</span>
+          <button class="btn primary" type="submit" disabled={!ownerDirty || ownerBusy} data-testid="owner-save"
+            >{ownerBusy ? 'Saving…' : 'Save'}</button
+          >
+        </div>
+      </form>
+    </section>
+
     <section class="panel sec" data-testid="settings-llm">
       <h2>Assistant</h2>
       <p class="muted meta">
@@ -621,7 +701,7 @@
         <input
           class="input grow"
           bind:value={ghAccount}
-          placeholder="GitHub login, e.g. mattgodbolt"
+          placeholder="GitHub login, e.g. octocat"
           aria-label="GitHub login"
           data-testid="github-account"
           autocomplete="off"
@@ -811,6 +891,33 @@
   .line {
     display: flex;
     gap: var(--s2);
+  }
+  .paused {
+    padding: var(--s3) var(--s4);
+    border: 1px solid var(--warn);
+    border-radius: var(--radius);
+    background: color-mix(in srgb, var(--warn) 14%, transparent);
+    line-height: 1.5;
+  }
+  .owner {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s3);
+  }
+  .stack {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s1);
+  }
+  .about {
+    width: 100%;
+    resize: vertical;
+    font: inherit;
+  }
+  @media (max-width: 899px) {
+    .owner .input {
+      font-size: 16px;
+    }
   }
   .notes {
     list-style: none;

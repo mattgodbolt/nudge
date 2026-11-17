@@ -3,6 +3,7 @@
   import { BUCKETS, nagText } from '../../../shared/snooze';
   import type { InboxItem } from '../../../shared/types';
   import { nudge } from '../lib/stores/nudge.svelte';
+  import { router } from '../lib/router.svelte';
   import { settings } from '../lib/stores/settings.svelte';
   import Kbd from './Kbd.svelte';
 
@@ -50,7 +51,18 @@
           onclick={() => void nudge.make(item.item.id)}
           >{mine && nudge.busy ? 'Drafting…' : mine && nudge.text ? 'Draft another' : 'Draft a nudge'}</button
         >
-        {#if mine && nudge.error}<span class="err meta" role="alert" data-testid="nudge-error">{nudge.error}</span>{/if}
+        {#if mine && nudge.error}<span class="err meta" role="alert" data-testid="nudge-error"
+            >{nudge.error}{#if nudge.needsProfile}
+              <a
+                class="link"
+                href="/settings"
+                data-testid="nudge-profile-link"
+                onclick={(e) => {
+                  e.preventDefault();
+                  router.navigate('settings');
+                }}>Open Settings</a
+              >{/if}</span
+          >{/if}
       </div>
     {/if}
   </div>

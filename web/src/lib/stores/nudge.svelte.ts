@@ -1,4 +1,5 @@
-import { api } from '../api';
+import { OWNER_PROFILE_MISSING } from '../../../../shared/owner';
+import { ApiRequestError, api } from '../api';
 
 /**
  * The drafted nudge for the open item. One at a time: it belongs to the item it was asked for, and is dropped when
@@ -10,17 +11,23 @@ class NudgeStore {
   text = $state<string | null>(null);
   busy = $state(false);
   error = $state('');
+  /** The error was the missing profile: Settings > About you is the way out, so the item offers a link there. */
+  needsProfile = $state(false);
 
   /** Ask for a draft for `itemId`; a draft for another item that arrives late is thrown away. */
   async make(itemId: string): Promise<void> {
     this.itemId = itemId;
     this.busy = true;
     this.error = '';
+    this.needsProfile = false;
     try {
       const r = await api.nudgeDraft(itemId);
       if (this.itemId === itemId) this.text = r.text;
     } catch (e) {
-      if (this.itemId === itemId) this.error = e instanceof Error ? e.message : 'Could not draft a nudge';
+      if (this.itemId === itemId) {
+        this.error = e instanceof Error ? e.message : 'Could not draft a nudge';
+        this.needsProfile = e instanceof ApiRequestError && e.code === OWNER_PROFILE_MISSING.error;
+      }
     } finally {
       if (this.itemId === itemId) this.busy = false;
     }
@@ -33,6 +40,7 @@ class NudgeStore {
     this.text = null;
     this.busy = false;
     this.error = '';
+    this.needsProfile = false;
   }
 }
 

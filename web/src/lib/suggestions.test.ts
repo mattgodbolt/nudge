@@ -113,6 +113,9 @@ describe('progressLine', () => {
     );
     expect(progressLine(st({ paused: { reason: 'backoff', until: null } }))).toContain('retrying shortly');
     expect(progressLine(st({ paused: { reason: 'key-rejected', until: null } }))).toContain('key was rejected');
+    expect(progressLine(st({ paused: { reason: 'no-profile', until: null } }))).toContain(
+      'paused until Settings > About you is filled in',
+    );
     // Paused with everything done is still worth saying only if there is something to say about progress.
     expect(progressLine(st({ done: 1870, paused: { reason: 'cap', until: null } }))).toContain('paused');
   });

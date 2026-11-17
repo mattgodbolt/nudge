@@ -1,4 +1,6 @@
-import { api } from '../api';
+import { OWNER_PROFILE_MISSING } from '../../../../shared/owner';
+import { ApiRequestError, api } from '../api';
+import { router } from '../router.svelte';
 import { describeOutcome, localNow, speechCtor, type Recognition } from '../assistant';
 import type { AssistantOutcome } from '../../../../shared/types';
 import { inbox } from './inbox.svelte';
@@ -107,7 +109,14 @@ class AssistantStore {
       }
     } catch (e) {
       // Keep the text so nothing said is lost.
-      toasts.error(e instanceof Error ? e.message : 'Could not reach Nudge');
+      if (e instanceof ApiRequestError && e.code === OWNER_PROFILE_MISSING.error) {
+        toasts.push({
+          message: e.message,
+          kind: 'error',
+          timeoutMs: 10000,
+          action: { label: 'Settings', run: () => router.navigate('settings') },
+        });
+      } else toasts.error(e instanceof Error ? e.message : 'Could not reach Nudge');
     } finally {
       this.busy = false;
     }

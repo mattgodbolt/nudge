@@ -73,7 +73,13 @@ async function requestOnce<R>(
   }
   if (!res.ok) {
     const err = data as Partial<T.ApiError> | undefined;
-    throw new ApiRequestError(err?.error ?? `${res.status} ${res.statusText}`, res.status, err?.code ?? 'http');
+    // Some refusals put a code in `error` and the words to show in `message` (owner_profile_missing).
+    const message = typeof err?.message === 'string' && err.message ? err.message : err?.error;
+    throw new ApiRequestError(
+      message ?? `${res.status} ${res.statusText}`,
+      res.status,
+      err?.code ?? err?.error ?? 'http',
+    );
   }
   return data as R;
 }

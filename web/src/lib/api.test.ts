@@ -46,3 +46,34 @@ describe('api retries', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('api errors', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('shows the words of a refusal whose error is a code: the missing profile', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        json(409, {
+          error: 'owner_profile_missing',
+          message: 'Set up your profile in Settings > About you first.',
+          code: 'owner_profile_missing',
+        }),
+      ),
+    );
+    await expect(api.nudgeDraft('gh:o/r#1')).rejects.toMatchObject({
+      status: 409,
+      code: 'owner_profile_missing',
+      message: 'Set up your profile in Settings > About you first.',
+    });
+  });
+
+  it('keeps using error as the message when there is no separate message', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(json(424, { error: 'Add a key', code: 'no_key' })));
+    await expect(api.nudgeDraft('gh:o/r#1')).rejects.toMatchObject({
+      status: 424,
+      code: 'no_key',
+      message: 'Add a key',
+    });
+  });
+});
