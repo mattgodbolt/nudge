@@ -1,9 +1,7 @@
 import { SNOOZE_BUCKETS, isSnoozeBucket } from '../../../shared/snooze.js';
-import { clip, esc, escAttr } from '../../classify/anthropic.js';
-import { LlmError } from '../../contracts.js';
+import { clip, esc, escAttr, postMessages, tokensOf } from './messages.js';
 import type { AssistantAction, AssistantResult, LlmClient } from '../../contracts.js';
 
-const API = 'https://api.anthropic.com/v1/messages';
 const TIMEOUT_MS = 20_000;
 const TITLE_MAX = 140;
 const NOTES_MAX = 2000;
@@ -88,25 +86,8 @@ const TOOLS = [
 
 type Json = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
 
-async function call(doFetch: typeof fetch, apiKey: string, body: Json): Promise<Json> {
-  let res: Response;
-  try {
-    res = await doFetch(API, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(TIMEOUT_MS),
-    });
-  } catch (e) {
-    throw new LlmError(`Could not reach Anthropic: ${e instanceof Error ? e.message : String(e)}`);
-  }
-  const json = (await res.json().catch(() => ({}))) as Json;
-  if (!res.ok) {
-    const detail = typeof json?.error?.message === 'string' ? `: ${json.error.message}` : '';
-    throw new LlmError(`Anthropic said ${res.status}${detail}`, res.status);
-  }
-  return json;
-}
+const call = (doFetch: typeof fetch, apiKey: string, body: Json): Promise<Json> =>
+  postMessages(doFetch, apiKey, body, TIMEOUT_MS);
 
 /** A time the model produced: valid and in the future, as a UTC ISO string; otherwise null. */
 function futureTime(v: unknown, now: Date): string | null {
@@ -183,21 +164,10 @@ export function parseCommand(reply: Json, now: Date, command?: string): Assistan
     .join('')
     .trim()
     .slice(0, 500);
-  const u: Json = reply.usage && typeof reply.usage === 'object' ? reply.usage : null;
-  const n = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) && v > 0 ? Math.round(v) : 0);
   return {
     actions,
     reply: text,
-    ...(u
-      ? {
-          tokens: {
-            inputTokens: n(u.input_tokens),
-            cacheReadTokens: n(u.cache_read_input_tokens),
-            cacheWriteTokens: n(u.cache_creation_input_tokens),
-            outputTokens: n(u.output_tokens),
-          },
-        }
-      : {}),
+    ...(reply.usage && typeof reply.usage === 'object' ? { tokens: tokensOf(reply) } : {}),
   };
 }
 

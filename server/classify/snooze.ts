@@ -1,10 +1,10 @@
 import { BUCKETS, SNOOZE_BUCKETS, isSnoozeBucket } from '../../shared/snooze.js';
-import type { LlmTokens, SnoozeAi } from '../contracts.js';
+import type { SnoozeAi } from '../contracts.js';
 import { LlmError } from '../contracts.js';
 import type { OwnerProfile } from '../../shared/owner.js';
-import { clip, esc, escAttr, ownerIntro, ownerName, stripLinks } from './anthropic.js';
+import { clip, esc, escAttr, postMessages, tokensOf, toolChoice } from '../providers/anthropic/messages.js';
+import { ownerIntro, ownerName, stripLinks } from './anthropic.js';
 
-const API = 'https://api.anthropic.com/v1/messages';
 const TIMEOUT_MS = 20_000;
 const NUDGE_MAX = 700;
 
@@ -58,17 +58,6 @@ export function cleanNudge(text: string, onThread: Iterable<string>): string {
     .trim();
 }
 
-const tokensOf = (json: Json): LlmTokens => {
-  const u: Json = json.usage && typeof json.usage === 'object' ? json.usage : {};
-  const n = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) && v > 0 ? Math.round(v) : 0);
-  return {
-    inputTokens: n(u.input_tokens),
-    cacheReadTokens: n(u.cache_read_input_tokens),
-    cacheWriteTokens: n(u.cache_creation_input_tokens),
-    outputTokens: n(u.output_tokens),
-  };
-};
-
 /**
  * The two small model calls around snoozing, on the same terms as the suggestion classifier: untrusted text is
  * entity-escaped into a data block, the system prompt says to treat it as data, the model has no tools beyond the one
@@ -78,25 +67,7 @@ const tokensOf = (json: Json): LlmTokens => {
 export function createSnoozeAi(opts: { fetchImpl?: typeof fetch } = {}): SnoozeAi {
   const doFetch = opts.fetchImpl ?? fetch;
 
-  async function call(apiKey: string, body: Json): Promise<Json> {
-    let res: Response;
-    try {
-      res = await doFetch(API, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' },
-        body: JSON.stringify(body),
-        signal: AbortSignal.timeout(TIMEOUT_MS),
-      });
-    } catch (e) {
-      throw new LlmError(`Could not reach Anthropic: ${e instanceof Error ? e.message : String(e)}`);
-    }
-    const json = (await res.json().catch(() => ({}))) as Json;
-    if (!res.ok) {
-      const detail = typeof json?.error?.message === 'string' ? `: ${json.error.message}` : '';
-      throw new LlmError(`Anthropic said ${res.status}${detail}`, res.status);
-    }
-    return json;
-  }
+  const call = (apiKey: string, body: Json): Promise<Json> => postMessages(doFetch, apiKey, body, TIMEOUT_MS);
 
   return {
     async bucket({ why, title, kind }, apiKey, model) {
@@ -106,7 +77,7 @@ export function createSnoozeAi(opts: { fetchImpl?: typeof fetch } = {}): SnoozeA
         system: BUCKET_SYSTEM,
         tools: [TOOL],
         // Not every model accepts a forced tool; the schema and the prompt still leave record_bucket as the way out.
-        tool_choice: model.includes('haiku') ? { type: 'tool', name: TOOL.name } : { type: 'auto' },
+        tool_choice: toolChoice(model, TOOL.name),
         messages: [
           {
             role: 'user',

@@ -1,7 +1,7 @@
 import type { Db } from '../db/db.js';
 import { createRepo } from '../db/repo.js';
 import type { SuggestionRow } from '../db/suggestions.js';
-import { mulberry32 } from './world.js';
+import { mulberry32 } from '../prng.js';
 
 /**
  * Demo only (NUDGE_DEMO_HISTORY=1): a few weeks of made-up history so the Insights section has something to show. The
