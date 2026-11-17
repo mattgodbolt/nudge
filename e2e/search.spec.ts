@@ -24,15 +24,19 @@ test('a filter that matches nothing says so (not "All caught up"), and g c clear
   page,
 }) => {
   // This server has no GitHub feed, so no item is by a bot.
-  await page.goto('/inbox?who=bots&sug=matt');
+  await page.goto('/inbox?who=bots&sug=me');
   const empty = page.getByText('Nothing matches');
   await expect(empty).toBeVisible();
+  // The suggestion filter took too (an unknown value would be dropped), so there is one to clear.
+  await expect(page.getByTestId('sug-filter')).toHaveValue('me');
   await expect(page.getByText('All caught up')).toHaveCount(0);
   await page.keyboard.press('g');
   await page.keyboard.press('c');
   await expect(page.getByTestId('inbox-row').first()).toBeVisible();
   // (The selected row's ?c= comes back by itself; no filter does.)
   expect(new URL(page.url()).search).not.toMatch(/who|sug/);
+  // Suggestions are off here, so the filter goes once nothing holds it open.
+  await expect(page.getByTestId('sug-filter')).toHaveCount(0);
 });
 
 test('the Clear filters button clears them all too', async ({ page }) => {
