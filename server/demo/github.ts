@@ -152,6 +152,10 @@ export function createFakeGithubClient(
       async latestCommenter(repo, number) {
         return newest.get(githubItemId(repo.split('/')[0]!, repo.split('/')[1]!, number)) ?? null;
       },
+      async reviewsSince() {
+        // Demo activity is conversation comments only (see comment()), which the count already reports.
+        return [];
+      },
       async recentComments(repo, number, commentCount) {
         // Deterministic: alternating the maintainer and the owner (who is "me" in demo mode), newest last.
         const it = items.find((i) => i.repo === repo && i.number === number);

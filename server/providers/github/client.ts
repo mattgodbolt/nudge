@@ -5,6 +5,7 @@ import type {
   GithubDiscussion,
   GithubItemUpsert,
   GithubRate,
+  GithubReviewer,
   GithubSearchPage,
 } from '../../contracts.js';
 import { githubItemId } from '../../db/feeds.js';
@@ -276,6 +277,24 @@ export function createGithubClient(opts: { fetch?: typeof fetch } = {}): GithubC
       );
       const last = Array.isArray(body) ? body[0] : null;
       return typeof last?.user?.login === 'string' ? last.user.login : null;
+    },
+
+    async reviewsSince(repo, number, since, token) {
+      const [owner, name] = repo.split('/');
+      const base = `/repos/${encodeURIComponent(owner ?? '')}/${encodeURIComponent(name ?? '')}/pulls/${number}/reviews`;
+      const page = (n: number) => call(`${base}?per_page=100&page=${n}`, token);
+      // The list is oldest first with no `since` or sort: the newest reviews are on the last page.
+      const first = await page(1);
+      const last = lastPageOf(first.res.headers.get('link'));
+      const got = last && last > 1 ? await page(last) : first;
+      if (!Array.isArray(got.body)) return [];
+      const out: GithubReviewer[] = [];
+      for (const r of got.body) {
+        const at = ts(r.submitted_at);
+        if (!at || at <= since || r.state === 'PENDING' || typeof r.user?.login !== 'string') continue;
+        out.push({ login: r.user.login, type: typeof r.user.type === 'string' ? r.user.type : null, at });
+      }
+      return out;
     },
 
     async recentComments(repo, number, commentCount, token, limit = 5) {

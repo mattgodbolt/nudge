@@ -313,6 +313,45 @@ describe('discussion', () => {
   });
 });
 
+describe('reviewsSince', () => {
+  const review = (id: number, when: string | null, over: Record<string, unknown> = {}) => ({
+    id,
+    user,
+    state: 'COMMENTED',
+    body: '',
+    submitted_at: when,
+    ...over,
+  });
+
+  it('lists reviews submitted after a time in one request, inline-comment envelopes included, drafts left out', async () => {
+    const { c, seen } = client(() =>
+      json([
+        review(1, at(1), { state: 'APPROVED', user: { login: 'old', type: 'User' } }),
+        review(2, at(5), { state: 'CHANGES_REQUESTED', body: 'fix', user: { login: 'dave', type: 'User' } }),
+        review(3, at(6), { user: { login: 'ci[bot]', type: 'Bot' } }), // an inline comment's envelope
+        review(4, null, { state: 'PENDING' }), // my own unsent draft
+      ]),
+    );
+    expect(await c.reviewsSince('org/app', 7, at(2), 't')).toEqual([
+      { login: 'dave', type: 'User', at: at(5) },
+      { login: 'ci[bot]', type: 'Bot', at: at(6) },
+    ]);
+    expect(seen.map((s) => s.url)).toEqual([
+      'https://api.github.com/repos/org/app/pulls/7/reviews?per_page=100&page=1',
+    ]);
+  });
+
+  it('reads the last page as well when there are more than 100 reviews, and nothing for a vanished PR', async () => {
+    const link = { link: '<https://api.github.com/x?per_page=100&page=3>; rel="last"' };
+    const { c, seen } = client((url) =>
+      new URL(url).searchParams.get('page') === '3' ? json([review(300, at(9))], link) : json([review(1, at(1))], link),
+    );
+    expect((await c.reviewsSince('org/app', 7, at(2), 't')).map((r) => r.at)).toEqual([at(9)]);
+    expect(seen.map((s) => new URL(s.url).searchParams.get('page'))).toEqual(['1', '3']);
+    expect(await client(() => json({}, {}, 404)).c.reviewsSince('org/app', 7, at(2), 't')).toEqual([]);
+  });
+});
+
 describe('the REST (core) rate limit', () => {
   const rateHeaders = (resource: string | null, remaining: number) => ({
     'x-ratelimit-limit': resource === 'search' ? '30' : '5000',

@@ -17,7 +17,7 @@ type Row = Record<string, any>; // eslint-disable-line @typescript-eslint/no-exp
 
 const EPOCH = '1970-01-01T00:00:00.000Z';
 /** States a GitHub item leaves when someone other than the owner comments on it while it is open. */
-const DONE_LIKE: ReadonlySet<string> = new Set(['done', 'replied', 'resolved']);
+export const DONE_LIKE: ReadonlySet<string> = new Set(['done', 'replied', 'resolved']);
 const MUTE_KINDS: readonly MuteKind[] = ['repo', 'owner', 'author', 'bots', 'item'];
 
 export const githubItemId = (owner: string, repo: string, number: number): string => `gh:${owner}/${repo}#${number}`;
@@ -296,7 +296,13 @@ export function createFeedsRepo(deps: FeedsDeps) {
     return r ? { item: itemFromRow(r), state: r.state, occurredAt: r.occurred_at, bodyPlain: r.body_plain } : null;
   }
 
-  type ItemMeta = { state: CommentState; sourceState: string | null; comments: number; snoozedUntilActivity: boolean };
+  type ItemMeta = {
+    state: CommentState;
+    sourceState: string | null;
+    comments: number;
+    snoozedUntilActivity: boolean;
+    seenUpdatedAt: string | null;
+  };
   function githubItemMeta(ids: string[]): Map<string, ItemMeta> {
     const out = new Map<string, ItemMeta>();
     if (ids.length === 0) return out;
@@ -310,6 +316,7 @@ export function createFeedsRepo(deps: FeedsDeps) {
         state: r.state,
         sourceState: r.source_state,
         comments: parseData(r.data).comments ?? 0,
+        seenUpdatedAt: seenUpdatedAt(parseData(r.data)),
         snoozedUntilActivity: r.snooze_until_activity === 1 && !!r.snoozed_until && r.snoozed_until > now(),
       });
     }
@@ -321,8 +328,8 @@ export function createFeedsRepo(deps: FeedsDeps) {
    *  - new items arrive in the inbox, unless they are mine ('own'), older than the feed's baseline ('archived'),
    *    already closed ('resolved') or covered by a mute rule ('archived');
    *  - closing or merging at GitHub resolves an inbox item (never one the user put there);
-   *  - something Done/resolved comes back when someone other than me comments on it while it is open, and when
-   *    it is reopened at GitHub, unless muted.
+   *  - something Done/resolved comes back when someone other than me comments on it (or, for a PR, reviews it)
+   *    while it is open, and when it is reopened at GitHub, unless muted.
    */
   function upsertGithubItems(feedId: number, ups: GithubItemUpsert[]): UpsertGithubResult {
     const mine = deps.myAccounts();
@@ -416,14 +423,32 @@ export function createFeedsRepo(deps: FeedsDeps) {
           u.lastCommenterIsMe === undefined &&
           (DONE_LIKE.has(existing.state) || waiting);
         const grew = counted && !unknown;
+        // Reviews and inline review comments do not move the comment count, so a PR that moved while Done or parked
+        // carries the poller's answer about them (see GithubItemUpsert.reviewer). A newest comment from someone else
+        // decides it already, so the poller does not ask then. Unknown is handled like an unknown commenter: the last
+        // seen update is kept so the next poll asks again from the same point.
+        const seen = existing ? seenUpdatedAt(prev) : null;
+        const reviewDue =
+          !!existing &&
+          u.kind === 'pr' &&
+          u.sourceState === 'open' &&
+          (DONE_LIKE.has(existing.state) || waiting) &&
+          seen !== null &&
+          u.updatedAt > seen &&
+          u.lastCommenterIsMe !== false;
+        const reviewUnknown = reviewDue && u.reviewer === undefined;
+        const reviewed = reviewDue && typeof u.reviewer === 'string';
         const data = JSON.stringify({
           // The newest commenter is only known when the poller looked it up for this very growth.
-          lastCommenter: u.lastCommenter ?? (grew ? undefined : prev.lastCommenter),
+          lastCommenter: reviewed ? u.reviewer : (u.lastCommenter ?? (grew ? undefined : prev.lastCommenter)),
           // Comments after the last poll that saw the old count are the ones that bring a Done item back. Kept while
           // the item sits in the inbox so a second reply does not hide the first.
-          checkedAt: unknown ? (prev.checkedAt ?? at) : at,
+          checkedAt: unknown || reviewUnknown ? (prev.checkedAt ?? at) : at,
           activitySince:
-            grew && (existing.state !== 'inbox' || waiting) ? (prev.checkedAt ?? null) : (prev.activitySince ?? null),
+            (grew || reviewed) && (existing.state !== 'inbox' || waiting)
+              ? (prev.checkedAt ?? null)
+              : (prev.activitySince ?? null),
+          updatedAt: reviewUnknown ? seen : u.updatedAt,
           number: u.number,
           draft: u.draft,
           association: u.association,
@@ -487,10 +512,12 @@ export function createFeedsRepo(deps: FeedsDeps) {
         }
         // Someone other than me commented (or it was closed or merged) while it was parked until activity: it comes
         // back. A comment from me does not count. Also drops the "no activity" mark from an item that already came back.
-        const theirs = grew && u.lastCommenterIsMe !== true;
+        const commented = grew && u.lastCommenterIsMe !== true;
+        const theirs = commented || reviewed;
         if (waiting && (theirs || (wasOpen && u.sourceState !== 'open'))) {
           const closed = wasOpen && u.sourceState !== 'open';
-          const woken = wakeOnActivity(db, ev, [u.id], at, { trigger: closed ? u.sourceState : 'comment' }, closed);
+          const trigger = closed ? u.sourceState : commented ? 'comment' : 'review';
+          const woken = wakeOnActivity(db, ev, [u.id], at, { trigger }, closed);
           if (woken.length > 0) res.woken.push(u.id);
           res.changed.push(u.id);
           continue;
@@ -501,7 +528,7 @@ export function createFeedsRepo(deps: FeedsDeps) {
         } else if (u.sourceState === 'open' && state === 'resolved' && !wasOpen) {
           moveTo(existing, u.id, 'inbox', 'reopened', at);
           res.reopened.push(u.id);
-        } else if (u.sourceState === 'open' && DONE_LIKE.has(state) && grew && u.lastCommenterIsMe !== true) {
+        } else if (u.sourceState === 'open' && DONE_LIKE.has(state) && theirs) {
           moveTo(existing, u.id, 'inbox', 'new_activity', at);
           res.reopened.push(u.id);
         }
@@ -566,6 +593,15 @@ export function createFeedsRepo(deps: FeedsDeps) {
     upsertGithubItems,
     itemFromRow,
   };
+}
+
+/**
+ * The item's updated_at as of the last poll that took it in fully. Rows stored before it was kept fall back to when
+ * that poll ran, which is no earlier than the update it saw.
+ */
+function seenUpdatedAt(data: Row): string | null {
+  const v = data.updatedAt ?? data.checkedAt;
+  return typeof v === 'string' ? v : null;
 }
 
 export function parseData(s: unknown): Row {

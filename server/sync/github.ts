@@ -1,5 +1,6 @@
 import type { EventBus, FeedRow, GithubClient, GithubItemUpsert, GithubPoller, Repo } from '../contracts.js';
 import { GithubError } from '../contracts.js';
+import { DONE_LIKE } from '../db/feeds.js';
 
 export interface GithubPollerDeps {
   repo: Repo;
@@ -12,7 +13,10 @@ export interface GithubPollerDeps {
   intervalMs?: number;
   /** Search pages (100 each) per poll; a busier window continues on the next poll. */
   maxPages?: number;
-  /** Per poll, how many "who commented last?" lookups to spend on Done items that gained comments. */
+  /**
+   * Per poll, how many lookups to spend on Done or parked items: "who commented last?" for those that gained comments,
+   * then "any reviews since?" for PRs that moved.
+   */
   maxCommenterLookups?: number;
   log?: (msg: string, err?: unknown) => void;
 }
@@ -25,6 +29,9 @@ const OVERLAP_MS = 15 * 60_000;
 const MAX_BACKOFF_MS = 30 * 60_000;
 
 const ghTime = (d: Date) => d.toISOString().replace(/\.\d{3}Z$/, 'Z');
+
+/** GitHub Apps review as `name[bot]` with type 'Bot'; neither should wake anything. */
+const isBot = (login: string, type: string | null) => type === 'Bot' || login.toLowerCase().endsWith('[bot]');
 
 /**
  * Polls each enabled feed on its own schedule, with its own queue and limits: GitHub is independent of YouTube's key
@@ -103,8 +110,7 @@ export function createGithubPoller(deps: GithubPollerDeps): GithubPoller & { tic
       for (const u of ups) {
         const m = meta.get(u.id);
         if (!m || u.sourceState !== 'open' || u.comments <= m.comments) continue;
-        if (!(m.state === 'done' || m.state === 'replied' || m.state === 'resolved' || m.snoozedUntilActivity))
-          continue;
+        if (!(DONE_LIKE.has(m.state) || m.snoozedUntilActivity)) continue;
         // Past the cap, or when the lookup fails, the answer stays unknown (lastCommenterIsMe undefined): the upsert
         // then keeps the old comment count so the next poll asks again, rather than guessing either way.
         if (lookups++ >= maxLookups) break;
@@ -117,6 +123,26 @@ export function createGithubPoller(deps: GithubPollerDeps): GithubPoller & { tic
         // No comment to be found (deleted since the count was taken): not mine, as before.
         u.lastCommenterIsMe = who !== null && mine.has(who.toLowerCase());
         if (who) u.lastCommenter = who;
+      }
+
+      // Reviews and inline review comments leave the comment count alone, so an open PR that moved since Nudge last
+      // took it in, while Done or parked, is asked about its reviews instead: one request per move, from the same
+      // capped budget (comment lookups go first). A push or CI run moves a PR too; those find no qualifying review.
+      // The upsert repeats these conditions to tell "no review" from "not asked".
+      for (const u of ups) {
+        const m = meta.get(u.id);
+        if (!m || u.kind !== 'pr' || u.sourceState !== 'open') continue;
+        if (!(DONE_LIKE.has(m.state) || m.snoozedUntilActivity)) continue;
+        if (m.seenUpdatedAt === null || u.updatedAt <= m.seenUpdatedAt) continue;
+        if (u.lastCommenterIsMe === false) continue; // someone else's comment brings it back already
+        if (lookups++ >= maxLookups) break;
+        try {
+          const reviews = await client.reviewsSince(u.repo, u.number, m.seenUpdatedAt, token);
+          const theirs = reviews.filter((r) => !mine.has(r.login.toLowerCase()) && !isBot(r.login, r.type));
+          u.reviewer = theirs.at(-1)?.login ?? null;
+        } catch {
+          // Left unknown: the upsert keeps the last seen update, so the next poll asks again.
+        }
       }
 
       const result = repo.upsertGithubItems(feed.id, ups);
