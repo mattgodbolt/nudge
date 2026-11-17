@@ -269,6 +269,15 @@ check "and says so" grep -q "NUDGE_BACKUP_DIR is not set" "$OUT"
 (cd "$WORK" && PATH="$BIN:$PATH" NUDGE_BACKUP_DIR="$SANDBOX/nas" deploy/backup.sh bogus > "$OUT" 2>&1)
 check "rejects an unknown mode" [ $? = 2 ]
 
+echo "backup-db.mjs (the real script, against a scratch database)"
+(cd "$REPO" && node -e "const D = require('better-sqlite3'); const db = new D(process.argv[1]);
+  db.exec('CREATE TABLE comments (id TEXT)'); db.close();" "$SANDBOX/live.db")
+(umask 022 && cd "$REPO" && NUDGE_DB="$SANDBOX/live.db" node deploy/backup-db.mjs "$SANDBOX/bk/new/copy.db" > "$OUT" 2>&1)
+check "succeeds" [ $? = 0 ]
+check "creates the backups directory owner-only, even under a permissive umask" \
+  [ "$(stat -c %a "$SANDBOX/bk/new")" = 700 ]
+check "and the copy" [ "$(stat -c %a "$SANDBOX/bk/new/copy.db")" = 600 ]
+
 echo
 if [ "$failures" -gt 0 ]; then
   echo "$failures check(s) FAILED"

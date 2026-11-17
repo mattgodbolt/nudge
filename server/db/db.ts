@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3';
-import { chmodSync, mkdirSync, readdirSync, rmSync } from 'node:fs';
+import { chmodSync, closeSync, mkdirSync, openSync, readdirSync, rmSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { MIGRATIONS } from './migrations.js';
 
@@ -56,9 +56,12 @@ export function snapshotBeforeMigrating(db: Db, path: string, at: Date = new Dat
   const current = db.pragma('user_version', { simple: true }) as number;
   if (path === ':memory:' || path === '' || current === 0 || current >= MIGRATIONS.length) return null;
   const dir = join(dirname(path), 'backups');
-  mkdirSync(dir, { recursive: true });
+  // A copy holds every token and key: owner-only from the moment it exists, never world-readable until a chmod.
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
   const dest = join(dir, `pre-migrate-v${current}-${at.toISOString().replace(/[-:.]/g, '')}.db`);
   try {
+    // VACUUM INTO accepts an empty file, so the copy is created owner-only here rather than with SQLite's default mode.
+    closeSync(openSync(dest, 'wx', 0o600));
     // VACUUM INTO writes a self-contained, consistent file (no -wal/-shm sidecars) even while the DB is in WAL mode.
     db.prepare('VACUUM INTO ?').run(dest);
     chmodSync(dest, 0o600);

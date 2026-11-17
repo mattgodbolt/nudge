@@ -45,6 +45,19 @@ describe('snapshotBeforeMigrating', () => {
     db.close();
   });
 
+  it('creates the backups directory owner-only, whatever the umask', () => {
+    const dir = tmp();
+    oldDb(join(dir, 'nudge.db'), 8);
+    const was = process.umask(0);
+    try {
+      openDb(join(dir, 'nudge.db')).close();
+    } finally {
+      process.umask(was);
+    }
+    expect(statSync(join(dir, 'backups')).mode & 0o777).toBe(0o700);
+    expect(statSync(join(dir, 'backups', snaps(dir)[0]!)).mode & 0o777).toBe(0o600);
+  });
+
   it('snapshots a v9 database before the usage_daily migration, leaving the copy without that table', () => {
     const dir = tmp();
     oldDb(join(dir, 'nudge.db'), 9);
