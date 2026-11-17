@@ -182,7 +182,7 @@ published_at < ?)`). They remain YouTube-specific code, which is correct.
    snapshot when it rolls back across a schema change.
 2. Add a test that builds a 006 DB with the demo world, records `counts()`, `listInbox` for every view, label and
    source, and snooze state, migrates, and asserts the same results. Then run the same script once against a copy of
-   the newest NAS backup by hand before merging.
+   the newest backup in the off-box backup directory (`NUDGE_BACKUP_DIR`) by hand before merging.
 3. Keep `triage_actions.changes` JSON readable: the old rows use `commentId`, so make `undo` accept `commentId ??
 itemId`. They are only undoable for 24 h anyway.
 
@@ -373,7 +373,7 @@ use 48 search requests per hour against a limit of 30 per minute. Snippet fetche
   may block fine-grained tokens altogether. Store them as `github.token.<owner>`. The provider picks the token by the
   repo owner and otherwise falls back to the classic token.
 - **Rejected:** OAuth App or GitHub App. The notifications endpoints document classic-PAT-only support, an App adds
-  a registration and callback flow that is awkward for a tailnet-only box (the same loopback redirect problem as
+  a registration and callback flow that is awkward for a box that is not publicly reachable (the same loopback redirect problem as
   Google), and it buys nothing for a single user.
 - If both orgs' repos are public, the single notifications-only classic token is enough for everything except
   write-back.
@@ -440,7 +440,7 @@ minute is as fresh as YouTube polling already is. Not worth it.
   handling. Store the Tasks token in a new `credentials` table (provider, label, refresh_token, scope,
   needs_reauth …) rather than bending `google_accounts`. Request only `tasks.readonly`, and use
   `include_granted_scopes=true` only if the same account is reused.
-- The same loopback constraint as today applies: connect over `ssh -L 4517:127.0.0.1:4517 phoenix`.
+- The same loopback constraint as today applies: connect over `ssh -L 4517:127.0.0.1:4517 <box>`.
 
 ### Other TODO sources, ranked by value per effort
 
@@ -449,7 +449,7 @@ minute is as fresh as YouTube polling already is. Not worth it.
 | 1    | **Nudge-native "local" nudges**: quick capture (`c`), optional due or snooze, text and a URL; PWA share-target ("share to Nudge" from the phone) | Small                                  | Covers the "remind me about X" job Keep was doing, with the same verbs and push. Provider id `local`, no network. Also exercises the feeds/items framework first.                                     |
 | 2    | **GitHub assigned issues in a private `todo` repo**                                                                                              | Free once the GitHub query feed exists | Real TODOs with labels, due dates via milestones, editable from the phone's GitHub app.                                                                                                               |
 | 3    | **Google Tasks**                                                                                                                                 | Medium (mostly OAuth generalisation)   | Only worth it if you actually use Tasks or Gmail's "add to Tasks".                                                                                                                                    |
-| 4    | **Markdown / Obsidian file** (`- [ ] … 📅 2026-11-10`, Tasks-plugin syntax)                                                                      | Small                                  | The file must be on phoenix (Syncthing or NAS mount). Read-only parse plus file watch; write-back of `[x]` risks sync conflicts.                                                                      |
+| 4    | **Markdown / Obsidian file** (`- [ ] … 📅 2026-11-10`, Tasks-plugin syntax)                                                                      | Small                                  | The file must be on the server (Syncthing or a network mount). Read-only parse plus file watch; write-back of `[x]` risks sync conflicts.                                                             |
 | 5    | **Email flags (IMAP)**                                                                                                                           | Medium                                 | High value if you star emails as TODOs. IMAP IDLE with an app password (needs 2-Step Verification) avoids the Gmail API's _restricted_ `gmail.readonly` scope. A full-mailbox credential is the risk. |
 | 6    | **Todoist**                                                                                                                                      | Small-medium                           | Best API of the lot (personal token; unified API v1 `/sync` with incremental `sync_token`; due datetimes and recurrence). Only if you use it. Rate limits not verified (sources conflict).            |
 | 7    | **Microsoft To Do** (Graph `/me/todo/lists/{id}/tasks`, delta)                                                                                   | Medium                                 | Needs an Entra app registration plus OAuth. From memory, not verified. Only if you use it.                                                                                                            |
@@ -533,22 +533,6 @@ container_title, reason, source_state, url, data`, plus thread context through `
 3. That the "other organisation" permits the token type you choose. (Spike 3)
 4. That migration 007 is count-invariant on real data, and that the rollback story works. (Spike 4)
 5. That you actually keep TODOs anywhere reachable. If they live only in Keep, phase 5 is moot.
-
-## 8. Open questions for you
-
-1. Which GitHub orgs and repos, and are any of them private? Does the "other organisation" restrict PAT types?
-2. Is a classic `notifications`-only token acceptable, given that it is the only token type the Notifications API
-   supports? Would you ever accept `public_repo` to post comments, or is hand-off (copy and open) enough?
-3. Should `e` on a GitHub item also mark the notification done on github.com (proposed default: yes)?
-4. Should `subscribed` (repos you watch) ever reach the inbox, perhaps for a short allow-list of repos?
-5. Should a done GitHub thread reopen on _any_ new activity by someone else, or only on reasons aimed at you
-   (mention, review request)?
-6. Where do your TODOs actually live: Keep, Tasks, a notes file, starred email? Would Nudge-native quick capture
-   replace Keep for the "nudge me" part?
-7. Is your YouTube channel a Brand Account? That decides whether a Tasks connection can share the existing Google
-   sign-in. The proposal assumes a separate connection either way.
-8. Stale-PR threshold (default 14 days), and should drafts be excluded?
-9. Push: which GitHub reasons should buzz your phone?
 
 ## Sources
 

@@ -7,19 +7,21 @@ Status: historical proposal (2026-11-08). The items spine, GitHub feeds, mutes a
 > and the label parts of this proposal (label suggestions, a ghost new-label chip, label kNN, label descriptions,
 > `labels` / `newLabel` in the output schema, `applyLabels`) are dropped. Embeddings for near-duplicates are still a
 > possible later step. GitHub's own labels on PRs and issues are a different, read-only thing and are unaffected.
-> pricing, prompt-caching and structured-outputs docs on 2026-11-08 (links at the end).
+
+Prices and model facts below were checked against Anthropic's pricing, prompt-caching and structured-outputs docs on
+2026-11-08 (links at the end).
 
 ## TL;DR
 
 - **Start with the Anthropic API and Claude Haiku 5.5, with a rules tier in front of it.** At your volume
   the cost is a rounding error: under $0.10 a week, and a full re-run of your entire history costs about $1.
-  A local model on phoenix is feasible but costs more in RAM, ops and accuracy than it saves in dollars, so keep it
+  A local model on the server is feasible but costs more in RAM, ops and accuracy than it saves in dollars, so keep it
   as a later per-source option for private items, not the starting point.
-- **First test whether the problem exists.** Your local DB snapshot (`data/nudge.db`, 5,394 non-own comments) has
-  only about 12 obviously scammy comments (telegram/whatsapp/crypto) and 1 impersonator name. With only an API
-  key, YouTube already hides "held for review" spam from us (PLAN R8). The real value is probably not spam. It is
-  sorting "needs me" from "nice, no reply needed". Your history labels that well enough to measure before we build
-  anything: questions got an own-channel reply 26% of the time, non-questions 10%.
+- **First test whether the problem exists.** A snapshot of the database (`data/nudge.db`, around 5,000 non-own
+  comments; figures for illustration) has only about a dozen obviously scammy comments (telegram/whatsapp/crypto) and
+  one impersonator name. With only an API key, YouTube already hides "held for review" spam from us (PLAN R8). The
+  real value is probably not spam. It is sorting "needs me" from "nice, no reply needed". Your history labels that well enough to measure before we build
+  anything: questions got an own-channel reply about a quarter of the time, non-questions about a tenth.
 - **Safety model:** classification is a side table, never a state change. "Filed as spam" is an overlay column
   shaped like `snoozed_until`: the comment stays `state='inbox'`, it is hidden from the Inbox view, it shows in a
   "Filtered" view, and it can be restored at any time. Modes are Off, Shadow, Suggest and Auto-file spam. Every
@@ -31,32 +33,33 @@ Status: historical proposal (2026-11-08). The items spine, GitHub feeds, mutes a
 
 ## 0. What the data says (local snapshot, read-only queries)
 
-`data/nudge.db` in the checkout (user_version 4, synced 2026-11-07; probably a copy of phoenix's DB):
+A snapshot of `data/nudge.db` (schema v4). The figures are rounded and for illustration: they show the shape of a
+channel's history, not exact counts.
 
-| Measure                                                  | Value                                                                                         |
-| -------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| Non-own comments                                         | 5,394 (3,425 top-level), 2,943 distinct authors                                               |
-| Rate in 2026                                             | ~30-200 a month; 306 in the last 30 days; 114 in the last 7 (a spike, presumably a new video) |
-| Peak year                                                | 2025: 3,403 (about 65 a week on average, much more in launch weeks)                           |
-| Length                                                   | median 113 chars, p90 447, max 4,161                                                          |
-| In a thread with a later own reply                       | 689 (13%)                                                                                     |
-| ...and contains "?"                                      | 263 of 996 (26%), against 426 of 4,398 (10%) without "?"                                      |
-| Obvious scam keywords (telegram/whatsapp/bitcoin/crypto) | 12                                                                                            |
-| Author name contains your own name (not you)             | 1                                                                                             |
-| Exact duplicate texts                                    | 21                                                                                            |
-| Own replies                                              | 599 (591 of them replies, not top-level)                                                      |
+| Measure                                                  | Value (for illustration)                                          |
+| -------------------------------------------------------- | ----------------------------------------------------------------- |
+| Non-own comments                                         | about 5,000 (about 3,500 top-level), about 3,000 distinct authors |
+| Rate this year                                           | tens to a couple of hundred a month, spiking after a new video    |
+| Peak year                                                | about 3,500 (about 65 a week on average, more in launch weeks)    |
+| Length                                                   | median about 100 chars, p90 about 450, max about 4,000            |
+| In a thread with a later own reply                       | about 700 (13%)                                                   |
+| ...and contains "?"                                      | about 25% of those with "?", against about 10% without            |
+| Obvious scam keywords (telegram/whatsapp/bitcoin/crypto) | about a dozen                                                     |
+| Author name contains your own name (not you)             | one                                                               |
+| Exact duplicate texts                                    | about 20                                                          |
+| Own replies                                              | about 600 (nearly all replies, not top-level)                     |
 
 **Volume assumption for costing:** typical 50-150 new items a week. Design for 500 a week, with launch-day bursts
 of about 300. GitHub and Tasks items arriving later could double that. It does not change any conclusion below.
 
 ## 1. Where inference can run
 
-### phoenix
+### The server
 
-The repo says nothing about phoenix's hardware. It runs Docker with `node:22-bookworm-slim`, the image build
+The repo says nothing about the server's hardware. It runs Docker with `node:22-bookworm-slim`, the image build
 compiles better-sqlite3 within a 25-minute timeout (`deploy/update.sh`), the Dockerfile notes I/O contention with
-parallel tests, and it backs up to `/nas`. Assume a modest x86 CPU box with no GPU until you tell me otherwise
-(run `nproc; free -g; lscpu | grep 'Model name'` there). The container already makes outbound HTTPS calls (YouTube,
+parallel tests, and it backs up to the off-box backup directory (`NUDGE_BACKUP_DIR`). Assume a modest x86 CPU box with no GPU
+(`nproc; free -g; lscpu | grep 'Model name'` there would say). The container already makes outbound HTTPS calls (YouTube,
 FCM), so (a) needs no network change.
 
 ### Options compared
@@ -64,9 +67,9 @@ FCM), so (a) needs no network change.
 | Option                                                                                                                       | Quality                                                                                                                                                                                                                                                                               | Cost                                                             | Ops / risk                                                                                                                                                                                                                                                           | Verdict                                                                                                         |
 | ---------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
 | **(a) Anthropic API from the server** (key in `settings` like `apiKey`)                                                      | Best available. Haiku 5.5 is built for classification; Sonnet 5.5 if the eval says so                                                                                                                                                                                                 | Pennies (below)                                                  | One new runtime dependency (`@anthropic-ai/sdk`), a key in DB and backups, internet needed (fail-open)                                                                                                                                                               | **Recommended start**                                                                                           |
-| **(b) Local model on phoenix** (Ollama / llama.cpp container)                                                                | Small 1-4B instruction models (current Qwen, Gemma, Llama 3.x-class, Phi-mini; check what is current) are fine on obvious spam and emoji praise, and noticeably weaker on "is this correction worth answering", sarcasm, and labelling against your taxonomy. Easier to prompt-inject | £0 marginal, but about 3-5 GB RAM resident (Q4 3-4B), plus power | A second container, model updates, CPU contention with sync and builds. Throughput is fine: a 400-token prompt plus 50 tokens out is roughly 3-15 s per item on a 4-8 core CPU, and hundreds a week is trivial                                                       | Not worth it for public comments. Keep as a `Classifier` implementation for private sources later               |
+| **(b) Local model on the server** (Ollama / llama.cpp container)                                                             | Small 1-4B instruction models (current Qwen, Gemma, Llama 3.x-class, Phi-mini; check what is current) are fine on obvious spam and emoji praise, and noticeably weaker on "is this correction worth answering", sarcasm, and labelling against your taxonomy. Easier to prompt-inject | £0 marginal, but about 3-5 GB RAM resident (Q4 3-4B), plus power | A second container, model updates, CPU contention with sync and builds. Throughput is fine: a 400-token prompt plus 50 tokens out is roughly 3-15 s per item on a 4-8 core CPU, and hundreds a week is trivial                                                       | Not worth it for public comments. Keep as a `Classifier` implementation for private sources later               |
 | **(b') Local _embeddings_ in-process** (onnxruntime-node or transformers.js, a ~25-130 MB model such as MiniLM or bge-small) | No judgement, but good for near-duplicates and "comments like this one you marked done" (kNN)                                                                                                                                                                                         | Free, ~10-50 ms per item on CPU, no extra container              | One dependency, model download in the image                                                                                                                                                                                                                          | **Worth it in a later phase** (dedupe)                                                                          |
-| **(c) Laptop worker** (`claude -p` / Claude Code in headless mode, pulling jobs over the tailnet)                            | Good model                                                                                                                                                                                                                                                                            | On your subscription                                             | Not always on, so notification gating and suggestions arrive hours late. Worst prompt-injection exposure: untrusted text fed to an _agent_ with shell tools on your laptop unless every tool is disabled. Also an awkward fit with subscription terms for automation | **No** for the live path. At most a "run the eval batch" helper, and the plain API is simpler for that too      |
+| **(c) Laptop worker** (`claude -p` / Claude Code in headless mode, pulling jobs from the server)                             | Good model                                                                                                                                                                                                                                                                            | On your subscription                                             | Not always on, so notification gating and suggestions arrive hours late. Worst prompt-injection exposure: untrusted text fed to an _agent_ with shell tools on your laptop unless every tool is disabled. Also an awkward fit with subscription terms for automation | **No** for the live path. At most a "run the eval batch" helper, and the plain API is simpler for that too      |
 | **(d) Hybrid**                                                                                                               | Rules and embeddings decide the clear cases (impersonators, emoji-only, exact duplicates); the LLM gets the rest                                                                                                                                                                      | Saves less than a cent a week at your volume                     | More moving parts                                                                                                                                                                                                                                                    | Use the **rules tier** because it is _faster and more auditable_, not because of cost. Local LLM pre-filter: no |
 
 ### Cost estimates for (a) (official pricing, 2026-11-08)
@@ -95,11 +98,11 @@ Per-item shape:
 | Sonnet 5.5                                                                       | ≈ $0.0020                                      | ≈ $0.0068                                  |
 | Opus 5.5 (+~300 thinking tokens at low effort, since it cannot disable thinking) | ≈ $0.010                                       | ≈ $0.020                                   |
 
-| Scenario                                                               | Haiku 5.5         | Sonnet 5.5        | Opus 5.5          |
-| ---------------------------------------------------------------------- | ----------------- | ----------------- | ----------------- |
-| 150 items a week                                                       | $0.02-0.05 a week | $0.30-1.00 a week | $1.50-3.00 a week |
-| 500 items a week                                                       | $0.06-0.17 a week | $1-3.40 a week    | $5-10 a week      |
-| Classify all 5,394 historical comments once (eval/backfill, Batch API) | ≈ $0.60-0.90      | ≈ $11-18          | ≈ $27-55          |
+| Scenario                                                                 | Haiku 5.5         | Sonnet 5.5        | Opus 5.5          |
+| ------------------------------------------------------------------------ | ----------------- | ----------------- | ----------------- |
+| 150 items a week                                                         | $0.02-0.05 a week | $0.30-1.00 a week | $1.50-3.00 a week |
+| 500 items a week                                                         | $0.06-0.17 a week | $1-3.40 a week    | $5-10 a week      |
+| Classify about 5,000 historical comments once (eval/backfill, Batch API) | ≈ $0.60-0.90      | ≈ $11-18          | ≈ $27-55          |
 
 Syncs arrive in bursts (the engine debounces `inbox.changed`, and the notifier already coalesces for 20 s), so most
 items will see a warm 5-minute cache. A 1-hour TTL isn't worth it at this volume. Use the Batch API (50% off) only
@@ -122,7 +125,7 @@ Anthropic's commercial API terms say inputs are not used for training without pe
 for a limited window (officially up to 30 days, with exceptions such as batch results being retained ~29 days;
 third parties report this was shortened, so check the current DPA if it matters). For public comments that is a
 non-issue. The policy above keeps anything non-public out unless you opt a source in. The Anthropic key sits in
-`settings` and so in the nightly backups and NAS copies, the same trust level the README already documents for the
+`settings` and so in the nightly backups and the off-box backup directory (`NUDGE_BACKUP_DIR`), the same trust level the README already documents for the
 YouTube key and Google token. Resolution order mirrors the YouTube key: `ANTHROPIC_API_KEY` env, then the settings
 field, then `~/.nudge-anthropic-key`. The UI only ever shows `{configured, source, last4}`.
 
@@ -493,26 +496,9 @@ No foreign key from `classifications.item_id` to `comments` (generic items later
 
 ### Recommendation
 
-Do Phase 0 now with **Haiku 5.5 over the API, plus a rules tier**, against a fresh backup of phoenix's DB. Ship
+Do Phase 0 now with **Haiku 5.5 over the API, plus a rules tier**, against a fresh backup of the server's database. Ship
 Phase 1 in Shadow mode only if the numbers clear the bar. Skip the local LLM and the laptop worker. Revisit Ollama
 only when a private source needs classification and you don't want it sent out.
-
-## 6. Open questions for you
-
-1. Are you happy to create an Anthropic Console account or API key with its own billing, separate from any Claude
-   subscription, and to have its key in DB backups (same as the YouTube key)?
-2. What does "no reply needed" mean to you? A muted chip only, a separate "FYI" filter, or eventually auto-Done?
-   This design stops at chips plus filter.
-3. Should spam live in a separate **Filtered** view (proposed), or would you rather it simply be marked Done with a
-   reason?
-4. Should your _posted_ replies be sent as thread context? They are public, and they help. Drafts are never sent,
-   regardless.
-5. Default policy for future private sources (private repos, todos): rules-only (proposed), local model, or API?
-6. Do you want draft-reply suggestions at all, even on demand? Thread summaries for long threads?
-7. phoenix specs (`nproc; free -g; lscpu`), only needed if we ever revisit a local model.
-8. Can I use a fresh backup of phoenix's DB for the Phase 0 eval (it stays local and is read-only), and will you
-   hand-label about 200 items in a JSONL file or a throwaway page?
-9. Is a $1/day, $5/month cap the right default?
 
 ## Sources
 

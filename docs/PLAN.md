@@ -5,7 +5,7 @@ truth; instructions below (deleting the Python CLI, for one) were carried out lo
 
 ## 0. Current state and environment
 
-- Repo: the repository root. It contains `youtubey/main.py` (click CLI: `new-comments` keeps a JSON seen-set in `~/.youtubey-state.json`; `watch-counts` defaults to channel The owner's channel id), `pyproject.toml`, `poetry.lock`, `README.md`, `.gitignore` (just `__pycache__`) and `.idea/`.
+- Repo: the repository root. It contains `youtubey/main.py` (click CLI: `new-comments` keeps a JSON seen-set in `~/.youtubey-state.json`; `watch-counts` defaults to the owner's channel id), `pyproject.toml`, `poetry.lock`, `README.md`, `.gitignore` (just `__pycache__`) and `.idea/`.
 - Toolchain: Node v24.18.1 (nvm) and npm 11.16.0. The key file `~/.nudge-key` exists. The old code does not trim the key, so the new code must `.trim()` it.
 - Bugs and quota waste in the old code that the new code must not repeat:
   - On first run every comment is treated as new.
