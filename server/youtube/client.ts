@@ -13,6 +13,8 @@ import { isRetryable, mapApiError } from './errors.js';
 
 export const API_BASE = 'https://www.googleapis.com/youtube/v3';
 const RETRY_DELAYS_MS = [1000, 2000, 4000];
+/** Per-attempt cap covering headers and body; undici's default is ~300s. */
+export const REQUEST_TIMEOUT_MS = 15_000;
 
 export interface HttpClientOptions {
   getApiKey: () => string | null;
@@ -22,6 +24,8 @@ export interface HttpClientOptions {
   sleep?: (ms: number) => Promise<void>;
   random?: () => number;
   maxConcurrency?: number;
+  /** Per-attempt timeout; overridable in tests. */
+  timeoutMs?: number;
 }
 
 /* ---- raw response shapes (only the fields we ask for) ---- */
@@ -133,6 +137,7 @@ export function createHttpClient(opts: HttpClientOptions): YouTubeClient {
   const fetchImpl = opts.fetchImpl ?? fetch;
   const sleep = opts.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
   const random = opts.random ?? Math.random;
+  const timeoutMs = opts.timeoutMs ?? REQUEST_TIMEOUT_MS;
   const sem = new Semaphore(opts.maxConcurrency ?? 4);
 
   async function call<T>(endpoint: string, params: Record<string, string | undefined>): Promise<T> {
@@ -148,8 +153,14 @@ export function createHttpClient(opts: HttpClientOptions): YouTubeClient {
       for (let attempt = 0; ; attempt++) {
         const delay = RETRY_DELAYS_MS[attempt];
         let res: Response;
+        let text: string;
         try {
-          res = await fetchImpl(url.toString(), { headers: { accept: 'application/json' } });
+          // One signal spans the headers and the body read, so a stalled body is also aborted.
+          res = await fetchImpl(url.toString(), {
+            headers: { accept: 'application/json' },
+            signal: AbortSignal.timeout(timeoutMs),
+          });
+          text = await res.text();
         } catch (e) {
           if (delay === undefined) {
             const msg = (e instanceof Error ? e.message : String(e)).split(key).join('***');
@@ -158,7 +169,6 @@ export function createHttpClient(opts: HttpClientOptions): YouTubeClient {
           await sleep(delay + random() * 250);
           continue;
         }
-        const text = await res.text();
         let body: unknown = null;
         try {
           body = text ? JSON.parse(text) : null;
@@ -316,7 +326,7 @@ export async function testKey(
   if (!key) return { ok: false, message: 'No API key provided' };
   const url = `${API_BASE}/videos?part=id&id=jNQXAC9IVRw&fields=items(id)&key=${encodeURIComponent(key)}`;
   try {
-    const res = await fetchImpl(url);
+    const res = await fetchImpl(url, { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
     const body: unknown = await res.json().catch(() => null);
     if (res.ok) return { ok: true, message: 'API key works' };
     const err = mapApiError(res.status, body);
