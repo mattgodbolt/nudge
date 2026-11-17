@@ -101,6 +101,7 @@ class AssistantStore {
         toasts.push({
           message: 'Saved as a todo. Add an Anthropic key in Settings to have it understood.',
           timeoutMs: 6000,
+          action: { label: 'Settings', run: () => router.navigate('settings', {}, { hash: 'assistant' }) },
         });
       } else if (res.fallback === 'failed') {
         toasts.error(`Saved as you said it; the assistant failed${res.error ? `: ${res.error}` : ''}`);
@@ -114,7 +115,7 @@ class AssistantStore {
           message: e.message,
           kind: 'error',
           timeoutMs: 10000,
-          action: { label: 'Settings', run: () => router.navigate('settings') },
+          action: { label: 'Settings', run: () => router.navigate('settings', {}, { hash: 'about-you' }) },
         });
       } else toasts.error(e instanceof Error ? e.message : 'Could not reach Nudge');
     } finally {

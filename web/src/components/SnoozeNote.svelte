@@ -55,11 +55,11 @@
             >{nudge.error}{#if nudge.needsProfile}
               <a
                 class="link"
-                href="/settings"
+                href="/settings#about-you"
                 data-testid="nudge-profile-link"
                 onclick={(e) => {
                   e.preventDefault();
-                  router.navigate('settings');
+                  router.navigate('settings', {}, { hash: 'about-you' });
                 }}>Open Settings</a
               >{/if}</span
           >{/if}

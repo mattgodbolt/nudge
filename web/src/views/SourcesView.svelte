@@ -138,10 +138,10 @@
       Your own channels are marked <span class="badge accent">Mine</span>. Manage them under
       <a
         class="link"
-        href="/settings"
+        href="/settings#my-channels"
         onclick={(e) => {
           e.preventDefault();
-          router.navigate('settings');
+          router.navigate('settings', {}, { hash: 'my-channels' });
         }}>Settings &rsaquo; My channels</a
       >.
     </p>

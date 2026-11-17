@@ -68,10 +68,12 @@ class Router {
   navigate(
     route: RouteName,
     query: Record<string, string> = {},
-    opts: { replace?: boolean; id?: string | number } = {},
+    opts: { replace?: boolean; id?: string | number; hash?: string } = {},
   ) {
-    const path = buildPath(route, { id: opts.id === undefined ? undefined : String(opts.id) }, query);
-    if (path === window.location.pathname + window.location.search) return;
+    let path = buildPath(route, { id: opts.id === undefined ? undefined : String(opts.id) }, query);
+    // A hash names a section of the page to land on (Settings reads it); the router itself ignores it.
+    if (opts.hash) path += `#${opts.hash}`;
+    if (path === window.location.pathname + window.location.search + window.location.hash) return;
     if (opts.replace) history.replaceState(null, '', path);
     else history.pushState(null, '', path);
     this.sync();

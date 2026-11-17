@@ -87,7 +87,7 @@ function postFailure(item: InboxItem, body: string, e: unknown) {
     case 'auth_required':
       fail('Google sign-in expired · reconnect to post replies', {
         label: 'Reconnect',
-        run: () => router.navigate('settings'),
+        run: () => router.navigate('settings', {}, { hash: 'reply' }),
       });
       toasts.push({ message: 'Or post it by hand instead', action: copyOpen, timeoutMs: 12000 });
       break;
@@ -112,7 +112,7 @@ function postFailure(item: InboxItem, body: string, e: unknown) {
       });
       break;
     case 'ineligible_account':
-      fail(message, { label: 'Settings', run: () => router.navigate('settings') });
+      fail(message, { label: 'Settings', run: () => router.navigate('settings', {}, { hash: 'reply' }) });
       break;
     default:
       // text_too_long / bad_text: the draft is back in the composer for editing.

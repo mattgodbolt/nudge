@@ -41,10 +41,10 @@
       No token yet: public repositories work, with a low rate limit. Add a read-only token in
       <a
         class="link"
-        href="/settings"
+        href="/settings#github"
         onclick={(e) => {
           e.preventDefault();
-          router.navigate('settings');
+          router.navigate('settings', {}, { hash: 'github' });
         }}>Settings &rsaquo; GitHub</a
       >.
     {/if}
