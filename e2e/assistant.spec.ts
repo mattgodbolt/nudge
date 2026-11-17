@@ -23,7 +23,8 @@ test('without a key, c then Enter saves what you said as a todo, and says how to
   page,
 }) => {
   await tell(page, 'buy milk on the way home');
-  await expect(page.getByText(/Saved as a todo/)).toBeVisible();
+  const saved = page.getByTestId('toast').filter({ hasText: /Saved as a todo/ });
+  await expect(saved).toBeVisible();
   const row = page.getByTestId('inbox-row').filter({ hasText: 'buy milk on the way home' });
   await expect(row).toBeVisible();
   await expect(row.getByTestId('row-title')).toHaveText('buy milk on the way home');
@@ -35,6 +36,17 @@ test('without a key, c then Enter saves what you said as a todo, and says how to
     /^Todo · added (just now|\d+[mhdw] ago|[A-Z][a-z]+ \d+(, \d{4})?)$/,
   );
   await expect(pane.locator('.keys-only')).toContainText('e marks it done, b snoozes it');
+
+  // The toast's Settings button lands on the card where the key goes, not the top of Settings.
+  await tell(page, 'and the bread');
+  await page
+    .getByTestId('toast')
+    .filter({ hasText: /Saved as a todo/ })
+    .last()
+    .getByRole('button', { name: 'Settings' })
+    .click();
+  await expect(page).toHaveURL(/\/settings#assistant$/);
+  await expect(page.getByTestId('settings-llm')).toBeInViewport();
 });
 
 test('Settings stores the Anthropic key without echoing it back', async ({ page }) => {
@@ -44,9 +56,19 @@ test('Settings stores the Anthropic key without echoing it back', async ({ page 
   await card.getByRole('button', { name: 'Test' }).click();
   await expect(page.getByTestId('llm-result')).toContainText('Key works');
   await page.getByTestId('llm-save').click();
-  await expect(card).toContainText('…1234');
-  await expect(card.getByTestId('llm-key')).toHaveValue('');
+  // Once saved the key is a status line, not an empty box asking to be filled in again.
+  await expect(card.getByTestId('key-status')).toHaveText(/^Key …1234 \(.+\), stored in Nudge's database\.$/);
+  await expect(card.getByTestId('llm-key')).toHaveCount(0);
   await expect(page.locator('body')).not.toContainText('sk-ant-demo');
+
+  // Replace brings the box back (focused), and Cancel puts the status line back without changing anything.
+  await card.getByRole('button', { name: 'Replace' }).click();
+  await expect(card.getByTestId('llm-key')).toBeFocused();
+  await expect(card.getByTestId('llm-key')).toHaveValue('');
+  await expect(card.getByTestId('llm-save')).toBeDisabled();
+  await card.getByRole('button', { name: 'Cancel' }).click();
+  await expect(card.getByTestId('llm-key')).toHaveCount(0);
+  await expect(card.getByTestId('key-status')).toContainText('…1234');
 });
 
 test('with a key, "remind me in 3 days to …" makes a tidy todo that is due later, and Undo removes it', async ({
@@ -137,7 +159,10 @@ test('About you: edit the profile; with it empty the LLM features pause, Setting
   await about.getByTestId('owner-name').fill('');
   await about.getByTestId('owner-save').click();
   const banner = page.getByTestId('profile-banner');
+  await expect(banner).toContainText('Finish setting up');
   await expect(banner).toContainText('LLM features are paused until your profile is filled in');
+  // Only what blocks: the demo's channel is set, so that item is not listed.
+  await expect(banner.getByTestId('setup-channel')).toHaveCount(0);
   await banner.getByRole('link', { name: 'About you' }).click();
   await expect(about.getByTestId('owner-name')).toBeFocused();
 
@@ -153,7 +178,8 @@ test('About you: edit the profile; with it empty the LLM features pause, Setting
   await page.keyboard.press('Escape');
   await expect(page.getByTestId('inbox-row').filter({ hasText: /call the bank/i })).toHaveCount(0);
   await toast.getByRole('button', { name: 'Settings' }).click();
-  await expect(page).toHaveURL(/\/settings$/);
+  await expect(page).toHaveURL(/\/settings#about-you$/);
+  await expect(about.getByTestId('owner-name')).toBeFocused();
 
   // Filled in again: the banner goes, and the assistant works.
   await about.getByTestId('owner-name').fill('Alex');

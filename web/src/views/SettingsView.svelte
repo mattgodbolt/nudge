@@ -17,8 +17,9 @@
   import { notes } from '../lib/stores/notes.svelte';
   import { chipText } from '../lib/suggestions';
   import SuggestProgress from '../components/SuggestProgress.svelte';
+  import KeyField from '../components/KeyField.svelte';
   import { ui } from '../lib/stores/ui.svelte';
-  import { onMount, untrack } from 'svelte';
+  import { onMount, tick, untrack } from 'svelte';
   import { OWNER_ABOUT_MAX, OWNER_NAME_MAX, ownerProfileComplete } from '../../../shared/owner';
 
   onMount(() => {
@@ -75,92 +76,70 @@
     ownerBusy = false;
     if (ok) toasts.push({ message: 'Saved', kind: 'success', timeoutMs: 2500 });
   }
+  /** Scroll to a section of this page, and put the cursor where the reader is sent to type. */
+  function goTo(id: string, focusId?: string) {
+    document.getElementById(id)?.scrollIntoView({ block: 'start' });
+    if (focusId) document.getElementById(focusId)?.focus({ preventScroll: true });
+  }
   function showAboutYou(e: Event) {
     e.preventDefault();
-    const sec = document.getElementById('about-you');
-    sec?.scrollIntoView({ block: 'start' });
-    document.getElementById('owner-name')?.focus({ preventScroll: true });
+    goTo('about-you', 'owner-name');
   }
+  function showMyChannels(e: Event) {
+    e.preventDefault();
+    goTo('my-channels', 'own-channel-input');
+  }
+  /** Links from elsewhere (a toast's Settings button, a hint in Sources) name a section in the hash: land on it once
+   * the page has rendered. Reading router.state reruns this on each navigation, including to another section here. */
+  const loaded = $derived(!!s);
+  const LAND_FOCUS: Record<string, string> = { 'about-you': 'owner-name', 'my-channels': 'own-channel-input' };
+  $effect(() => {
+    void router.state;
+    if (!loaded) return;
+    void tick().then(() => {
+      const id = decodeURIComponent(window.location.hash.slice(1));
+      if (id) goTo(id, LAND_FOCUS[id]);
+    });
+  });
 
-  let keyInput = $state('');
-  let keyBusy = $state(false);
-  let keyResult = $state<{ ok: boolean; message: string } | null>(null);
-  let ghToken = $state('');
-  let ghBusy = $state(false);
-  let ghResult = $state<{ ok: boolean; message: string } | null>(null);
+  /** Only what stops Nudge working as it should; optional extras never appear here. */
+  const needsChannel = $derived(!!s && s.ownChannels.length === 0);
+  const needsSetup = $derived(needsChannel || llmPaused);
+
+  // The newest few notes; the rest on request, so a long history does not bury the cards below.
+  const NOTES_SHOWN = 5;
+  let allNotes = $state(false);
+  const shownNotes = $derived(allNotes ? notes.list : notes.list.slice(0, NOTES_SHOWN));
+
+  /** The Android install tip only means something on a touch device. */
+  const coarse = typeof window !== 'undefined' && !!window.matchMedia?.('(pointer: coarse)').matches;
+
   let ghAccount = $state('');
   let chanInput = $state('');
   let chanError = $state('');
   let chanBusy = $state(false);
 
-  async function testKey() {
-    keyBusy = true;
-    keyResult = null;
-    try {
-      keyResult = await api.testKey(keyInput.trim() || undefined);
-    } catch (e) {
-      keyResult = { ok: false, message: e instanceof Error ? e.message : 'Test failed' };
-    } finally {
-      keyBusy = false;
-    }
-  }
-  async function saveKey() {
-    if (!keyInput.trim()) return;
-    if (await settings.save({ apiKey: keyInput.trim() })) {
-      keyInput = '';
-      keyResult = null;
-      toasts.push({ message: 'API key saved', kind: 'success', timeoutMs: 2500 });
-    }
+  async function saveKey(key: string) {
+    const ok = await settings.save({ apiKey: key });
+    if (ok) toasts.push({ message: 'API key saved', kind: 'success', timeoutMs: 2500 });
+    return ok;
   }
   async function removeKey() {
     if (await settings.save({ apiKey: null })) toasts.push({ message: 'Stored API key removed', timeoutMs: 2500 });
   }
-
-  let llmKey = $state('');
-  let llmBusy = $state(false);
-  let llmResult = $state<{ ok: boolean; message: string } | null>(null);
-  async function testLlm() {
-    llmBusy = true;
-    llmResult = null;
-    try {
-      llmResult = await api.testLlm(llmKey.trim() || undefined);
-    } catch (e) {
-      llmResult = { ok: false, message: e instanceof Error ? e.message : 'Test failed' };
-    } finally {
-      llmBusy = false;
-    }
-  }
-  async function saveLlmKey() {
-    if (!llmKey.trim()) return;
-    if (await settings.save({ llm: { apiKey: llmKey.trim() } })) {
-      llmKey = '';
-      llmResult = null;
-      toasts.push({ message: 'Anthropic key saved', kind: 'success', timeoutMs: 2500 });
-    }
+  async function saveLlmKey(key: string) {
+    const ok = await settings.save({ llm: { apiKey: key } });
+    if (ok) toasts.push({ message: 'Anthropic key saved', kind: 'success', timeoutMs: 2500 });
+    return ok;
   }
   async function removeLlmKey() {
     if (await settings.save({ llm: { apiKey: null } }))
       toasts.push({ message: 'Anthropic key removed', timeoutMs: 2500 });
   }
-
-  async function testGithub() {
-    ghBusy = true;
-    ghResult = null;
-    try {
-      ghResult = await api.testGithub(ghToken.trim() || undefined);
-    } catch (e) {
-      ghResult = { ok: false, message: e instanceof Error ? e.message : 'Test failed' };
-    } finally {
-      ghBusy = false;
-    }
-  }
-  async function saveGithubToken() {
-    if (!ghToken.trim()) return;
-    if (await settings.save({ github: { token: ghToken.trim() } })) {
-      ghToken = '';
-      ghResult = null;
-      toasts.push({ message: 'GitHub token saved', kind: 'success', timeoutMs: 2500 });
-    }
+  async function saveGithubToken(token: string) {
+    const ok = await settings.save({ github: { token } });
+    if (ok) toasts.push({ message: 'GitHub token saved', kind: 'success', timeoutMs: 2500 });
+    return ok;
   }
   async function resetUsage() {
     if (!window.confirm('Delete all usage counts? This cannot be undone. Your inbox and its history are not touched.'))
@@ -244,11 +223,11 @@
     clientBusy = false;
     if (!clientError) {
       clientJson = '';
-      toasts.push({ message: 'Google client saved', kind: 'success', timeoutMs: 2500 });
+      toasts.push({ message: 'OAuth client saved', kind: 'success', timeoutMs: 2500 });
     }
   }
   async function removeClient() {
-    if (!window.confirm('Remove the stored Google client? Connected accounts will stop working.')) return;
+    if (!window.confirm('Remove the stored OAuth client? Connected accounts will stop working.')) return;
     clientError = (await settings.saveGoogleClient(null)) ?? '';
   }
   async function connect() {
@@ -269,91 +248,509 @@
     }
   }
 
+  // Only a key stored in the database can be replaced here; an env or file key takes priority over it anyway.
   const sourceLabel = {
-    env: 'YOUTUBE_API_KEY environment variable',
-    settings: 'Settings (stored in the local database)',
-    file: '~/.nudge-key',
+    env: 'from the YOUTUBE_API_KEY environment variable (change it there)',
+    settings: "stored in Nudge's database",
+    file: 'from ~/.nudge-key (change it there)',
   } as const;
 </script>
 
 <div class="page">
   <h1>Settings</h1>
+  <nav class="toc meta" aria-label="Settings sections">
+    <a href="#you">You</a><span aria-hidden="true">·</span><a href="#preferences">Preferences</a><span
+      aria-hidden="true">·</span
+    ><a href="#connections">Connections</a><span aria-hidden="true">·</span><a href="#sync">Sync and data</a>
+  </nav>
   {#if s}
-    {#if llmPaused}
-      <div class="paused" role="status" data-testid="profile-banner">
-        <strong>LLM features are paused until your profile is filled in.</strong>
-        Suggestions, nudge drafts and the assistant make no model calls until
-        <a class="link" href="#about-you" onclick={showAboutYou}>About you</a> has a name and a description.
+    {#if needsSetup}
+      <div class="setup" role="status" data-testid="profile-banner">
+        <strong>Finish setting up</strong>
+        <ul>
+          {#if needsChannel}
+            <li data-testid="setup-channel">
+              <a class="link" href="#my-channels" onclick={showMyChannels}>Add your channel</a>, so your own comments
+              stay out of the inbox.
+            </li>
+          {/if}
+          {#if llmPaused}
+            <li data-testid="setup-profile">
+              <a class="link" href="#about-you" onclick={showAboutYou}>Fill in About you</a>. LLM features are paused
+              until your profile is filled in: suggestions, nudge drafts and the assistant make no model calls until it
+              has a name and a description.
+            </li>
+          {/if}
+        </ul>
       </div>
     {/if}
-    <section class="panel sec" data-testid="settings-key">
-      <h2>YouTube API key</h2>
-      <p class="muted meta">
-        {#if s.apiKey.configured}
-          Using key ending <code>…{s.apiKey.last4}</code> from
-          <strong>{sourceLabel[s.apiKey.source ?? 'settings']}</strong>.
-          {#if s.apiKey.source !== 'settings'}An env or file key takes priority over one saved here.{/if}
-        {:else}
-          No key configured. Sync is disabled until you add one.
-        {/if}
+
+    <section class="group first" id="you" aria-labelledby="you-h">
+      <h2 id="you-h">You</h2>
+      <p class="blurb">
+        Who Nudge works for. The assistant is told this, and your own comments and pull requests stay out of the inbox.
       </p>
-      <div class="line">
-        <input
-          class="input mono grow"
-          type="password"
-          placeholder="Paste a key to test or replace…"
-          bind:value={keyInput}
-          autocomplete="off"
-          aria-label="API key"
-        />
-        <button class="btn" onclick={testKey} disabled={keyBusy || (!keyInput.trim() && !s.apiKey.configured)}
-          >{keyBusy ? 'Testing…' : 'Test'}</button
-        >
-        <button class="btn primary" onclick={saveKey} disabled={!keyInput.trim()}>Save</button>
-        {#if s.apiKey.source === 'settings'}<button class="btn danger" onclick={removeKey}>Remove</button>{/if}
-      </div>
-      {#if keyResult}<p class="meta" class:ok={keyResult.ok} class:bad={!keyResult.ok}>{keyResult.message}</p>{/if}
     </section>
 
-    <section class="panel sec" data-testid="settings-google">
-      <h2>Reply from Nudge</h2>
+    <section class="panel sec" id="about-you" data-testid="settings-about">
+      <h3>About you</h3>
+      <p class="muted meta">
+        Suggestions, nudge drafts and the assistant are written for you, so the model is told who you are. Until both
+        fields are filled in, nothing is sent to the model at all.
+      </p>
+      {#if !s.llm.configured}
+        <p class="faint meta" data-testid="about-needs-key">
+          Used once you add an Anthropic key under <a class="link" href="#assistant">Connections &rsaquo; Assistant</a>.
+        </p>
+      {/if}
+      <form class="owner" onsubmit={saveOwner}>
+        <label class="stack" for="owner-name"
+          ><span>What should the assistant call you?</span>
+          <input
+            id="owner-name"
+            class="input"
+            maxlength={OWNER_NAME_MAX}
+            placeholder="e.g. Alex"
+            autocomplete="given-name"
+            bind:value={ownerName}
+            data-testid="owner-name"
+          />
+        </label>
+        <label class="stack" for="owner-about"
+          ><span
+            >A short paragraph about who you are and what you maintain. It is sent to the model with every
+            classification, so keep it factual.</span
+          >
+          <textarea
+            id="owner-about"
+            class="input about"
+            rows="4"
+            maxlength={OWNER_ABOUT_MAX}
+            placeholder="e.g. Alex runs a YouTube channel about programming and maintains a few open-source libraries."
+            bind:value={ownerAbout}
+            data-testid="owner-about"></textarea>
+        </label>
+        <div class="line">
+          <span class="faint meta grow">{ownerAbout.trim().length} / {OWNER_ABOUT_MAX}</span>
+          <button class="btn primary" type="submit" disabled={!ownerDirty || ownerBusy} data-testid="owner-save"
+            >{ownerBusy ? 'Saving…' : 'Save'}</button
+          >
+        </div>
+      </form>
+    </section>
+
+    <section class="panel sec" id="my-channels" data-testid="settings-channels">
+      <h3>My channels</h3>
+      <p class="muted meta">
+        Paste your channel URL or @handle. Comments from your channels never land in the inbox, replying from them marks
+        earlier comments as answered, and their uploads are tracked as a source.
+      </p>
+      <div class="chips" data-testid="own-channels">
+        {#each s.ownChannels as c (c.id)}
+          <span class="chip" data-testid="own-channel-chip">
+            <Avatar name={c.title ?? c.id} url={c.thumbnailUrl} size={18} />
+            <span title={c.id}>{c.title ?? c.id}</span>
+            <button aria-label="Remove {c.title ?? c.id}" onclick={() => void settings.removeOwnChannel(c.id)}>×</button
+            >
+          </span>
+        {:else}
+          <span class="faint meta">None yet.</span>
+        {/each}
+      </div>
+      <form class="line" onsubmit={addChannel}>
+        <input
+          id="own-channel-input"
+          class="input grow"
+          placeholder="https://www.youtube.com/@yourchannel or @yourchannel"
+          bind:value={chanInput}
+          aria-label="Channel URL or @handle"
+          spellcheck="false"
+          autocomplete="off"
+          data-testid="own-channel-input"
+        />
+        <button class="btn" type="submit" disabled={!chanInput.trim() || chanBusy}
+          >{chanBusy ? 'Finding…' : 'Add'}</button
+        >
+      </form>
+      {#if chanError}<p class="bad meta" role="alert">{chanError}</p>{/if}
+    </section>
+
+    <section class="panel sec" id="github-accounts" data-testid="settings-github-accounts">
+      <h3>My GitHub accounts</h3>
+      <p class="muted meta">
+        Pull requests and issues opened by these logins are yours, so they never reach the inbox. Include any account an
+        agent uses for you.
+      </p>
+      <div class="chips" data-testid="github-accounts">
+        {#each s.github.myAccounts as login (login)}
+          <span class="chip"
+            >{login}<button aria-label="Remove {login}" onclick={() => void removeAccount(login)}>×</button></span
+          >
+        {:else}
+          <span class="faint meta">None yet.</span>
+        {/each}
+      </div>
+      <form class="line" onsubmit={addAccount}>
+        <input
+          class="input grow"
+          bind:value={ghAccount}
+          placeholder="GitHub login, e.g. octocat"
+          aria-label="GitHub login"
+          data-testid="github-account"
+          autocomplete="off"
+          spellcheck="false"
+        />
+        <button class="btn" type="submit" disabled={!ghAccount.trim()}>Add account</button>
+      </form>
+    </section>
+
+    <section class="group" id="preferences" aria-labelledby="preferences-h">
+      <h2 id="preferences-h">Preferences</h2>
+      <p class="blurb">How Nudge looks and behaves day to day.</p>
+    </section>
+
+    <section class="panel sec" id="appearance" data-testid="settings-appearance">
+      <h3>Appearance</h3>
+      <div class="seg" role="group" aria-label="Theme">
+        {#each [['system', 'System'], ['light', 'Light'], ['dark', 'Dark']] as [v, l] (v)}
+          <button
+            class="segbtn"
+            class:on={theme.preference === v}
+            aria-pressed={theme.preference === v}
+            onclick={() => theme.set(v as ThemePref)}>{l}</button
+          >
+        {/each}
+      </div>
+      <p class="faint meta keys-only">Press <kbd class="mono">t</kbd> anywhere to cycle.</p>
+    </section>
+
+    <section class="panel sec" id="suggestions" data-testid="settings-suggestions">
+      <h3>Suggestions</h3>
+      <label class="field"
+        ><span>Show suggestions</span>
+        <input
+          type="checkbox"
+          checked={ui.showSuggestions}
+          data-testid="show-suggestions"
+          onchange={(e) => ui.setShowSuggestions(e.currentTarget.checked)}
+        />
+      </label>
+      <p class="faint meta">
+        A hint on each item (reply, act, skip or spam) with the reason. It only suggests; nothing is done for you.
+      </p>
+      {#if !s.llm.configured && !s.demo}
+        <p class="meta warn" data-testid="suggestions-need-key">
+          Needs an Anthropic key: see <a class="link" href="#assistant">Connections &rsaquo; Assistant</a>.
+        </p>
+      {/if}
+      <SuggestProgress />
+    </section>
+
+    <section class="panel sec" id="notes" data-testid="settings-notes">
+      <h3>Notes</h3>
+      <p class="muted meta">
+        What you tell the assistant about a suggestion, an item or how you like things done (press
+        <kbd class="mono">c</kbd> and say it). Every note is kept. A note switched off here stays on record but is no longer
+        shown to the model; “standing” notes apply to every suggestion, the others to one item.
+      </p>
+      <ul class="notes">
+        {#each shownNotes as n (n.id)}
+          <li class="note" class:off={!n.enabled} data-testid="note-row">
+            <div class="notehead meta faint">
+              <span>{new Date(n.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>
+              <span class="badge" data-testid="note-scope">{n.scope === 'standing' ? 'Standing' : 'About an item'}</span
+              >
+              {#if n.source === 'voice'}<span class="badge">Voice</span>{/if}
+              {#if n.itemTitle}<span class="truncate notetitle" title={n.itemTitle} data-testid="note-item"
+                  >{n.itemTitle}</span
+                >{/if}
+            </div>
+            <textarea
+              class="input notetext"
+              rows="2"
+              maxlength="1000"
+              aria-label="Note"
+              data-testid="note-text"
+              value={n.text}
+              onchange={(e) => {
+                const text = e.currentTarget.value.trim();
+                if (text && text !== n.text) void notes.patch(n.id, { text });
+                else e.currentTarget.value = n.text;
+              }}></textarea>
+            {#if noteContext(n)}<p class="meta faint">{noteContext(n)}</p>{/if}
+            <div class="noteacts">
+              <label class="check"
+                ><input
+                  type="checkbox"
+                  checked={n.enabled}
+                  data-testid="note-enabled"
+                  onchange={(e) => void notes.patch(n.id, { enabled: e.currentTarget.checked })}
+                />
+                <span>Tell the model</span></label
+              >
+              <button
+                class="btn ghost sm danger"
+                aria-label="Delete note"
+                data-testid="note-delete"
+                onclick={() => void notes.remove(n.id)}><Icon name="trash" size={14} /></button
+              >
+            </div>
+          </li>
+        {:else}
+          <li class="faint meta" data-testid="notes-empty">No notes yet.</li>
+        {/each}
+      </ul>
+      {#if notes.list.length > NOTES_SHOWN}
+        <div>
+          <button class="btn" data-testid="notes-all" onclick={() => (allNotes = !allNotes)}
+            >{allNotes ? 'Show fewer' : `Show all (${notes.list.length})`}</button
+          >
+        </div>
+      {/if}
+    </section>
+
+    <section class="panel sec" id="snoozing" data-testid="settings-snooze">
+      <h3>Snoozing until activity</h3>
+      <p class="meta muted">
+        An item snoozed "until activity" comes back as soon as someone else comments, merges or replies. If nothing
+        happens it comes back anyway after this many days, marked as still waiting.
+      </p>
+      {#each SNOOZE_BUCKETS as b (b)}
+        <label class="field"
+          ><span>{BUCKETS[b].label} <small class="faint">days</small></span>
+          <input
+            class="input num"
+            type="number"
+            inputmode="numeric"
+            min={SNOOZE_DAYS_MIN}
+            max={SNOOZE_DAYS_MAX}
+            step="1"
+            value={s.snoozeDays[b]}
+            data-testid="snooze-days-{b}"
+            onchange={(e) => bucketDays(e, b)}
+          />
+        </label>
+      {/each}
+    </section>
+
+    <section class="panel sec" id="this-device" data-testid="settings-notifications">
+      <h3>On this device</h3>
+      <p class="faint meta">Settings for this browser only; set them again on each phone or computer.</p>
+      {#if push.status === 'unsupported'}
+        <p class="muted meta">
+          This browser can’t show push notifications here. They need HTTPS (or localhost) and a browser with Web Push
+          support, such as Chrome on Android.
+        </p>
+      {:else}
+        <p class="muted meta">
+          Get a notification on <strong>this device</strong> when comments arrive or a snoozed one comes back. Tapping it
+          opens that comment. You need to be able to reach Nudge (e.g. signed in through Cloudflare Access) to open it.
+        </p>
+        {#if push.status === 'blocked'}
+          <p class="bad meta">
+            Notifications are blocked for this site. Allow them in the browser’s site settings, then come back.
+          </p>
+        {:else}
+          <div class="line">
+            {#if push.status === 'on'}
+              <button class="btn" data-testid="push-off" disabled={push.busy} onclick={() => void push.disable()}
+                >Turn off on this device</button
+              >
+            {:else}
+              <button
+                class="btn primary"
+                data-testid="push-on"
+                disabled={push.busy || push.status === 'checking'}
+                onclick={() => void push.enable()}>Turn on for this device</button
+              >
+            {/if}
+          </div>
+        {/if}
+        {#if push.status === 'on'}
+          <label class="field"
+            ><span>New comments</span>
+            <input
+              type="checkbox"
+              data-testid="push-new"
+              checked={push.prefs.newComments}
+              onchange={(e) => void push.setPref('newComments', e.currentTarget.checked)}
+            />
+          </label>
+          <label class="field"
+            ><span>Snoozed comments coming back</span>
+            <input
+              type="checkbox"
+              data-testid="push-wake"
+              checked={push.prefs.snoozeWake}
+              onchange={(e) => void push.setPref('snoozeWake', e.currentTarget.checked)}
+            />
+          </label>
+          <div>
+            <button class="btn" data-testid="push-test" onclick={() => void push.sendTest()}>Send a test</button>
+          </div>
+        {/if}
+      {/if}
+      {#if push.canInstall}
+        <div>
+          <button class="btn" data-testid="push-install" onclick={() => void push.install()}>Install as an app</button>
+        </div>
+      {:else if !push.installed && coarse}
+        <p class="faint meta" data-testid="install-tip">
+          Tip: on Android, Chrome’s menu → “Install app” gives Nudge its own icon and a window without the address bar.
+        </p>
+      {/if}
+    </section>
+
+    <section class="panel sec" id="adventure" data-testid="settings-adventure">
+      <h3>Adventure mode</h3>
+      <label class="field"
+        ><span>Levels, titles and silly loot</span>
+        <input
+          type="checkbox"
+          checked={s.rpg.enabled}
+          data-testid="rpg-enabled"
+          onchange={(e) => void settings.save({ rpg: { enabled: e.currentTarget.checked } })}
+        />
+      </label>
+      <label class="field"
+        ><span>Level-up sound</span>
+        <input
+          type="checkbox"
+          checked={s.rpg.sound}
+          disabled={!s.rpg.enabled}
+          data-testid="rpg-sound"
+          onchange={(e) => void settings.save({ rpg: { sound: e.currentTarget.checked } })}
+        />
+      </label>
+      <p class="faint meta">
+        A level and a silly title earned from the triage you have already done, shown in the sidebar and in the Hall of
+        Heroes under Stats, with a short chime on a level-up. Decoration only: it never changes how anything works.
+      </p>
+    </section>
+
+    <section class="group" id="connections" aria-labelledby="connections-h">
+      <h2 id="connections-h">Connections</h2>
+      <p class="blurb">Keys and accounts Nudge uses to reach other services. Usually set once.</p>
+    </section>
+
+    <section class="panel sec" id="youtube-key" data-testid="settings-key">
+      <h3>YouTube API key</h3>
+      {#if !s.apiKey.configured}
+        <p class="muted meta">No key configured. Sync is disabled until you add one.</p>
+      {/if}
+      <KeyField
+        configured={s.apiKey.configured}
+        replaceable={s.apiKey.source === 'settings'}
+        label="API key"
+        test={(k) => api.testKey(k)}
+        save={saveKey}
+        remove={removeKey}
+      >
+        {#snippet status()}
+          Key <code>…{s.apiKey.last4}</code>, {sourceLabel[s.apiKey.source ?? 'settings']}.
+        {/snippet}
+      </KeyField>
+    </section>
+
+    <section class="panel sec" id="assistant" data-testid="settings-llm">
+      <h3>Assistant: Anthropic API key</h3>
+      {#if !s.llm.configured}
+        <p class="muted meta">
+          Powers suggestions, nudge drafts and spoken or typed commands (press <kbd class="mono">c</kbd>). Use a key
+          with a small spend limit. Without one, Nudge works without suggestions and what you say is saved as a plain
+          todo.
+        </p>
+      {/if}
+      <KeyField
+        configured={s.llm.configured}
+        label="Anthropic API key"
+        test={(k) => api.testLlm(k)}
+        save={saveLlmKey}
+        remove={removeLlmKey}
+        inputTestId="llm-key"
+        saveTestId="llm-save"
+        resultTestId="llm-result"
+      >
+        {#snippet status()}
+          Key <code>…{s.llm.last4}</code> ({s.llm.model}), stored in Nudge's database.
+        {/snippet}
+      </KeyField>
+    </section>
+
+    <section class="panel sec" id="github" data-testid="settings-github">
+      <h3>GitHub token</h3>
+      {#if !s.github.configured}
+        <p class="muted meta">
+          No token: public repositories still work, with a low rate limit. For private repositories or a higher limit,
+          create a <strong>fine-grained</strong> token (GitHub &rsaquo; Settings &rsaquo; Developer settings): all
+          repositories, with <em>Issues</em> and <em>Pull requests</em> set to read-only. A classic token cannot be read-only
+          for private repositories. Nudge never writes to GitHub.
+        </p>
+      {/if}
+      <KeyField
+        configured={s.github.configured}
+        label="GitHub token"
+        placeholder="Paste a token…"
+        test={(k) => api.testGithub(k)}
+        save={saveGithubToken}
+        remove={removeGithubToken}
+        inputTestId="github-token"
+        saveTestId="github-save"
+        resultTestId="github-result"
+      >
+        {#snippet status()}
+          Token <code>…{s.github.last4}</code>, stored in Nudge's database.
+        {/snippet}
+      </KeyField>
+    </section>
+
+    <section class="panel sec" id="reply" data-testid="settings-google">
+      <h3>Post replies from Nudge</h3>
       {#if google}
         <p class="muted meta">
-          Connect a Google account to post replies straight from here instead of copying them to YouTube. Setup takes a
-          few minutes in Google Cloud; follow the
-          <a href="https://github.com/mattgodbolt/nudge" target="_blank" rel="noopener noreferrer">README checklist</a>.
+          Optional. Lets Nudge post your replies on YouTube itself instead of copying them and opening YouTube. It needs
+          a one-off Google Cloud setup; the
+          <a class="link" href="https://github.com/mattgodbolt/nudge" target="_blank" rel="noopener noreferrer"
+            >README checklist</a
+          >
+          walks through it.
         </p>
-        {#if gState === 'no-client'}
-          <textarea
-            class="input mono json"
-            rows="5"
-            placeholder="Paste the downloaded client JSON…"
-            bind:value={clientJson}
-            spellcheck="false"
-            autocomplete="off"
-            aria-label="Google client JSON"
-            data-testid="google-client-json"></textarea>
-          <div class="line">
-            <button class="btn primary" onclick={saveClient} disabled={!clientJson.trim() || clientBusy}
-              >{clientBusy ? 'Saving…' : 'Save'}</button
-            >
+        {#snippet redirectLine(uri: string)}
+          <div class="line redirect">
+            <span class="faint meta">Redirect URI</span>
+            <code class="grow mono uri" data-testid="google-redirect">{uri}</code>
+            <button class="btn sm" onclick={() => copyRedirect(uri)}>{copied ? 'Copied' : 'Copy'}</button>
           </div>
-          {#if clientError}<p class="bad meta" role="alert">{clientError}</p>{/if}
+        {/snippet}
+        {#if gState === 'no-client'}
+          <ol class="steps">
+            <li class="step">
+              <span>Create an OAuth client (Web application) in Google Cloud with this redirect URI:</span>
+              {@render redirectLine(google.redirectUri)}
+            </li>
+            <li class="step">
+              <span>Download its JSON and paste it here:</span>
+              <textarea
+                class="input mono json"
+                rows="5"
+                placeholder="Paste the downloaded client JSON…"
+                bind:value={clientJson}
+                spellcheck="false"
+                autocomplete="off"
+                aria-label="OAuth client JSON"
+                data-testid="google-client-json"></textarea>
+              <div class="line">
+                <button class="btn primary" onclick={saveClient} disabled={!clientJson.trim() || clientBusy}
+                  >{clientBusy ? 'Saving…' : 'Save'}</button
+                >
+              </div>
+              {#if clientError}<p class="bad meta" role="alert">{clientError}</p>{/if}
+            </li>
+            <li class="step">
+              <span>Connect your Google account (the button appears here once the client is saved).</span>
+            </li>
+          </ol>
         {:else}
-          <p class="muted meta">
-            Using the Google client from <strong>{clientSourceLabel[google.clientSource ?? 'settings']}</strong>.
-            {#if google.clientSource === 'settings'}
-              <button class="link" onclick={removeClient}>Remove client</button>
-            {/if}
-          </p>
-        {/if}
-        <div class="line redirect">
-          <span class="faint meta">Redirect URI</span>
-          <code class="grow mono truncate" data-testid="google-redirect">{google.redirectUri}</code>
-          <button class="btn sm" onclick={() => copyRedirect(google.redirectUri)}>{copied ? 'Copied' : 'Copy'}</button>
-        </div>
-
-        {#if gState !== 'no-client'}
           <ul class="accounts" data-testid="google-accounts">
             {#each google.accounts as a (a.channelId)}
               <li class="acct" data-testid="google-account">
@@ -404,47 +801,27 @@
               6) to stop that.
             </p>
           {/if}
+          <details class="setupdetails" data-testid="google-setup">
+            <summary class="meta">Google Cloud setup</summary>
+            <p class="muted meta">
+              Using the OAuth client from <strong>{clientSourceLabel[google.clientSource ?? 'settings']}</strong>.
+              {#if google.clientSource === 'settings'}
+                <button class="link" onclick={removeClient}>Remove client</button>
+              {/if}
+            </p>
+            {@render redirectLine(google.redirectUri)}
+          </details>
         {/if}
       {/if}
     </section>
 
-    <section class="panel sec">
-      <h2>My channels</h2>
-      <p class="muted meta">
-        Paste your channel URL or @handle. Comments from your channels never land in the inbox, replying from them marks
-        earlier comments as answered, and their uploads are tracked as a source.
-      </p>
-      <div class="chips" data-testid="own-channels">
-        {#each s.ownChannels as c (c.id)}
-          <span class="chip" data-testid="own-channel-chip">
-            <Avatar name={c.title ?? c.id} url={c.thumbnailUrl} size={18} />
-            <span title={c.id}>{c.title ?? c.id}</span>
-            <button aria-label="Remove {c.title ?? c.id}" onclick={() => void settings.removeOwnChannel(c.id)}>×</button
-            >
-          </span>
-        {:else}
-          <span class="faint meta">None yet.</span>
-        {/each}
-      </div>
-      <form class="line" onsubmit={addChannel}>
-        <input
-          class="input grow"
-          placeholder="https://www.youtube.com/@yourchannel or @yourchannel"
-          bind:value={chanInput}
-          aria-label="Channel URL or @handle"
-          spellcheck="false"
-          autocomplete="off"
-          data-testid="own-channel-input"
-        />
-        <button class="btn" type="submit" disabled={!chanInput.trim() || chanBusy}
-          >{chanBusy ? 'Finding…' : 'Add'}</button
-        >
-      </form>
-      {#if chanError}<p class="bad meta" role="alert">{chanError}</p>{/if}
+    <section class="group" id="sync" aria-labelledby="sync-h">
+      <h2 id="sync-h">Sync and data</h2>
+      <p class="blurb">Polling and quota, usage counts, and the running version.</p>
     </section>
 
-    <section class="panel sec">
-      <h2>Syncing</h2>
+    <section class="panel sec" id="syncing" data-testid="settings-sync">
+      <h3>Syncing</h3>
       <label class="field"
         ><span>Background polling</span>
         <input
@@ -498,337 +875,8 @@
       {/if}
     </section>
 
-    <section class="panel sec" data-testid="settings-snooze">
-      <h2>Snoozing until activity</h2>
-      <p class="meta muted">
-        An item snoozed "until activity" comes back as soon as someone else comments, merges or replies. If nothing
-        happens it comes back anyway after this many days, marked as still waiting.
-      </p>
-      {#each SNOOZE_BUCKETS as b (b)}
-        <label class="field"
-          ><span>{BUCKETS[b].label} <small class="faint">days</small></span>
-          <input
-            class="input num"
-            type="number"
-            inputmode="numeric"
-            min={SNOOZE_DAYS_MIN}
-            max={SNOOZE_DAYS_MAX}
-            step="1"
-            value={s.snoozeDays[b]}
-            data-testid="snooze-days-{b}"
-            onchange={(e) => bucketDays(e, b)}
-          />
-        </label>
-      {/each}
-    </section>
-
-    <section class="panel sec" id="about-you" data-testid="settings-about">
-      <h2>About you</h2>
-      <p class="muted meta">
-        Suggestions, nudge drafts and the assistant are written for you, so the model is told who you are. Until both
-        fields are filled in, nothing is sent to the model at all.
-      </p>
-      <form class="owner" onsubmit={saveOwner}>
-        <label class="stack" for="owner-name"
-          ><span>What should the assistant call you?</span>
-          <input
-            id="owner-name"
-            class="input"
-            maxlength={OWNER_NAME_MAX}
-            placeholder="e.g. Alex"
-            autocomplete="given-name"
-            bind:value={ownerName}
-            data-testid="owner-name"
-          />
-        </label>
-        <label class="stack" for="owner-about"
-          ><span
-            >A short paragraph about who you are and what you maintain. It is sent to the model with every
-            classification, so keep it factual.</span
-          >
-          <textarea
-            id="owner-about"
-            class="input about"
-            rows="4"
-            maxlength={OWNER_ABOUT_MAX}
-            placeholder="e.g. Alex runs a YouTube channel about programming and maintains a few open-source libraries."
-            bind:value={ownerAbout}
-            data-testid="owner-about"></textarea>
-        </label>
-        <div class="line">
-          <span class="faint meta grow">{ownerAbout.trim().length} / {OWNER_ABOUT_MAX}</span>
-          <button class="btn primary" type="submit" disabled={!ownerDirty || ownerBusy} data-testid="owner-save"
-            >{ownerBusy ? 'Saving…' : 'Save'}</button
-          >
-        </div>
-      </form>
-    </section>
-
-    <section class="panel sec" data-testid="settings-llm">
-      <h2>Assistant</h2>
-      <p class="muted meta">
-        {#if s.llm.configured}
-          Using an Anthropic key ending <code>…{s.llm.last4}</code> ({s.llm.model}), stored in Nudge's database.
-        {:else}
-          Press <kbd class="mono">c</kbd> (or the mic button on your phone) and say things like “remind me in 3 days to ring
-          the plumber” or “snooze this till Monday”. This needs an Anthropic API key, ideally one with a small spend limit.
-          Without one, what you say is saved as a plain todo.
-        {/if}
-      </p>
-      <div class="line">
-        <input
-          class="input mono grow"
-          type="password"
-          placeholder="Paste a key to test or replace…"
-          bind:value={llmKey}
-          autocomplete="off"
-          aria-label="Anthropic API key"
-          data-testid="llm-key"
-        />
-        <button class="btn" onclick={testLlm} disabled={llmBusy || (!llmKey.trim() && !s.llm.configured)}
-          >{llmBusy ? 'Testing…' : 'Test'}</button
-        >
-        <button class="btn primary" onclick={saveLlmKey} disabled={!llmKey.trim()} data-testid="llm-save">Save</button>
-        {#if s.llm.configured}<button class="btn danger" onclick={removeLlmKey}>Remove</button>{/if}
-      </div>
-      {#if llmResult}<p class="meta" class:ok={llmResult.ok} class:bad={!llmResult.ok} data-testid="llm-result">
-          {llmResult.message}
-        </p>{/if}
-    </section>
-
-    <section class="panel sec" data-testid="settings-notes">
-      <h2>Notes</h2>
-      <p class="muted meta">
-        What you tell the assistant about a suggestion, an item or how you like things done (press
-        <kbd class="mono">c</kbd> and say it). Every note is kept. A note switched off here stays on record but is no longer
-        shown to the model; “standing” notes apply to every suggestion, the others to one item.
-      </p>
-      <ul class="notes">
-        {#each notes.list as n (n.id)}
-          <li class="note" class:off={!n.enabled} data-testid="note-row">
-            <div class="notehead meta faint">
-              <span>{new Date(n.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>
-              <span class="badge" data-testid="note-scope">{n.scope === 'standing' ? 'Standing' : 'About an item'}</span
-              >
-              {#if n.source === 'voice'}<span class="badge">Voice</span>{/if}
-              {#if n.itemTitle}<span class="truncate notetitle" title={n.itemTitle} data-testid="note-item"
-                  >{n.itemTitle}</span
-                >{/if}
-            </div>
-            <textarea
-              class="input notetext"
-              rows="2"
-              maxlength="1000"
-              aria-label="Note"
-              data-testid="note-text"
-              value={n.text}
-              onchange={(e) => {
-                const text = e.currentTarget.value.trim();
-                if (text && text !== n.text) void notes.patch(n.id, { text });
-                else e.currentTarget.value = n.text;
-              }}></textarea>
-            {#if noteContext(n)}<p class="meta faint">{noteContext(n)}</p>{/if}
-            <div class="noteacts">
-              <label class="check"
-                ><input
-                  type="checkbox"
-                  checked={n.enabled}
-                  data-testid="note-enabled"
-                  onchange={(e) => void notes.patch(n.id, { enabled: e.currentTarget.checked })}
-                />
-                <span>Tell the model</span></label
-              >
-              <button
-                class="btn ghost sm danger"
-                aria-label="Delete note"
-                data-testid="note-delete"
-                onclick={() => void notes.remove(n.id)}><Icon name="trash" size={14} /></button
-              >
-            </div>
-          </li>
-        {:else}
-          <li class="faint meta" data-testid="notes-empty">No notes yet.</li>
-        {/each}
-      </ul>
-    </section>
-
-    <section class="panel sec" data-testid="settings-github">
-      <h2>GitHub</h2>
-      <p class="muted meta">
-        {#if s.github.configured}
-          Using a token ending <code>…{s.github.last4}</code>, stored in Nudge's database.
-        {:else}
-          No token: public repositories still work, with a low rate limit. For private repositories or a higher limit,
-          create a <strong>fine-grained</strong> token (GitHub &rsaquo; Settings &rsaquo; Developer settings): all
-          repositories, with <em>Issues</em> and <em>Pull requests</em> set to read-only. A classic token cannot be read-only
-          for private repositories. Nudge never writes to GitHub.
-        {/if}
-      </p>
-      <div class="line">
-        <input
-          class="input mono grow"
-          type="password"
-          placeholder="Paste a token to test or replace…"
-          bind:value={ghToken}
-          autocomplete="off"
-          aria-label="GitHub token"
-          data-testid="github-token"
-        />
-        <button class="btn" onclick={testGithub} disabled={ghBusy || (!ghToken.trim() && !s.github.configured)}
-          >{ghBusy ? 'Testing…' : 'Test'}</button
-        >
-        <button class="btn primary" onclick={saveGithubToken} disabled={!ghToken.trim()} data-testid="github-save"
-          >Save</button
-        >
-        {#if s.github.configured}<button class="btn danger" onclick={removeGithubToken}>Remove</button>{/if}
-      </div>
-      {#if ghResult}<p class="meta" class:ok={ghResult.ok} class:bad={!ghResult.ok} data-testid="github-result">
-          {ghResult.message}
-        </p>{/if}
-      <h3>My accounts</h3>
-      <p class="muted meta">
-        Pull requests and issues opened by these logins are yours, so they never land in the inbox. Add your own account
-        and any account an agent uses on your behalf.
-      </p>
-      <div class="chips" data-testid="github-accounts">
-        {#each s.github.myAccounts as login (login)}
-          <span class="chip"
-            >{login}<button aria-label="Remove {login}" onclick={() => void removeAccount(login)}>×</button></span
-          >
-        {/each}
-      </div>
-      <form class="line" onsubmit={addAccount}>
-        <input
-          class="input grow"
-          bind:value={ghAccount}
-          placeholder="GitHub login, e.g. octocat"
-          aria-label="GitHub login"
-          data-testid="github-account"
-          autocomplete="off"
-          spellcheck="false"
-        />
-        <button class="btn" type="submit" disabled={!ghAccount.trim()}>Add account</button>
-      </form>
-    </section>
-
-    <section class="panel sec" data-testid="settings-notifications">
-      <h2>Notifications</h2>
-      {#if push.status === 'unsupported'}
-        <p class="muted meta">
-          This browser can’t show push notifications here. They need HTTPS (or localhost) and a browser with Web Push
-          support, such as Chrome on Android.
-        </p>
-      {:else}
-        <p class="muted meta">
-          Get a notification on <strong>this device</strong> when comments arrive or a snoozed one comes back. Tapping it
-          opens that comment. You need to be able to reach Nudge (e.g. signed in through Cloudflare Access) to open it.
-        </p>
-        {#if push.status === 'blocked'}
-          <p class="bad meta">
-            Notifications are blocked for this site. Allow them in the browser’s site settings, then come back.
-          </p>
-        {:else if push.status === 'on'}
-          <label class="field"
-            ><span>New comments</span>
-            <input
-              type="checkbox"
-              data-testid="push-new"
-              checked={push.prefs.newComments}
-              onchange={(e) => void push.setPref('newComments', e.currentTarget.checked)}
-            />
-          </label>
-          <label class="field"
-            ><span>Snoozed comments coming back</span>
-            <input
-              type="checkbox"
-              data-testid="push-wake"
-              checked={push.prefs.snoozeWake}
-              onchange={(e) => void push.setPref('snoozeWake', e.currentTarget.checked)}
-            />
-          </label>
-        {/if}
-        <div class="line">
-          {#if push.status === 'on'}
-            <button class="btn" data-testid="push-test" onclick={() => void push.sendTest()}>Send a test</button>
-            <button class="btn" data-testid="push-off" disabled={push.busy} onclick={() => void push.disable()}
-              >Turn off on this device</button
-            >
-          {:else if push.status !== 'blocked'}
-            <button
-              class="btn primary"
-              data-testid="push-on"
-              disabled={push.busy || push.status === 'checking'}
-              onclick={() => void push.enable()}>Turn on for this device</button
-            >
-          {/if}
-          {#if push.canInstall}
-            <button class="btn" data-testid="push-install" onclick={() => void push.install()}>Install as an app</button
-            >
-          {/if}
-        </div>
-        {#if !push.installed && !push.canInstall}
-          <p class="faint meta">
-            Tip: on Android, Chrome’s menu → “Install app” gives Nudge its own icon and a window without the address
-            bar.
-          </p>
-        {/if}
-      {/if}
-    </section>
-
-    <section class="panel sec">
-      <h2>Appearance</h2>
-      <div class="seg" role="group" aria-label="Theme">
-        {#each [['system', 'System'], ['light', 'Light'], ['dark', 'Dark']] as [v, l] (v)}
-          <button
-            class="segbtn"
-            class:on={theme.preference === v}
-            aria-pressed={theme.preference === v}
-            onclick={() => theme.set(v as ThemePref)}>{l}</button
-          >
-        {/each}
-      </div>
-      <p class="faint meta">Press <kbd class="mono">t</kbd> anywhere to cycle.</p>
-      <label class="field"
-        ><span>Show suggestions</span>
-        <input
-          type="checkbox"
-          checked={ui.showSuggestions}
-          data-testid="show-suggestions"
-          onchange={(e) => ui.setShowSuggestions(e.currentTarget.checked)}
-        />
-      </label>
-      <p class="faint meta">
-        A small hint on each item (reply, act, skip or spam) with the reason, from the assistant key's model. It only
-        suggests; nothing is ever done for you.
-      </p>
-      <SuggestProgress />
-      <label class="field"
-        ><span>Adventure mode (levels, titles, silly loot)</span>
-        <input
-          type="checkbox"
-          checked={s.rpg.enabled}
-          data-testid="rpg-enabled"
-          onchange={(e) => void settings.save({ rpg: { enabled: e.currentTarget.checked } })}
-        />
-      </label>
-      <label class="field"
-        ><span>Level-up sound</span>
-        <input
-          type="checkbox"
-          checked={s.rpg.sound}
-          disabled={!s.rpg.enabled}
-          data-testid="rpg-sound"
-          onchange={(e) => void settings.save({ rpg: { sound: e.currentTarget.checked } })}
-        />
-      </label>
-      <p class="faint meta">
-        A level and a silly title earned from the triage you have already done, shown in the sidebar and in the Hall of
-        Heroes under Stats, with a short chime on a level-up. Decoration only: it never changes how anything works.
-      </p>
-    </section>
-
-    <section class="panel sec" data-testid="settings-usage">
-      <h2>Usage data</h2>
+    <section class="panel sec" id="usage" data-testid="settings-usage">
+      <h3>Usage data</h3>
       <p class="meta muted">
         Nudge counts which features you use and how (keyboard, button, touch), so you can see what earns its place. Only
         counts are kept, in this server's database: never what you typed, read or searched for. See them under Stats.
@@ -838,8 +886,8 @@
       </div>
     </section>
 
-    <section class="panel sec" data-testid="settings-about">
-      <h2>About</h2>
+    <section class="panel sec" id="version" data-testid="settings-version">
+      <h3>Version</h3>
       <p class="meta muted">
         Nudge <code class="mono" data-testid="about-server">{s.version}</code>
         {#if s.version !== BUILD_VERSION && s.version !== 'dev' && BUILD_VERSION !== 'dev'}
@@ -847,11 +895,10 @@
           Refresh to reload.
         {/if}
       </p>
+      {#if s.demo}
+        <p class="meta muted">Demo mode is on: data comes from a simulated YouTube and nothing is sent anywhere.</p>
+      {/if}
     </section>
-
-    {#if s.demo}
-      <p class="meta muted">Demo mode is on: data comes from a simulated YouTube and nothing is sent anywhere.</p>
-    {/if}
   {:else}
     <p class="muted">Loading…</p>
   {/if}
@@ -878,9 +925,45 @@
     font-weight: 600;
     letter-spacing: -0.02em;
   }
+  /* Group headings: plain text colour and a rule above, so the four groups read as chapters of one page. */
   h2 {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text);
+  }
+  h3 {
     font-size: 14px;
     font-weight: 600;
+  }
+  .toc {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--s1) var(--s2);
+    margin-top: calc(-1 * var(--s2));
+    color: var(--text-faint);
+  }
+  .toc a {
+    color: var(--accent);
+  }
+  .group {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s1);
+    margin-top: var(--s4);
+    padding-top: var(--s4);
+    border-top: 1px solid var(--border);
+  }
+  .group.first {
+    margin-top: 0;
+    padding-top: 0;
+    border-top: 0;
+  }
+  .blurb {
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+  .page :global(section[id]) {
+    scroll-margin-top: var(--s4);
   }
   .sec {
     padding: var(--s4);
@@ -892,12 +975,57 @@
     display: flex;
     gap: var(--s2);
   }
-  .paused {
+  /* On a phone an input given the row takes all of it and its buttons wrap below, instead of squeezing it. */
+  @media (max-width: 899px) {
+    .line:has(> .input.grow) {
+      flex-wrap: wrap;
+    }
+    .line > .input.grow {
+      flex-basis: 100%;
+    }
+  }
+  .setup {
     padding: var(--s3) var(--s4);
     border: 1px solid var(--warn);
     border-radius: var(--radius);
     background: color-mix(in srgb, var(--warn) 14%, transparent);
     line-height: 1.5;
+  }
+  .setup ul {
+    margin: var(--s1) 0 0;
+    padding-left: var(--s4);
+  }
+  .warn {
+    color: var(--warn);
+  }
+  .steps {
+    margin: 0;
+    padding-left: var(--s4);
+    display: flex;
+    flex-direction: column;
+    gap: var(--s3);
+  }
+  /* Not flex: a flex li loses its list-item display, and with it the step number. */
+  .step {
+    display: list-item;
+  }
+  .step > :global(* + *) {
+    margin-top: var(--s2);
+  }
+  .step::marker {
+    font-weight: 600;
+  }
+  .setupdetails {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s2);
+  }
+  .setupdetails summary {
+    cursor: pointer;
+    color: var(--text-muted);
+  }
+  .setupdetails[open] summary {
+    margin-bottom: var(--s2);
   }
   .owner {
     display: flex;
@@ -977,11 +1105,29 @@
     flex: 1;
   }
   .json {
+    width: 100%;
     resize: vertical;
     font-size: 12px;
   }
   .redirect {
     align-items: center;
+  }
+  /* The whole URI must be readable to be copied into Google Cloud by hand, so it wraps rather than truncating. */
+  .uri {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  @media (max-width: 899px) {
+    .redirect {
+      flex-wrap: wrap;
+    }
+    .uri {
+      flex-basis: 100%;
+      order: 1;
+    }
+    .redirect .btn {
+      order: 2;
+    }
   }
   .accounts {
     list-style: none;
@@ -1025,12 +1171,26 @@
     align-items: center;
     gap: 6px;
   }
+  /* A bigger hit area than the 22px chip, without making the chip itself taller. */
   .chip button {
     border: 0;
     background: none;
     cursor: pointer;
     color: var(--text-faint);
     padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 32px;
+    min-height: 32px;
+    margin: -5px -8px -5px -6px;
+  }
+  @media (max-width: 899px), (pointer: coarse) {
+    .chip button {
+      min-width: 44px;
+      min-height: 44px;
+      margin: -4px -6px -4px -8px;
+    }
   }
   .chip button:hover {
     color: var(--danger);
@@ -1044,9 +1204,6 @@
   .num {
     width: 110px;
     text-align: right;
-  }
-  .ok {
-    color: var(--success);
   }
   .bad {
     color: var(--danger);
@@ -1078,10 +1235,5 @@
     color: var(--accent);
     position: relative;
     z-index: 1;
-  }
-  h3 {
-    margin: var(--s2) 0 0;
-    font-size: 13px;
-    color: var(--text-muted);
   }
 </style>

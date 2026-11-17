@@ -9,6 +9,11 @@ test('adding my channel from Settings by @handle shows its title and marks the s
   await expect(chips).toHaveCount(1); // the demo seed
   await chips.first().getByRole('button').click();
   await expect(chips).toHaveCount(0);
+  // With no channel of mine, Settings opens with that as the thing to finish; the link goes to the box.
+  const setup = page.getByTestId('profile-banner');
+  await expect(setup).toContainText('Finish setting up');
+  await setup.getByRole('link', { name: 'Add your channel' }).click();
+  await expect(page.getByTestId('own-channel-input')).toBeFocused();
 
   // Un-marking keeps the channel tracked, but no longer flags it as mine.
   await page.goto('/sources');
@@ -20,6 +25,7 @@ test('adding my channel from Settings by @handle shows its title and marks the s
   await page.getByRole('button', { name: 'Add', exact: true }).click();
   await expect(chips).toHaveCount(1);
   await expect(chips.first()).not.toContainText('UCdemo'); // title, not the bare id
+  await expect(page.getByTestId('profile-banner')).toHaveCount(0);
 
   await page.goto('/sources');
   await expect(page.getByTestId('own-badge')).toHaveCount(1);
