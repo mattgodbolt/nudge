@@ -7,6 +7,12 @@ all of them are cleared the same way: read, reply, snooze, done.
 Nudge is a personal tool for one person, not a SaaS. There are no accounts and no multi-user mode: it runs on your own
 machine (or a box of your own behind Cloudflare Access), and keeps its data in a local SQLite file.
 
+> **Built entirely with AI.** All of the code, tests and docs in this repository were written by AI (Claude, through
+> Claude Code). It was built for one person's needs and then lovingly tweaked by that person: used every day, with
+> feedback and close attention to detail in the places that mattered to them, like the keyboard flow and what does and
+> does not reach the inbox. Tests, CI and several automated security and code reviews back it up, but it has not had a
+> line-by-line human review. Treat it accordingly.
+
 ![The inbox: YouTube comments, each with a suggestion, and the open one beside the list](docs/screenshots/inbox.png)
 
 ## What it does
