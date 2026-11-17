@@ -59,11 +59,11 @@ A real instance needs:
 - **For YouTube, a YouTube Data API v3 key** (free), given as `YOUTUBE_API_KEY` or in Settings. GitHub-only use needs
   no YouTube key. [Getting a key](docs/YOUTUBE.md#getting-a-key-and-naming-your-channel) also covers telling Nudge
   which channel is yours.
-- **For the model features, an Anthropic key and the About you profile.** The model-backed features (suggestions,
-  nudge drafts and the assistant) need an Anthropic key and a short profile: fill in **Settings > You > About you**
-  (what to call you, and a factual sentence or two about who you are and what you maintain). Every prompt is built
-  from it, so until both are filled in Nudge makes no model calls at all, Settings says the LLM features are paused,
-  and the server logs a warning at startup. Everything else works without it. Demo mode comes with a made-up profile.
+- **For the model features (suggestions, nudge drafts, the assistant), an Anthropic key and the About you profile.**
+  Fill in **Settings > You > About you**: what to call you, and a factual sentence or two about who you are and what
+  you maintain. Every prompt is built from it, so until both are filled in Nudge makes no model calls at all, Settings
+  says the LLM features are paused, and the server logs a warning at startup. Everything else works without it. Demo
+  mode comes with a made-up profile.
 
 ## How it works
 
@@ -122,12 +122,6 @@ key and the GitHub token are entered in Settings only. There are no key files an
 - [Contributing](CONTRIBUTING.md) and [Security](SECURITY.md): how to send a change or report a problem.
 - Design history: [the original build plan](docs/PLAN.md) (historical), [OAuth posting](docs/OAUTH-PLAN.md), and
   proposals (partly historical) for [sources](docs/DESIGN-SOURCES.md) and [LLM triage](docs/DESIGN-LLM-TRIAGE.md).
-
-## Naming
-
-Nudge started out as a YouTube-only tool under another name. The pre-rename environment variables, home-directory
-key files and default database name are no longer read: configuration comes from the `NUDGE_*` variables (and
-`YOUTUBE_API_KEY`) and from Settings, and the database is `data/nudge.db` unless `NUDGE_DB` says otherwise.
 
 ## License
 
