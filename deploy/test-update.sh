@@ -324,6 +324,49 @@ exec 8>&-
 run_update
 check "the next run deploys" [ "$(head_sha)" = "$(remote_sha)" ]
 
+echo "a data directory the running user cannot write"
+if [ "$(id -u)" = 0 ]; then
+  echo "  skip (root can write anywhere)"
+else
+  push_commit
+  before=$(head_sha)
+  chmod 500 "$WORK/data"
+  run_update
+  chmod 700 "$WORK/data"
+  check "exits non-zero" [ "$RC" != 0 ]
+  check "says why, before touching anything" logged "ERROR: data/ must be owned by and writable"
+  check "leaves the checkout alone" [ "$(head_sha)" = "$before" ]
+  check "does not call docker" [ ! -s "$STATE/calls" ]
+  run_update
+  check "the next run deploys" [ "$(head_sha)" = "$(remote_sha)" ]
+fi
+
+echo "install-cron.sh in a checkout whose path has spaces and a percent sign"
+SPACED="$SANDBOX/a dir 50%/nudge"
+mkdir -p "$SPACED/deploy" "$SPACED/data"
+cp "$REPO/deploy/install-cron.sh" "$SPACED/deploy/"
+cat > "$BIN/crontab" <<EOF
+#!/usr/bin/env bash
+STATE="$STATE"
+EOF
+cat >> "$BIN/crontab" <<'EOF'
+if [ "${1:-}" = "-l" ]; then cat "$STATE/crontab" 2> /dev/null; else cat "$1" > "$STATE/crontab"; fi
+EOF
+chmod +x "$BIN/crontab"
+PATH="$BIN:$PATH" "$SPACED/deploy/install-cron.sh" > "$OUT" 2>&1
+check "succeeds" [ $? = 0 ]
+check "quotes the spaces" grep -qF 'a\ dir\ 50\%/nudge/deploy/update.sh' "$STATE/crontab"
+check "escapes the percent sign for cron" bash -c "! grep -q '[^\\\\]%' '$STATE/crontab'"
+check "writes both jobs" [ "$(grep -c '# nudge' "$STATE/crontab")" = 2 ]
+if [ "$(id -u)" != 0 ]; then
+  chmod 500 "$SPACED/data"
+  PATH="$BIN:$PATH" "$SPACED/deploy/install-cron.sh" > "$OUT" 2>&1
+  rc=$?
+  chmod 700 "$SPACED/data"
+  check "refuses when data/ is not writable" [ "$rc" != 0 ]
+  check "and says so" logged "data/ must be owned by and writable"
+fi
+
 echo "nightly backup"
 : > "$STATE/calls"
 mkdir -p "$SANDBOX/nas"

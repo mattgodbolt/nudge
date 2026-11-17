@@ -43,6 +43,20 @@ Then open `http://127.0.0.1:4517`. Add your keys in Settings (or copy `.env.exam
 - **Settings > Version** shows `dev` unless you export `GIT_SHA` (for example `GIT_SHA=$(git rev-parse --short=8 HEAD)
 docker compose up -d --build`); the Docker build cannot see `.git`.
 
+## A host user that is not uid 1000
+
+The container runs as `NUDGE_UID:NUDGE_GID` (both default to `1000`, so nothing changes if you set neither). On a host
+where your user has another uid, put yours in `.env` and own `data/` as that user, before the first `docker compose up`:
+
+```shell
+printf 'NUDGE_UID=%s\nNUDGE_GID=%s\n' "$(id -u)" "$(id -g)" >> .env
+mkdir -p data && sudo chown "$(id -u):$(id -g)" data
+```
+
+`deploy/update.sh` and `deploy/install-cron.sh` refuse to run, with an explanatory message, unless `data/` is owned by
+and writable for the user running them: the update lock, the logs and the rollback's read of the 0600 snapshots all
+need it. The paths written into the crontab are quoted, so a checkout in a directory with spaces works.
+
 ## Docker + Cloudflare Access
 
 One box runs the container, published on the host's loopback only. A [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/)

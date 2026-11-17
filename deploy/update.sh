@@ -15,6 +15,11 @@ log() { echo "$(date -Is) $*"; }
 
 main() {
   cd "$(dirname "$0")/.."
+  # The lock, the logs and the rollback's read of the 0600 snapshots all need data/ to belong to the cron user.
+  if [ ! -w data ] || [ "$(stat -c %u data)" != "$(id -u)" ]; then
+    log "ERROR: data/ must be owned by and writable for $(id -un) (uid $(id -u)); see docs/DEPLOYING.md, 'A host user that is not uid 1000'"
+    exit 1
+  fi
   exec 9>data/.update.lock
   flock -n 9 || exit 0
   trap 'log "ERROR: update.sh failed (exit $?) at line $LINENO: $BASH_COMMAND"' ERR
@@ -54,7 +59,7 @@ main() {
   fi
 
   docker tag nudge:latest nudge:prev 2>/dev/null || true
-  # The image has no .git, so hand it the commit for Settings > About.
+  # The image has no .git, so hand it the commit for Settings > Version.
   GIT_SHA=$(git rev-parse --short=8 HEAD)
   export GIT_SHA
   # Builds on the deploy host occasionally sit idle until killed (#29). That is transient, so a stalled or timed-out
