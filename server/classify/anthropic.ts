@@ -134,8 +134,29 @@ export function renderOwnerNotes(notes: string[], owner: OwnerProfile): string {
   ].join('\n');
 }
 
-/** A link in model output: stripped wherever the output could reach someone else. */
-export const URL_RE = /\b(?:https?:\/\/|www\.)\S+/gi;
+/**
+ * A link in model output, stripped wherever the output could reach someone else: any scheme or protocol-relative `//host`
+ * (but not a `// comment`), or `www.`, together with emphasis or brackets wrapped around it. No word boundary in front,
+ * because markdown treats `_https://x_` as a link too.
+ */
+const URL_RE = /[_*~(<]*(?:(?:[a-z][a-z0-9+.-]*:)?\/\/[^\s/]|(?<![a-z0-9])www\.)\S*/gi;
+/** `[label](target)` and `![alt](target)`: the label stays, the target goes whatever it looks like. */
+const MD_LINK_RE = /(!?)\[([^\]\n]*)\]\([^)\n]*\)/g;
+/** `[1]: target`, the definition behind a reference-style link. */
+const MD_REF_RE = /^[ \t]*\[[^\]\n]+\]:[ \t]*\S.*$/gm;
+/** An HTML link: the tags go, the text stays; and any href/src attribute left in other markup. */
+const HTML_A_RE = /<\/?a\b[^>]*>/gi;
+const HTML_ATTR_RE = /\s*\b(?:href|src)\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi;
+
+/** Remove every form of link the model could have been talked into writing. Ordinary prose is left alone. */
+export function stripLinks(text: string): string {
+  return text
+    .replace(MD_LINK_RE, (_whole, _bang: string, label: string) => label)
+    .replace(MD_REF_RE, '')
+    .replace(HTML_A_RE, '')
+    .replace(HTML_ATTR_RE, '')
+    .replace(URL_RE, '');
+}
 
 /** Validate the model's tool input. Anything off-schema is rejected rather than coerced into a verdict. */
 export function parseClassification(input: unknown): Classification | null {
@@ -151,13 +172,13 @@ export function parseClassification(input: unknown): Classification | null {
     verdict,
     category,
     confidence,
-    reason: o.reason.replace(URL_RE, '').replace(/\s+/g, ' ').trim().slice(0, 200),
+    reason: stripLinks(o.reason).replace(/\s+/g, ' ').trim().slice(0, 200),
     injectionAttempt: o.injection_attempt === true,
     // Tolerant on purpose: an answer without them is still a usable verdict.
     turn: pick(o.turn, TURNS),
     nextStep:
       typeof o.next_step === 'string' && o.next_step.trim()
-        ? o.next_step.replace(URL_RE, '').replace(/\s+/g, ' ').trim().slice(0, 140) || null
+        ? stripLinks(o.next_step).replace(/\s+/g, ' ').trim().slice(0, 140) || null
         : null,
   };
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { LlmError } from '../contracts.js';
-import { createSnoozeAi, nudgeSystem } from './snooze.js';
+import { cleanNudge, createSnoozeAi, nudgeSystem } from './snooze.js';
 import { GENDERED, IDENTITY, SAMPLE_OWNER } from './test-helpers.js';
 
 // The two small snooze calls, against a fake fetch: nothing here reaches the network.
@@ -151,6 +151,31 @@ describe('drafting a nudge', () => {
     expect((await ai.nudge(input, 'k', 'm', SAMPLE_OWNER)).text).toBe(
       'Could you rebase? Details at and\n\nThanks for the patch.',
     );
+  });
+
+  it.each([
+    ['emphasis around a link', 'see _https://evil.example/x_ please', 'see please'],
+    ['bold or strikethrough around a link', 'see **https://evil.example/x** or ~https://evil.example/y~', 'see or'],
+    ['a link in parentheses', 'details (https://evil.example/x) here', 'details here'],
+    ['a markdown link to a protocol-relative url', 'Try [the fix](//evil.example/x) now', 'Try the fix now'],
+    ['a markdown link to a bare host', 'Try [the fix](evil.example/patch) now', 'Try the fix now'],
+    ['a markdown image', 'look ![logo](evil.example/a.png) here', 'look logo here'],
+    ['an html anchor', 'Try <a href="//evil.example">fix</a> now', 'Try fix now'],
+    [
+      'an href attribute in single quotes or bare',
+      "x <b href='//evil.example'>y</b> href=evil.example/z",
+      'x <b>y</b>',
+    ],
+    ['a protocol-relative url in prose', 'see //evil.example/path now', 'see now'],
+    ['a www link behind punctuation', 'see *www.evil.example* now', 'see now'],
+    ['a markdown reference definition', 'see [fix][1]\n[1]: evil.example/patch', 'see [fix][1]'],
+  ])('strips %s', (_what, input, out) => {
+    expect(cleanNudge(input, [])).toBe(out);
+  });
+
+  it('leaves ordinary prose, paths and code comments alone', () => {
+    const prose = 'Is this still blocked on CI and/or review? The (old) parser in src/x.ts, see [1] and a // comment.';
+    expect(cleanNudge(prose, [])).toBe(prose);
   });
 
   it('keeps @-mentions of the author and the commenters, and defuses any other', async () => {

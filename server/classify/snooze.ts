@@ -2,7 +2,7 @@ import { BUCKETS, SNOOZE_BUCKETS, isSnoozeBucket } from '../../shared/snooze.js'
 import type { LlmTokens, SnoozeAi } from '../contracts.js';
 import { LlmError } from '../contracts.js';
 import type { OwnerProfile } from '../../shared/owner.js';
-import { URL_RE, clip, esc, escAttr, ownerIntro } from './anthropic.js';
+import { clip, esc, escAttr, ownerIntro, stripLinks } from './anthropic.js';
 
 const API = 'https://api.anthropic.com/v1/messages';
 const TIMEOUT_MS = 20_000;
@@ -49,8 +49,7 @@ const MENTION_RE = /(^|[^\w@`])@([A-Za-z0-9][A-Za-z0-9-]{0,38})(\/[\w.-]+)?/g;
  */
 export function cleanNudge(text: string, onThread: Iterable<string>): string {
   const known = new Set([...onThread].map((l) => l.toLowerCase()));
-  return text
-    .replace(URL_RE, '')
+  return stripLinks(text)
     .replace(MENTION_RE, (whole, pre: string, login: string, team: string | undefined) =>
       !team && known.has(login.toLowerCase()) ? whole : `${pre}${login}${team ?? ''}`,
     )
