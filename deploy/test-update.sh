@@ -8,6 +8,7 @@ set -uo pipefail
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 REAL_DATE="$(command -v date)"
 REAL_MV="$(command -v mv)"
+REAL_SLEEP="$(command -v sleep)"
 SANDBOX="$(mktemp -d "${TMPDIR:-/tmp}/nudge-update-test.XXXXXX")"
 trap 'rm -rf "$SANDBOX"' EXIT
 BIN="$SANDBOX/bin"
@@ -31,11 +32,13 @@ check() { # check <description> <command...>
 # ---- fakes --------------------------------------------------------------------------------------------------------
 
 # docker: records every call; behaviour is steered by files in $STATE (build, backup, prune: "fail" to fail;
-# health-new / health-old: what the health check reports for the new and the previous image).
+# build-hangs: how many builds in a row go silent and never finish; build "slow": a build that keeps printing but never
+# finishes; health-new / health-old: what the health check reports for the new and the previous image).
 cat > "$BIN/docker" <<EOF
 #!/usr/bin/env bash
 STATE="$STATE"
 WORK="$WORK"
+REAL_SLEEP="$REAL_SLEEP"
 EOF
 cat >> "$BIN/docker" <<'EOF'
 echo "docker $*" >> "$STATE/calls"
@@ -52,6 +55,18 @@ case "$1 ${2:-}" in
     ;;
   "compose build")
     flag build && exit 1
+    hangs=$(cat "$STATE/build-hangs" 2>/dev/null || echo 0)
+    if [ "$hangs" -gt 0 ]; then
+      echo $((hangs - 1)) > "$STATE/build-hangs"
+      echo "Step 7/12 : RUN npm run build"
+      # A child, which would outlive the build if only this process were stopped.
+      "$REAL_SLEEP" 600 &
+      echo "$!" >> "$STATE/hung-pids"
+      wait
+    fi
+    if [ "$(cat "$STATE/build" 2>/dev/null)" = slow ]; then
+      while :; do echo "still downloading"; "$REAL_SLEEP" 0.2; done
+    fi
     echo new > "$STATE/image"
     ;;
   "compose up") touch "$STATE/running" ;;
@@ -64,7 +79,8 @@ case "$1 ${2:-}" in
 esac
 exit 0
 EOF
-printf '#!/usr/bin/env bash\nexit 0\n' > "$BIN/sleep"
+# sleep: barely sleeps, so health-check waits are instant but update.sh's build watchdog does not spin.
+printf '#!/usr/bin/env bash\nexec %q 0.02\n' "$REAL_SLEEP" > "$BIN/sleep"
 # date: real, except that backup.sh's timestamp ticks a counter so snapshots taken in the same second differ.
 cat > "$BIN/date" <<EOF
 #!/usr/bin/env bash
@@ -111,13 +127,23 @@ OUT="$SANDBOX/out"
 RC=0
 run_update() {
   : > "$STATE/calls"
-  PATH="$BIN:$PATH" NUDGE_BACKUP_DIR="$SANDBOX/nas" "$WORK/deploy/update.sh" > "$OUT" 2>&1
+  PATH="$BIN:$PATH" NUDGE_BACKUP_DIR="$SANDBOX/nas" NUDGE_BUILD_STALL_SECS=2 "$WORK/deploy/update.sh" > "$OUT" 2>&1
   RC=$?
 }
 logged() { grep -q -- "$1" "$OUT"; }
 called() { grep -q -- "$1" "$STATE/calls"; }
 count() { find "$WORK/data/backups" -name "$1" | wc -l; }
-reset_fakes() { rm -f "$STATE/build" "$STATE/backup" "$STATE/prune" "$WORK/data/.failed-sha"; }
+builds() { grep -c 'compose build' "$STATE/calls"; }
+none_alive() { # none_alive <pidfile>: every process it lists has gone
+  local p
+  [ -f "$1" ] || return 0
+  while read -r p; do kill -0 "$p" 2>/dev/null && return 1; done < "$1"
+  return 0
+}
+reset_fakes() {
+  rm -f "$STATE/build" "$STATE/build-hangs" "$STATE/hung-pids" "$STATE/backup" "$STATE/prune"
+  rm -f "$WORK/data/.failed-sha"
+}
 
 # A running app with an old, healthy image and a week of nightly backups.
 touch "$STATE/running"
@@ -164,9 +190,54 @@ check "logs an ERROR" logged "ERROR: build or tests FAILED"
 check "puts the checkout back" [ "$(head_sha)" = "$before" ]
 check "remembers the bad commit" [ "$(cat "$WORK/data/.failed-sha")" = "$(remote_sha)" ]
 check "does not restart anything" bash -c "! grep -q 'compose up' '$STATE/calls'"
+check "builds only once (a real failure is not retried)" [ "$(builds)" = 1 ]
+check "and does not say it is retrying" bash -c "! grep -q retrying '$OUT'"
 run_update
 check "does not retry the bad commit" [ "$RC" = 0 ]
 check "and says nothing more about it" [ ! -s "$OUT" ]
+reset_fakes
+
+echo "a build that goes silent once (#29)"
+push_commit
+echo 1 > "$STATE/build-hangs"
+run_update
+check "exits 0" [ "$RC" = 0 ]
+check "notices the stall" logged "WARN: no build output for 2s; stopping the build"
+check "says it is retrying" logged "WARN: build stalled or timed out for .*; retrying once"
+check "builds twice" [ "$(builds)" = 2 ]
+check "stops everything the stalled build started" none_alive "$STATE/hung-pids"
+check "deploys the commit" [ "$(head_sha)" = "$(remote_sha)" ]
+check "does not mark it bad" [ ! -f "$WORK/data/.failed-sha" ]
+reset_fakes
+
+echo "a build that goes silent twice"
+before=$(head_sha)
+push_commit
+echo 2 > "$STATE/build-hangs"
+echo old > "$STATE/image"
+run_update
+check "exits non-zero" [ "$RC" != 0 ]
+check "says it is retrying" logged "retrying once"
+check "gives up after the retry" [ "$(builds)" = 2 ]
+check "logs an ERROR" logged "ERROR: build or tests FAILED"
+check "stops everything both builds started" none_alive "$STATE/hung-pids"
+check "puts the checkout back" [ "$(head_sha)" = "$before" ]
+check "remembers the bad commit" [ "$(cat "$WORK/data/.failed-sha")" = "$(remote_sha)" ]
+check "does not restart anything" bash -c "! grep -q 'compose up' '$STATE/calls'"
+check "leaves the old container running" [ -f "$STATE/running" ]
+check "on the old image, with no new one built" [ "$(cat "$STATE/image")" = old ]
+check "keeps the stalled build's output for a post-mortem" grep -q "Step 7/12" "$WORK/data/build.log"
+reset_fakes
+
+echo "a build that keeps printing but runs past the deadline"
+push_commit
+echo slow > "$STATE/build"
+NUDGE_BUILD_TIMEOUT=1s run_update
+check "exits non-zero" [ "$RC" != 0 ]
+check "is not taken for a stall" bash -c "! grep -q 'no build output' '$OUT'"
+check "is retried once" [ "$(builds)" = 2 ]
+check "says it is retrying" logged "retrying once"
+check "remembers the bad commit" [ "$(cat "$WORK/data/.failed-sha")" = "$(remote_sha)" ]
 reset_fakes
 
 echo "a commit that starts but never becomes healthy"

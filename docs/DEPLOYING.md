@@ -83,8 +83,11 @@ In the Cloudflare dashboard (menu names move around, so search for the term if y
 - **Auto-update:** `deploy/update.sh` (cron, every 5 minutes) fetches `origin/main`; on a new commit it takes a
   pre-update snapshot (and skips the update, to retry next time, if none could be made while the app is up), builds (a
   failing test aborts the build and the old container keeps running), restarts, and rolls back to the previous image if
-  the new one is not healthy within ~90s. A commit that fails is remembered and not retried, and so is an `origin/main`
-  that is not a fast-forward of the checkout. Every failure exits non-zero with an `ERROR` line in `data/update.log`.
+  the new one is not healthy within ~90s. A build that prints nothing for 5 minutes or runs past 25 (cron-line
+  variables `NUDGE_BUILD_STALL_SECS`, `NUDGE_BUILD_TIMEOUT`) has hung, which is transient, so it is stopped and tried
+  once more; a genuine build or test failure is not retried. The last build's output is kept in `data/build.log`. A
+  commit that fails is remembered and not retried, and so is an `origin/main` that is not a fast-forward of the
+  checkout. Every failure exits non-zero with an `ERROR` line in `data/update.log`.
   After a successful update, dangling images and build cache older than a week are pruned (`nudge:prev`, the rollback
   image, is kept). `npm run test:deploy` rehearses all of this against a fake `docker`.
 - **CI does not gate deploys yet.** The cron job deploys whatever is on `origin/main`, whether or not the GitHub Actions
