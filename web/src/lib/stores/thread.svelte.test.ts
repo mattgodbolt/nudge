@@ -76,6 +76,15 @@ describe('ThreadStore', () => {
     expect(store.current?.totalReplyCount).toBe(2);
   });
 
+  it('with no thread open, a resync or live update fetches nothing', async () => {
+    void store.show('t1');
+    await answer();
+    void store.show(null);
+    store.invalidate();
+    expect(fetches()).toBe(0);
+    expect(store.current).toBeNull();
+  });
+
   it('a stale cached thread is shown at once when moving back to it, and refreshed', async () => {
     void store.show('t1');
     await answer();
