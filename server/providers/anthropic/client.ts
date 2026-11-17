@@ -125,15 +125,17 @@ const words = (s: string): string[] =>
  * Did the owner say this note themselves? A standing note reaches the classifier's prompt for every item (an item note,
  * for its item), so one may only come from the command's own words, never from an item title the model was shown
  * (which a stranger may have written). The model tidies dictation, so most rather than all of the note's words must
- * appear in the command.
+ * appear in the command. Words are counted once each: otherwise a note padded with the command's own words repeated
+ * could carry an instruction from elsewhere past the threshold.
  */
+const GROUNDED_SHARE = 0.7;
 export function groundedInCommand(note: string, command: string): boolean {
-  const all = words(note);
+  const all = [...new Set(words(note))];
   const long = all.filter((w) => w.length >= 3);
   const noteWords = long.length > 0 ? long : all;
   if (noteWords.length === 0) return false;
   const said = new Set(words(command));
-  return noteWords.filter((w) => said.has(w)).length / noteWords.length >= 0.5;
+  return noteWords.filter((w) => said.has(w)).length / noteWords.length >= GROUNDED_SHARE;
 }
 
 /**
