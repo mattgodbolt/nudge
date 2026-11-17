@@ -29,6 +29,10 @@ const OVERLAP_MS = 15 * 60_000;
 const MAX_BACKOFF_MS = 30 * 60_000;
 /** How long an unanswered lookup may hold the cursor back, so one that never succeeds cannot pin it forever. */
 const MAX_HOLD_MS = 7 * 24 * 3600_000;
+/** Polls that may leave one item's lookup failing (5xx, network) before it stops holding the cursor. */
+const MAX_LOOKUP_ATTEMPTS = 5;
+/** Statuses that will not fix themselves on a retry (no access, gone): the lookup is abandoned at once. */
+const PERMANENT_STATUSES = new Set([401, 403, 404, 410, 422]);
 
 const ghTime = (d: Date) => d.toISOString().replace(/\.\d{3}Z$/, 'Z');
 
@@ -53,6 +57,17 @@ export function createGithubPoller(deps: GithubPollerDeps): GithubPoller & { tic
    * one poll re-reads its overlap, and the next resumes exactly.
    */
   const resumeAt = new Map<number, string>();
+  /** Failed lookups per item id, so one that never succeeds is given up on instead of pinning the cursor. */
+  const failedLookups = new Map<string, number>();
+  /** True while the lookup should be retried later (and so hold the cursor); false once it is given up on. */
+  const shouldRetry = (id: string, e: unknown): boolean => {
+    const permanent = e instanceof GithubError && PERMANENT_STATUSES.has(e.status);
+    // Remembered at the limit (not forgotten) until a lookup succeeds, so the item stays given up on while it keeps
+    // turning up in the search window.
+    const n = permanent ? MAX_LOOKUP_ATTEMPTS : Math.min(MAX_LOOKUP_ATTEMPTS, (failedLookups.get(id) ?? 0) + 1);
+    failedLookups.set(id, n);
+    return n < MAX_LOOKUP_ATTEMPTS;
+  };
   const log =
     deps.log ?? ((m: string, e?: unknown) => console.warn(`github: ${m}`, e instanceof Error ? e.message : (e ?? '')));
 
@@ -126,10 +141,11 @@ export function createGithubPoller(deps: GithubPollerDeps): GithubPoller & { tic
         let who: string | null;
         try {
           who = await client.latestCommenter(u.repo, u.number, u.comments, token);
-        } catch {
-          unresolved.push(u.updatedAt);
+        } catch (e) {
+          if (shouldRetry(u.id, e)) unresolved.push(u.updatedAt);
           continue;
         }
+        failedLookups.delete(u.id);
         // No comment to be found (deleted since the count was taken): not mine, as before.
         u.lastCommenterIsMe = who !== null && mine.has(who.toLowerCase());
         if (who) u.lastCommenter = who;
@@ -154,9 +170,9 @@ export function createGithubPoller(deps: GithubPollerDeps): GithubPoller & { tic
           const reviews = await client.reviewsSince(u.repo, u.number, m.seenUpdatedAt, token);
           const theirs = reviews.filter((r) => !mine.has(r.login.toLowerCase()) && !isBot(r.login, r.type));
           u.reviewer = theirs.at(-1)?.login ?? null;
-        } catch {
-          // Left unknown: the upsert keeps the last seen update, so the next poll asks again.
-          unresolved.push(u.updatedAt);
+        } catch (e) {
+          // Left unknown: the upsert keeps the last seen update, so the next poll asks again (until given up on).
+          if (shouldRetry(u.id, e)) unresolved.push(u.updatedAt);
         }
       }
 
@@ -167,7 +183,9 @@ export function createGithubPoller(deps: GithubPollerDeps): GithubPoller & { tic
       // Only the overlap was re-read before the page cap stopped it: never step back into it, or a burst inside those
       // 15 minutes would be read from the same place again and again. Resume from the old cursor instead.
       if (truncated && feed.cursor && cursor < feed.cursor) cursor = feed.cursor;
-      if (unresolved.length > 0) {
+      // Never on a truncated poll: the window is already being drained from the cursor, and rewinding it to a held item
+      // would re-read the same pages (and retry the same lookups) on every poll without ever getting further.
+      if (!truncated && unresolved.length > 0) {
         const oldest = unresolved.reduce((m, t) => (t < m ? t : m));
         const floor = new Date(now.getTime() - MAX_HOLD_MS).toISOString();
         const held = oldest < floor ? floor : oldest;
