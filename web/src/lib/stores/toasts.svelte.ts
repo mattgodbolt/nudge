@@ -32,6 +32,15 @@ class ToastStore {
     return this.push({ message, kind: 'error', timeoutMs: 8000 });
   }
 
+  /** An error toast for a caught value: its message when it is an Error, otherwise the fallback. */
+  fail(e: unknown, fallback: string) {
+    return this.error(e instanceof Error ? e.message : fallback);
+  }
+
+  success(message: string, timeoutMs?: number) {
+    return this.push({ message, kind: 'success', timeoutMs });
+  }
+
   dismiss(id: number) {
     const t = this.#timers.get(id);
     if (t) clearTimeout(t);

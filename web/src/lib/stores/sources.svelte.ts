@@ -20,10 +20,10 @@ class SourcesStore {
     try {
       const s = await api.addSource(input, opts);
       this.list = [...this.list.filter((x) => x.id !== s.id), s];
-      toasts.push({ message: `Added ${s.title ?? s.ytId}`, kind: 'success', timeoutMs: 3500 });
+      toasts.success(`Added ${s.title ?? s.ytId}`, 3500);
       return s;
     } catch (e) {
-      toasts.error(e instanceof Error ? e.message : 'Could not add source');
+      toasts.fail(e, 'Could not add source');
       return null;
     }
   }
@@ -35,7 +35,7 @@ class SourcesStore {
       this.list = this.list.map((x) => (x.id === id ? s : x));
     } catch (e) {
       this.list = prev;
-      toasts.error(e instanceof Error ? e.message : 'Could not update source');
+      toasts.fail(e, 'Could not update source');
     }
   }
   async remove(id: number, purge: boolean) {
@@ -45,7 +45,7 @@ class SourcesStore {
       await api.deleteSource(id, purge);
     } catch (e) {
       this.list = prev;
-      toasts.error(e instanceof Error ? e.message : 'Could not remove source');
+      toasts.fail(e, 'Could not remove source');
     }
   }
 }

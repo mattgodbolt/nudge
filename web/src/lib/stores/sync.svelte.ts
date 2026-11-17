@@ -36,7 +36,7 @@ class SyncStore {
       this.status = await api.sync(req);
       toasts.push({ message: label, timeoutMs: 2500 });
     } catch (e) {
-      toasts.error(e instanceof Error ? e.message : 'Could not start sync');
+      toasts.fail(e, 'Could not start sync');
     }
   }
 }

@@ -16,7 +16,7 @@ class NotesStore {
     try {
       this.set(await api.notes());
     } catch (e) {
-      toasts.error(e instanceof Error ? e.message : 'Could not load notes');
+      toasts.fail(e, 'Could not load notes');
     }
   }
 
@@ -28,7 +28,7 @@ class NotesStore {
       this.list = this.list.map((x) => (x.id === id ? n : x));
     } catch (e) {
       this.list = prev;
-      toasts.error(e instanceof Error ? e.message : 'Could not update the note');
+      toasts.fail(e, 'Could not update the note');
     }
   }
 
@@ -39,7 +39,7 @@ class NotesStore {
       await api.deleteNote(id);
     } catch (e) {
       this.list = prev;
-      toasts.error(e instanceof Error ? e.message : 'Could not delete the note');
+      toasts.fail(e, 'Could not delete the note');
     }
   }
 }

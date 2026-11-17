@@ -17,25 +17,19 @@
   import RpgChip from './RpgChip.svelte';
   import RpgArt from './RpgArt.svelte';
   import { rpg } from '../lib/stores/rpg.svelte';
+  import { load, save } from '../lib/storage';
 
   /** Which GitHub owners are expanded. A feed you are looking at is always shown open. */
-  let expanded = $state<Set<number>>(new Set());
-  try {
-    expanded = new Set(JSON.parse(localStorage.getItem('nudge-sidebar-open-feeds') ?? '[]') as number[]);
-  } catch {
-    /* storage unavailable */
-  }
+  const OPEN_FEEDS_KEY = 'nudge-sidebar-open-feeds';
+  const savedOpen = load<unknown>(OPEN_FEEDS_KEY, []);
+  let expanded = $state<Set<number>>(new Set(Array.isArray(savedOpen) ? (savedOpen as number[]) : []));
   const isOpen = (id: number) => expanded.has(id) || router.query.feed === String(id);
   function toggle(id: number) {
     const next = new Set(expanded);
     if (isOpen(id)) next.delete(id);
     else next.add(id);
     expanded = next;
-    try {
-      localStorage.setItem('nudge-sidebar-open-feeds', JSON.stringify([...next]));
-    } catch {
-      /* storage unavailable */
-    }
+    save(OPEN_FEEDS_KEY, [...next]);
   }
   /** Repositories under an owner that have something waiting, busiest first; the one you are viewing stays listed. */
   function reposOf(owner: string): { full: string; name: string; n: number }[] {

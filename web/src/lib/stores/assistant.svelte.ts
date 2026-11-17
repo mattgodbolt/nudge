@@ -117,7 +117,7 @@ class AssistantStore {
           timeoutMs: 10000,
           action: { label: 'Settings', run: () => router.navigate('settings', {}, { hash: 'about-you' }) },
         });
-      } else toasts.error(e instanceof Error ? e.message : 'Could not reach Nudge');
+      } else toasts.fail(e, 'Could not reach Nudge');
     } finally {
       this.busy = false;
     }
@@ -133,7 +133,7 @@ class AssistantStore {
       }
       void inbox.load();
     } catch (e) {
-      toasts.error(e instanceof Error ? e.message : 'Could not undo');
+      toasts.fail(e, 'Could not undo');
     }
   }
 }

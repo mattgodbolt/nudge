@@ -33,7 +33,7 @@
     api
       .sourceVideos(id)
       .then((v) => !cancelled && (videos = v))
-      .catch((e) => toasts.error(e instanceof Error ? e.message : 'Could not load videos'))
+      .catch((e) => toasts.fail(e, 'Could not load videos'))
       .finally(() => !cancelled && (videosLoading = false));
     return () => (cancelled = true);
   });
@@ -47,7 +47,7 @@
       videos = videos.map((x) => (x.id === v.id ? updated : x));
     } catch (e) {
       videos = prev;
-      toasts.error(e instanceof Error ? e.message : 'Could not update tier');
+      toasts.fail(e, 'Could not update tier');
     }
   }
 

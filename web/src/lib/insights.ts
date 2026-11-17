@@ -9,6 +9,7 @@ import {
   type Outcome,
   type SizeBand,
 } from '../../../shared/insights';
+import { loadRaw, saveRaw } from './storage';
 
 /** Pure helpers for the Insights section: words, numbers and captions. The server decides every figure. */
 
@@ -16,27 +17,13 @@ export const RANGE_LABEL: Record<InsightsRange, string> = { '7d': '7d', '30d': '
 const RANGE_KEY = 'nudge.insights.range';
 
 /** The remembered range; the default when there is none or storage is unavailable. */
-export function loadRange(storage: Pick<Storage, 'getItem'> | null = safeStorage()): InsightsRange {
-  try {
-    const v = storage?.getItem(RANGE_KEY);
-    return (INSIGHTS_RANGES as readonly string[]).includes(v ?? '') ? (v as InsightsRange) : DEFAULT_INSIGHTS_RANGE;
-  } catch {
-    return DEFAULT_INSIGHTS_RANGE;
-  }
+export function loadRange(storage?: Pick<Storage, 'getItem'> | null): InsightsRange {
+  const v = storage === undefined ? loadRaw(RANGE_KEY) : loadRaw(RANGE_KEY, storage);
+  return (INSIGHTS_RANGES as readonly string[]).includes(v ?? '') ? (v as InsightsRange) : DEFAULT_INSIGHTS_RANGE;
 }
-export function saveRange(r: InsightsRange, storage: Pick<Storage, 'setItem'> | null = safeStorage()): void {
-  try {
-    storage?.setItem(RANGE_KEY, r);
-  } catch {
-    // Private mode or storage off: the range just isn't remembered.
-  }
-}
-function safeStorage(): Storage | null {
-  try {
-    return typeof localStorage === 'undefined' ? null : localStorage;
-  } catch {
-    return null;
-  }
+export function saveRange(r: InsightsRange, storage?: Pick<Storage, 'setItem'> | null): void {
+  if (storage === undefined) saveRaw(RANGE_KEY, r);
+  else saveRaw(RANGE_KEY, r, storage);
 }
 
 export function browserTimeZone(): string {
