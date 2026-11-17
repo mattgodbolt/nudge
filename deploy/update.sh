@@ -141,6 +141,7 @@ build_image() {
     elif [ $((SECONDS - last_change)) -ge "$stall" ]; then
       log "WARN: no build output for ${stall}s; stopping the build"
       stalled=1
+      stall_snapshot
       stop_build "$pid"
       break
     fi
@@ -152,6 +153,23 @@ build_image() {
   # 137: the deadline's TERM was ignored and -k had to KILL it, which is a hang too.
   [ "$rc" = 137 ] && return 124
   return "$rc"
+}
+
+# stall_snapshot: record what the host and Docker look like while a build is hung, so a stall (#29) leaves an
+# explanation instead of only a timeout. Written to data/stall-<time>.log; every probe is bounded and none can fail
+# the deploy.
+stall_snapshot() {
+  local f="data/stall-$(date +%Y%m%dT%H%M%S).log"
+  {
+    echo "== uptime / memory"; uptime; free -m
+    echo "== pressure (io / memory / cpu)"; tail /proc/pressure/io /proc/pressure/memory /proc/pressure/cpu 2> /dev/null
+    echo "== zfs arc"; grep -E '^(size|c|c_max|memory_throttle_count) ' /proc/spl/kstat/zfs/arcstats 2> /dev/null
+    echo "== processes in uninterruptible sleep"; ps -eo stat,pid,ppid,wchan:24,etime,args 2> /dev/null | awk 'NR==1 || $1 ~ /^D/'
+    echo "== build-related processes"; ps -eo stat,pid,ppid,wchan:24,etime,args 2> /dev/null | grep -E '[d]ocker|[b]uildkit|[v]itest|[n]pm |[n]ode ' | cut -c1-200
+    echo "== docker"; timeout 20 docker ps -a --format '{{.ID}} {{.Status}} {{.Names}}' 2>&1 | head -20
+    echo "== tail of the build log"; tail -n 15 data/build.log 2> /dev/null
+  } > "$f" 2>&1 || true
+  log "stall diagnostics saved to $f"
 }
 
 # stop_build <pid>: TERM the build's process group, then KILL it if it is still there a minute later.
