@@ -1,19 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../app.js';
-import type { GithubClient, GithubItemUpsert, SnoozeAi, SyncEngine } from '../contracts.js';
+import type { GithubClient, GithubItemUpsert, SnoozeAi } from '../contracts.js';
 import { LlmError } from '../contracts.js';
 import { githubItemId } from '../db/feeds.js';
-import { createHandoffPoster } from '../reply/poster.js';
-import { fakeGoogleAuth } from '../reply/test-helpers.js';
 import { makeEnv } from '../sync/test-helpers.js';
 import type { ServerEvent } from '../../shared/types.js';
 import { MAX_BUCKET_CALLS } from './snoozeAi.js';
 import { SAMPLE_OWNER } from '../classify/test-helpers.js';
+import { H, sender, testDeps } from './test-helpers.js';
 
 // Real repo behind the real routes: the until-activity options of POST /api/snooze, the per-bucket defaults in
 // settings, the bucketing that follows a free-text why, and the nudge draft. The model and GitHub are fakes.
-const H = { 'x-nudge': '1', host: '127.0.0.1:4517' };
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
 let app: FastifyInstance;
@@ -32,8 +30,7 @@ let nudgeAnswer: () => Promise<{
 let recent: GithubClient['recentComments'];
 
 const id = (n: number) => githubItemId('org', 'app', n);
-const send = (method: 'POST' | 'PUT' | 'DELETE', url: string, payload?: unknown) =>
-  app.inject({ method, url, headers: H, payload: payload as never });
+const send = sender(() => app);
 const snooze = (payload: Record<string, unknown>) => send('POST', '/api/snooze', payload);
 const settle = () => new Promise((r) => setTimeout(r, 20));
 const items = () => env.repo.listInbox({ view: 'all' }).items;
@@ -79,36 +76,27 @@ beforeEach(() => {
     { author: 'carol', text: 'I will look at it', at: new Date().toISOString() },
     { author: 'Me', text: 'thanks', at: new Date().toISOString() },
   ];
-  app = buildApp({
-    repo: env.repo,
-    engine: { run: async () => ({}), status: () => ({}) } as unknown as SyncEngine,
-    bus: env.bus,
-    quota: env.quota,
-    poster: createHandoffPoster(env.repo),
-    auth: fakeGoogleAuth(),
-    addSource: async () => {
-      throw new Error('unused');
-    },
-    testKey: async () => ({ ok: true, message: '' }),
-    onSettingsChanged: () => {},
-    resolveApiKey: () => ({ key: 'k', source: 'env' }),
-    demo: false,
-    githubClient: {
-      latestCommenter: async () => null,
-      recentComments: (...a: Parameters<GithubClient['recentComments']>) => recent(...a),
-    } as unknown as GithubClient,
-    snoozeAi: {
-      bucket: async (input, key, model) => {
-        bucketCalls.push({ ...input, key, model });
-        return bucketAnswer();
+  app = buildApp(
+    testDeps(env.repo, {
+      bus: env.bus,
+      quota: env.quota,
+      githubClient: {
+        latestCommenter: async () => null,
+        recentComments: (...a: Parameters<GithubClient['recentComments']>) => recent(...a),
+      } as unknown as GithubClient,
+      snoozeAi: {
+        bucket: async (input, key, model) => {
+          bucketCalls.push({ ...input, key, model });
+          return bucketAnswer();
+        },
+        nudge: async (input, _key, _model, owner) => {
+          expect(owner).toEqual(SAMPLE_OWNER);
+          nudgeCalls.push(input);
+          return nudgeAnswer();
+        },
       },
-      nudge: async (input, _key, _model, owner) => {
-        expect(owner).toEqual(SAMPLE_OWNER);
-        nudgeCalls.push(input);
-        return nudgeAnswer();
-      },
-    },
-  });
+    }),
+  );
 });
 afterEach(() => app.close());
 

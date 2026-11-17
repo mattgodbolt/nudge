@@ -1,14 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../app.js';
-import type { GithubClient, GithubItemUpsert, GithubPoller, SyncEngine } from '../contracts.js';
+import type { GithubClient, GithubItemUpsert, GithubPoller } from '../contracts.js';
 import { GithubError } from '../contracts.js';
 import { githubItemId } from '../db/feeds.js';
-import { createHandoffPoster } from '../reply/poster.js';
-import { fakeGoogleAuth } from '../reply/test-helpers.js';
 import { makeEnv } from '../sync/test-helpers.js';
+import { H, sender, testDeps } from './test-helpers.js';
 
-const H = { 'x-nudge': '1', host: '127.0.0.1:4517' };
 let app: FastifyInstance;
 let env: ReturnType<typeof makeEnv>;
 let polled: (number | undefined)[];
@@ -16,8 +14,7 @@ let whoami: GithubClient['whoami'];
 let discussion: GithubClient['discussion'];
 let discussionToken: string | null | undefined;
 
-const send = (method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE', url: string, payload?: unknown) =>
-  app.inject({ method, url, headers: H, payload: payload as never });
+const send = sender(() => app);
 
 beforeEach(() => {
   env = makeEnv({});
@@ -32,29 +29,20 @@ beforeEach(() => {
       polled.push(id);
     },
   };
-  app = buildApp({
-    repo: env.repo,
-    engine: { run: async () => ({}), status: () => ({}) } as unknown as SyncEngine,
-    bus: env.bus,
-    quota: env.quota,
-    poster: createHandoffPoster(env.repo),
-    auth: fakeGoogleAuth(),
-    addSource: async () => {
-      throw new Error('unused');
-    },
-    testKey: async () => ({ ok: true, message: '' }),
-    onSettingsChanged: () => {},
-    resolveApiKey: () => ({ key: 'k', source: 'env' }),
-    demo: false,
-    github,
-    githubClient: {
-      whoami: (t) => whoami(t),
-      discussion: (r, n, k, t) => {
-        discussionToken = t;
-        return discussion(r, n, k, t);
-      },
-    } as GithubClient,
-  });
+  app = buildApp(
+    testDeps(env.repo, {
+      bus: env.bus,
+      quota: env.quota,
+      github,
+      githubClient: {
+        whoami: (t) => whoami(t),
+        discussion: (r, n, k, t) => {
+          discussionToken = t;
+          return discussion(r, n, k, t);
+        },
+      } as GithubClient,
+    }),
+  );
 });
 afterEach(() => app.close());
 

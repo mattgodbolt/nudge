@@ -1,22 +1,19 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../app.js';
-import type { AssistantAction, LlmClient, SyncEngine } from '../contracts.js';
-import { createHandoffPoster } from '../reply/poster.js';
-import { fakeGoogleAuth } from '../reply/test-helpers.js';
+import type { AssistantAction, LlmClient } from '../contracts.js';
 import { makeEnv } from '../sync/test-helpers.js';
 import { SAMPLE_OWNER } from '../classify/test-helpers.js';
 import type { NoteDTO } from '../../shared/types.js';
+import { sender, testDeps } from './test-helpers.js';
 
-const H = { 'x-nudge': '1', host: '127.0.0.1:4517' };
 let app: FastifyInstance;
 let env: ReturnType<typeof makeEnv>;
 let actions: AssistantAction[];
 let seenInput: Parameters<LlmClient['command']>[0] | null;
 let kicks: string[];
 
-const send = (method: 'GET' | 'POST' | 'PATCH' | 'DELETE', url: string, payload?: unknown) =>
-  app.inject({ method, url, headers: H, payload: payload as never });
+const send = sender(() => app);
 const id = (n: number) => `gh:o/r#${n}`;
 
 beforeEach(() => {
@@ -48,32 +45,23 @@ beforeEach(() => {
     })),
   );
   env.repo.updateSettings({ llm: { apiKey: 'sk-test', model: 'm' }, owner: SAMPLE_OWNER });
-  app = buildApp({
-    repo: env.repo,
-    engine: { run: async () => ({}), status: () => ({}) } as unknown as SyncEngine,
-    bus: env.bus,
-    quota: env.quota,
-    poster: createHandoffPoster(env.repo),
-    auth: fakeGoogleAuth(),
-    addSource: async () => {
-      throw new Error('unused');
-    },
-    testKey: async () => ({ ok: true, message: '' }),
-    onSettingsChanged: () => {},
-    resolveApiKey: () => ({ key: 'k', source: 'env' }),
-    demo: false,
-    llm: {
-      test: async () => ({ ok: true, message: '' }),
-      command: async (input) => {
-        seenInput = input;
-        return { actions, reply: '' };
+  app = buildApp(
+    testDeps(env.repo, {
+      bus: env.bus,
+      quota: env.quota,
+      llm: {
+        test: async () => ({ ok: true, message: '' }),
+        command: async (input) => {
+          seenInput = input;
+          return { actions, reply: '' };
+        },
       },
-    },
-    suggest: {
-      notify: (ids) => kicks.push(`notify ${ids.join(',')}`),
-      kick: () => kicks.push('kick'),
-    },
-  });
+      suggest: {
+        notify: (ids) => kicks.push(`notify ${ids.join(',')}`),
+        kick: () => kicks.push('kick'),
+      },
+    }),
+  );
 });
 afterEach(() => app.close());
 

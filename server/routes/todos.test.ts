@@ -1,22 +1,19 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../app.js';
-import type { LlmClient, SyncEngine } from '../contracts.js';
+import type { LlmClient } from '../contracts.js';
 import { LlmError } from '../contracts.js';
 import { parseCommand } from '../providers/anthropic/client.js';
-import { createHandoffPoster } from '../reply/poster.js';
-import { fakeGoogleAuth } from '../reply/test-helpers.js';
 import { makeEnv } from '../sync/test-helpers.js';
 import { SAMPLE_OWNER } from '../classify/test-helpers.js';
+import { sender, testDeps } from './test-helpers.js';
 
-const H = { 'x-nudge': '1', host: '127.0.0.1:4517' };
 let app: FastifyInstance;
 let env: ReturnType<typeof makeEnv>;
 let command: LlmClient['command'];
 let calls: { text: string; now: string; selected: unknown; key: string; model: string }[];
 
-const send = (method: 'GET' | 'POST' | 'PUT', url: string, payload?: unknown) =>
-  app.inject({ method, url, headers: H, payload: payload as never });
+const send = sender(() => app);
 const settle = () => new Promise((r) => setTimeout(r, 10));
 
 beforeEach(() => {
@@ -26,28 +23,19 @@ beforeEach(() => {
     actions: [{ type: 'add_todo', title: 'Ring the plumber', notes: 'about the leak', due: null }],
     reply: '',
   });
-  app = buildApp({
-    repo: env.repo,
-    engine: { run: async () => ({}), status: () => ({}) } as unknown as SyncEngine,
-    bus: env.bus,
-    quota: env.quota,
-    poster: createHandoffPoster(env.repo),
-    auth: fakeGoogleAuth(),
-    addSource: async () => {
-      throw new Error('unused');
-    },
-    testKey: async () => ({ ok: true, message: '' }),
-    onSettingsChanged: () => {},
-    resolveApiKey: () => ({ key: 'k', source: 'env' }),
-    demo: false,
-    llm: {
-      test: async (key) => (key === 'good' ? { ok: true, message: 'Key works' } : { ok: false, message: 'nope' }),
-      command: (input, key, model) => {
-        calls.push({ ...input, key, model });
-        return command(input, key, model);
+  app = buildApp(
+    testDeps(env.repo, {
+      bus: env.bus,
+      quota: env.quota,
+      llm: {
+        test: async (key) => (key === 'good' ? { ok: true, message: 'Key works' } : { ok: false, message: 'nope' }),
+        command: (input, key, model) => {
+          calls.push({ ...input, key, model });
+          return command(input, key, model);
+        },
       },
-    },
-  });
+    }),
+  );
 });
 afterEach(() => app.close());
 

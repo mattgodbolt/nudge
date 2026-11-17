@@ -1,12 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../app.js';
-import type { PushService, SyncEngine } from '../contracts.js';
-import { createHandoffPoster } from '../reply/poster.js';
-import { fakeGoogleAuth } from '../reply/test-helpers.js';
+import type { PushService } from '../contracts.js';
 import { makeEnv } from '../sync/test-helpers.js';
+import { H, testDeps } from './test-helpers.js';
 
-const H = { 'x-nudge': '1', host: '127.0.0.1:4517' };
 const EP = 'https://fcm.googleapis.com/fcm/send/abc';
 const SUB = { endpoint: EP, keys: { p256dh: 'BPk', auth: 'au' } };
 
@@ -20,23 +18,7 @@ const post = (url: string, payload?: unknown) =>
 function build(push: PushService | undefined) {
   env = makeEnv({});
   testCalls = [];
-  const engine = { run: async () => ({}), status: () => ({}) } as unknown as SyncEngine;
-  app = buildApp({
-    repo: env.repo,
-    engine,
-    bus: env.bus,
-    quota: env.quota,
-    poster: createHandoffPoster(env.repo),
-    auth: fakeGoogleAuth(),
-    addSource: async () => {
-      throw new Error('unused');
-    },
-    testKey: async () => ({ ok: true, message: '' }),
-    onSettingsChanged: () => {},
-    resolveApiKey: () => ({ key: 'k', source: 'env' }),
-    demo: false,
-    push,
-  });
+  app = buildApp(testDeps(env.repo, { bus: env.bus, quota: env.quota, push }));
 }
 const fakePush = (): PushService => ({
   publicKey: () => 'PUBKEY',

@@ -1,16 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../app.js';
-import type { GithubClient, GithubItemUpsert, Repo, SyncEngine } from '../contracts.js';
+import type { GithubClient, GithubItemUpsert, Repo } from '../contracts.js';
 import { openDb, type Db } from '../db/db.js';
 import { githubItemId } from '../db/feeds.js';
 import { createRepo } from '../db/repo.js';
-import { createHandoffPoster } from '../reply/poster.js';
-import { fakeGoogleAuth } from '../reply/test-helpers.js';
 import { makeEnv } from '../sync/test-helpers.js';
 import { MAX_SNOOZE_LOOKUPS } from './snoozeContext.js';
+import { H, testDeps } from './test-helpers.js';
 
-const H = { 'x-nudge': '1', host: '127.0.0.1:4517' };
 let app: FastifyInstance;
 let env: ReturnType<typeof makeEnv>;
 let latest: GithubClient['latestCommenter'];
@@ -65,22 +63,13 @@ beforeEach(() => {
   repo.upsertGithubItems(feed.id, [up(1), up(2, { comments: 0, kind: 'issue', draft: true })]);
   repo.triage([id(1), id(2)], 'inbox'); // older than the feed's baseline, so they arrived archived
   repo.updateSettings({ github: { token: 'tok', myAccounts: ['me'] } });
-  app = buildApp({
-    repo,
-    engine: { run: async () => ({}), status: () => ({}) } as unknown as SyncEngine,
-    bus: env.bus,
-    quota: env.quota,
-    poster: createHandoffPoster(repo),
-    auth: fakeGoogleAuth(),
-    addSource: async () => {
-      throw new Error('unused');
-    },
-    testKey: async () => ({ ok: true, message: '' }),
-    onSettingsChanged: () => {},
-    resolveApiKey: () => ({ key: 'k', source: 'env' }),
-    demo: false,
-    githubClient: { latestCommenter: (...a) => latest(...a) } as GithubClient,
-  });
+  app = buildApp(
+    testDeps(repo, {
+      bus: env.bus,
+      quota: env.quota,
+      githubClient: { latestCommenter: (...a) => latest(...a) } as GithubClient,
+    }),
+  );
 });
 afterEach(() => app.close());
 

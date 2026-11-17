@@ -1,15 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../app.js';
-import type { AppDeps, SyncEngine } from '../contracts.js';
 import { openDb, type Db } from '../db/db.js';
 import { createRepo } from '../db/repo.js';
-import { createHandoffPoster } from '../reply/poster.js';
-import { fakeGoogleAuth } from '../reply/test-helpers.js';
 import { makeEnv } from '../sync/test-helpers.js';
 import { MAX_ITEM_EVENTS_PER_REQUEST } from '../../shared/api.js';
+import { H, testDeps } from './test-helpers.js';
 
-const H = { 'x-nudge': '1', host: '127.0.0.1:4517' };
 let db: Db;
 let app: FastifyInstance;
 
@@ -35,21 +32,7 @@ beforeEach(() => {
        VALUES (?, 'youtube', 'comment', '2026-01-01T00:00:00Z', 'inbox', 'sync', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')`,
     ).run(id);
   }
-  const deps: AppDeps = {
-    repo,
-    engine: { run: async () => ({}), status: () => ({}) } as unknown as SyncEngine,
-    bus: env.bus,
-    quota: env.quota,
-    poster: createHandoffPoster(repo),
-    auth: fakeGoogleAuth(),
-    addSource: async () => {
-      throw new Error('unused');
-    },
-    testKey: async () => ({ ok: true, message: '' }),
-    onSettingsChanged: () => {},
-    resolveApiKey: () => ({ key: 'k', source: 'env' }),
-    demo: false,
-  };
+  const deps = testDeps(repo, { bus: env.bus, quota: env.quota });
   app = buildApp(deps, { port: 4517 });
 });
 afterEach(() => app.close());
