@@ -3,7 +3,7 @@ import type { AssistantOutcome } from '../../shared/types.js';
 import type { AssistantAction, AppDeps } from '../contracts.js';
 import { LlmError } from '../contracts.js';
 import { costMicros } from '../classify/anthropic.js';
-import { groundedInCommand } from '../providers/anthropic/client.js';
+import { groundTodo, groundedInCommand } from '../providers/anthropic/client.js';
 import { fallbackDate } from '../../shared/snooze.js';
 import { recordNote } from './notes.js';
 import { bucketInBackground } from './snoozeAi.js';
@@ -56,7 +56,6 @@ export function registerTodoRoutes(app: FastifyInstance, deps: AppDeps): void {
       last && lastItem
         ? {
             what: last.kind === 'snooze' ? (last.to ? 'snoozed' : 'unsnoozed') : `marked ${last.to ?? 'changed'}`,
-            title: lastItem.item.title,
             minutesAgo: Math.min(60, Math.max(0, Math.round((Date.now() - Date.parse(last.at)) / 60_000))),
           }
         : null;
@@ -79,7 +78,12 @@ export function registerTodoRoutes(app: FastifyInstance, deps: AppDeps): void {
     } else {
       try {
         const r = await deps.llm.command(
-          { text, now, selected: selected ? { title: selected.item.title, kind: selected.item.kind } : null, recent },
+          {
+            text,
+            now,
+            selected: selected ? { kind: selected.item.kind, source: selected.item.provider } : null,
+            recent,
+          },
           apiKey,
           model,
         );
@@ -111,9 +115,11 @@ export function registerTodoRoutes(app: FastifyInstance, deps: AppDeps): void {
     let skipped = false;
     for (const a of actions) {
       if (a.type === 'add_todo') {
-        const id = repo.addTodo({ title: a.title, notes: a.notes, raw: text, dueAt: a.due });
+        // Checked here too, so no LlmClient can put words the owner never said into a todo.
+        const g = groundTodo(a.title, a.notes, text);
+        const id = repo.addTodo({ title: g.title, notes: g.notes, raw: text, dueAt: a.due });
         added.push(id);
-        outcomes.push({ type: 'add_todo', id, title: a.title, due: a.due });
+        outcomes.push({ type: 'add_todo', id, title: g.title, due: a.due });
       } else if (a.type === 'note') {
         // Checked here too, so no LlmClient can store words the owner never said.
         if (!groundedInCommand(a.text, text)) continue;
@@ -130,20 +136,22 @@ export function registerTodoRoutes(app: FastifyInstance, deps: AppDeps): void {
         skipped = true;
       } else if (a.type === 'snooze') {
         // Waiting on activity with no date of its own: the bucket's follow-up from Settings.
+        // Ungrounded reasons are dropped here too: the reason reaches the classifier as the owner's own words.
+        const why = a.why && groundedInCommand(a.why, text) ? a.why : null;
         const until = a.until ?? fallbackDate(new Date(), a.bucket, repo.getSettings().snoozeDays).toISOString();
-        const r = repo.snooze([selected.item.id], until, a.why, { bucket: a.bucket, untilActivity: a.untilActivity });
+        const r = repo.snooze([selected.item.id], until, why, { bucket: a.bucket, untilActivity: a.untilActivity });
         changed.push(selected.item.id);
         outcomes.push({
           type: 'snooze',
           id: selected.item.id,
           until,
-          why: a.why,
+          why,
           bucket: a.bucket,
           untilActivity: a.untilActivity,
           undoActionId: r.actionId,
         });
         // A reason in words with no bucket from the assistant: file it afterwards, never holding up the answer.
-        if (!a.bucket && a.why && r.actionId !== null) {
+        if (!a.bucket && why && r.actionId !== null) {
           void bucketInBackground(deps, r.actionId, [selected.item.id], logBackground);
         }
       } else if (a.type === 'dismiss') {

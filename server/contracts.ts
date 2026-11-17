@@ -698,9 +698,12 @@ export interface LlmClient {
     input: {
       text: string;
       now: string;
-      selected: { title: string | null; kind: string } | null;
-      /** What the owner did most recently (within the hour), so "that" can mean it. */
-      recent?: { what: string; title: string | null; minutesAgo: number } | null;
+      selected: { kind: string; source: string } | null;
+      /**
+       * What the owner did most recently (within the hour), so "that" can mean it. Never any item text: whatever
+       * strangers wrote must not reach the model that holds the state-changing tools.
+       */
+      recent?: { what: string; minutesAgo: number } | null;
     },
     apiKey: string,
     model: string,

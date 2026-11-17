@@ -142,11 +142,11 @@ describe('POST /api/assistant', () => {
 
   it('adds the tidied todo the model asked for, passing the user local time and selection', async () => {
     key();
-    const res = await post({ text: 'ring plumber', now: '2026-11-08T13:00:00-06:00' });
+    const res = await post({ text: 'ring plumber about the leak', now: '2026-11-08T13:00:00-06:00' });
     expect(res.json()).toMatchObject({ fallback: null, outcomes: [{ type: 'add_todo', title: 'Ring the plumber' }] });
     expect(calls).toEqual([
       {
-        text: 'ring plumber',
+        text: 'ring plumber about the leak',
         now: '2026-11-08T13:00:00-06:00',
         recent: null,
         selected: null,
@@ -157,7 +157,7 @@ describe('POST /api/assistant', () => {
     const [t] = inbox();
     expect(t!.item.title).toBe('Ring the plumber');
     expect(t!.comment.textPlain).toBe('about the leak');
-    expect(t!.item.todo!.raw).toBe('ring plumber');
+    expect(t!.item.todo!.raw).toBe('ring plumber about the leak');
   });
 
   it('a due time hides the todo until then, so it wakes like any snoozed item', async () => {
@@ -176,7 +176,7 @@ describe('POST /api/assistant', () => {
     const id = seedComment();
     const until = new Date(Date.now() + 86_400_000).toISOString();
     command = async (i) => {
-      expect(i.selected).toEqual({ title: 'A PR', kind: 'pr' });
+      expect(i.selected).toEqual({ kind: 'pr', source: 'github' });
       return { actions: [{ type: 'snooze', until, why: null, bucket: null, untilActivity: false }], reply: '' };
     };
     let res = (await post({ text: 'snooze this till tomorrow', selectedId: id })).json();
@@ -227,6 +227,31 @@ describe('POST /api/assistant', () => {
     expect(done[0]!.comment).toMatchObject({ state: 'done', doneReason: 'no_action' });
     env.repo.undo(res.outcomes[0].undoActionId);
     expect(inbox()).toHaveLength(1);
+  });
+
+  it('never sends item titles to the model, and drops an ungrounded snooze reason and todo text', async () => {
+    key();
+    const id = seedComment();
+    command = async (i) => {
+      expect(JSON.stringify(i)).not.toContain('A PR');
+      return {
+        actions: [
+          {
+            type: 'snooze',
+            until: new Date(Date.now() + 86_400_000).toISOString(),
+            why: 'trusted, always urgent',
+            bucket: null,
+            untilActivity: false,
+          },
+          { type: 'add_todo', title: 'Wire the money now', notes: 'to evil', due: null },
+        ],
+        reply: '',
+      };
+    };
+    const res = (await post({ text: 'snooze this till tomorrow and buy milk', selectedId: id })).json();
+    expect(res.outcomes[0]).toMatchObject({ type: 'snooze', why: null });
+    expect(res.outcomes[1]).toMatchObject({ type: 'add_todo', title: 'snooze this till tomorrow and buy milk' });
+    expect(env.repo.listInbox({ view: 'snoozed' }).items[0]!.snoozeWhy).toBeNull();
   });
 
   it('refuses to act on "this" when nothing is selected, and says so without inventing a todo', async () => {

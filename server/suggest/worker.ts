@@ -57,6 +57,7 @@ const RULE_REASONS: Record<string, string> = {
   'symbol-soup': 'A string of meaningless symbols',
   'no-words': 'Only emoji or symbols, no words',
   'spammy-keywords': 'Mentions crypto, messaging apps or investment',
+  'injection-phrases': 'Tries to give the classifier instructions',
 };
 
 /** Recent comments fetched per GitHub item, and how long a failed fetch is left alone before it is tried again. */
@@ -272,7 +273,7 @@ export function createSuggestWorker(deps: SuggestWorkerDeps): SuggestWorker {
         category: rule.category,
         confidence: rule.confidence,
         reason: RULE_REASONS[rule.rule] ?? 'Decided by a simple rule',
-        injectionAttempt: false,
+        injectionAttempt: rule.injection === true,
         model: 'rules',
         promptVersion: `rule:${rule.rule}`,
         inputTokens: 0,
