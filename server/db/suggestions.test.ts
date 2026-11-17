@@ -7,32 +7,14 @@ import { createEvents } from './events.js';
 import { createRepo } from './repo.js';
 import type { SuggestionRow } from './suggestions.js';
 import { suggestionDto } from './suggestions.js';
+import { githubPr, orgFeed, prId } from './test-fixtures.js';
 
 let db: Db;
 let repo: Repo;
 let feedId: number;
-const id = (n: number) => githubItemId('org', 'app', n);
-const pr = (n: number): GithubItemUpsert => ({
-  id: id(n),
-  kind: 'pr',
-  repo: 'org/app',
-  number: n,
-  title: `PR ${n}`,
-  author: 'carol',
-  authorAvatarUrl: null,
-  authorType: 'User',
-  association: 'CONTRIBUTOR',
-  bodyPlain: 'body',
-  url: `https://github.com/org/app/pull/${n}`,
-  createdAt: '2026-11-10T00:00:00.000Z',
-  updatedAt: '2026-11-10T00:00:00.000Z',
-  sourceState: 'open',
-  draft: false,
-  comments: 0,
-  labels: [],
-});
+const pr = (n: number): GithubItemUpsert => githubPr(n);
 const row = (n: number, over: Partial<SuggestionRow> = {}): SuggestionRow => ({
-  itemId: id(n),
+  itemId: prId(n),
   stateKey: 'k',
   verdict: 'needs_reply',
   category: 'question',
@@ -59,7 +41,7 @@ const metaOf = (itemId: string, kind: string) =>
 beforeEach(() => {
   db = openDb(':memory:');
   repo = createRepo(db);
-  feedId = repo.addFeed({ owner: 'org', prs: true, issues: true, importMode: 'all' }).id;
+  feedId = orgFeed(repo).id;
   repo.upsertGithubItems(feedId, [pr(1), pr(2), pr(3), pr(4)]);
 });
 
@@ -69,7 +51,7 @@ describe('suggestion store', () => {
     repo.suggestions.save(row(1, { stateKey: 'k2', reason: 'Newer', costUsd: 0.5 }));
     repo.suggestions.save(row(2, { createdAt: '2026-11-11T23:59:59.000Z', costUsd: 1 }));
     expect(db.prepare('SELECT COUNT(*) AS n FROM suggestions').get()).toEqual({ n: 2 });
-    expect(repo.suggestions.get([id(1)]).get(id(1))?.reason).toBe('Newer');
+    expect(repo.suggestions.get([prId(1)]).get(prId(1))?.reason).toBe('Newer');
   });
 
   it('never exposes an action or the reason for an injection attempt', () => {
@@ -84,8 +66,8 @@ describe('suggestion store', () => {
   it('serves items with no suggestion as null', () => {
     repo.suggestions.save(row(1));
     const byId = new Map(repo.listInbox({ view: 'inbox' }).items.map((i) => [i.item.id, i.suggestion]));
-    expect(byId.get(id(1))).toMatchObject({ action: 'reply' });
-    expect(byId.get(id(2))).toBeNull();
+    expect(byId.get(prId(1))).toMatchObject({ action: 'reply' });
+    expect(byId.get(prId(2))).toBeNull();
   });
 });
 
@@ -104,12 +86,12 @@ describe('filtering the inbox by suggestion', () => {
   });
 
   it('picks items by verdict, by whose turn it is, as suspicious, or as having none yet', () => {
-    expect(ids('reply')).toEqual([id(1)]);
-    expect(ids('skip')).toEqual([id(2)]);
-    expect(ids('me')).toEqual([id(1)]);
-    expect(ids('them')).toEqual([id(2)]);
-    expect(ids('suspicious')).toEqual([id(3)]);
-    expect(ids('none')).toEqual([id(4)]);
+    expect(ids('reply')).toEqual([prId(1)]);
+    expect(ids('skip')).toEqual([prId(2)]);
+    expect(ids('me')).toEqual([prId(1)]);
+    expect(ids('them')).toEqual([prId(2)]);
+    expect(ids('suspicious')).toEqual([prId(3)]);
+    expect(ids('none')).toEqual([prId(4)]);
     expect(ids(undefined)).toHaveLength(4);
   });
 
@@ -123,7 +105,7 @@ describe('filtering the inbox by suggestion', () => {
     repo.suggestions.save(row(4));
     expect(repo.listInbox({ ...q, suggestion: 'reply', order: 'oldest', limit: 1 })).toMatchObject({
       total: 2,
-      items: [expect.objectContaining({ item: expect.objectContaining({ id: id(1) }) })],
+      items: [expect.objectContaining({ item: expect.objectContaining({ id: prId(1) }) })],
     });
   });
 });
@@ -134,7 +116,7 @@ describe('suggestion progress', () => {
     repo.suggestions.save(row(2, { promptVersion: 'old' }));
     repo.suggestions.save(row(3, { promptVersion: 'rule:x', model: 'rules' }));
     expect(repo.suggestions.progress('now')).toEqual({ total: 4, done: 2 });
-    repo.triage([id(1)], 'done');
+    repo.triage([prId(1)], 'done');
     expect(repo.suggestions.progress('now')).toEqual({ total: 3, done: 1 });
   });
 });
@@ -142,12 +124,12 @@ describe('suggestion progress', () => {
 describe('recording the suggestion with what the owner did', () => {
   it("adds suggested and suggestedConfidence to the owner's state and snooze events", () => {
     repo.suggestions.save(row(1, { verdict: 'no_reply_needed', confidence: 'low' }));
-    repo.triage([id(1)], 'done');
-    expect(metaOf(id(1), 'state')).toMatchObject({ suggested: 'skip', suggestedConfidence: 'low' });
+    repo.triage([prId(1)], 'done');
+    expect(metaOf(prId(1), 'state')).toMatchObject({ suggested: 'skip', suggestedConfidence: 'low' });
 
     repo.suggestions.save(row(2, { verdict: 'needs_action' }));
-    const r = repo.snooze([id(2)], new Date(Date.now() + 3_600_000).toISOString());
-    expect(metaOf(id(2), 'snooze')).toEqual({
+    const r = repo.snooze([prId(2)], new Date(Date.now() + 3_600_000).toISOString());
+    expect(metaOf(prId(2), 'snooze')).toEqual({
       actionId: r.actionId,
       suggested: 'act',
       suggestedConfidence: 'medium',
@@ -158,9 +140,9 @@ describe('recording the suggestion with what the owner did', () => {
 
   it('keeps the category and prompt version the suggestion had when the owner acted, even after it is replaced', () => {
     repo.suggestions.save(row(1, { verdict: 'no_reply_needed', category: 'chat', promptVersion: 'p1-2' }));
-    repo.triage([id(1)], 'done', 'no_action');
+    repo.triage([prId(1)], 'done', 'no_action');
     repo.suggestions.save(row(1, { category: 'question', promptVersion: 'p1-3' })); // a later run replaces the row
-    expect(metaOf(id(1), 'state')).toMatchObject({
+    expect(metaOf(prId(1), 'state')).toMatchObject({
       suggested: 'skip',
       suggestedCategory: 'chat',
       suggestedPrompt: 'p1-2',
@@ -169,9 +151,9 @@ describe('recording the suggestion with what the owner did', () => {
 
   it('records no category or prompt for an injection attempt, nor without a suggestion', () => {
     repo.suggestions.save(row(1, { injectionAttempt: true, category: 'other' }));
-    repo.triage([id(1), id(2)], 'done');
+    repo.triage([prId(1), prId(2)], 'done');
     for (const n of [1, 2]) {
-      const m = metaOf(id(n), 'state');
+      const m = metaOf(prId(n), 'state');
       expect(m).not.toHaveProperty('suggestedCategory');
       expect(m).not.toHaveProperty('suggestedPrompt');
       expect(m).not.toHaveProperty('suggested');
@@ -181,16 +163,16 @@ describe('recording the suggestion with what the owner did', () => {
   it('tags decision and reply events with the category too, but leaves a caller-given suggestion alone', () => {
     repo.suggestions.save(row(1, { category: 'bug' }));
     const ev = createEvents(db);
-    ev.record({ itemId: id(1), at: '2026-11-12T10:00:00.000Z', kind: 'decision', to: 'done', source: 'user' });
-    expect(metaOf(id(1), 'decision')).toMatchObject({ suggestedCategory: 'bug', suggestedPrompt: 'p0-7' });
+    ev.record({ itemId: prId(1), at: '2026-11-12T10:00:00.000Z', kind: 'decision', to: 'done', source: 'user' });
+    expect(metaOf(prId(1), 'decision')).toMatchObject({ suggestedCategory: 'bug', suggestedPrompt: 'p0-7' });
     ev.record({
-      itemId: id(1),
+      itemId: prId(1),
       at: '2026-11-12T10:00:00.000Z',
       kind: 'reply',
       source: 'user',
       meta: { suggested: 'skip' },
     });
-    expect(metaOf(id(1), 'reply')).not.toHaveProperty('suggestedCategory');
+    expect(metaOf(prId(1), 'reply')).not.toHaveProperty('suggestedCategory');
   });
 
   it('works on a database from before migration 12 (no turn column), still with category and prompt', () => {
@@ -224,14 +206,14 @@ describe('recording the suggestion with what the owner did', () => {
   });
 
   it('leaves existing event shapes alone when there is no suggestion', () => {
-    repo.triage([id(3)], 'done');
-    const r = db.prepare("SELECT meta FROM item_events WHERE item_id = ? AND kind = 'state'").get(id(3)) as {
+    repo.triage([prId(3)], 'done');
+    const r = db.prepare("SELECT meta FROM item_events WHERE item_id = ? AND kind = 'state'").get(prId(3)) as {
       meta: string | null;
     };
     expect(r.meta === null || !r.meta.includes('suggested')).toBe(true);
     const n = (db.prepare('SELECT COUNT(*) AS n FROM item_events').get() as { n: number }).n;
     repo.suggestions.save(row(4));
-    repo.triage([id(4)], 'done');
+    repo.triage([prId(4)], 'done');
     expect((db.prepare('SELECT COUNT(*) AS n FROM item_events').get() as { n: number }).n).toBe(n + 1); // same count of events
   });
 
@@ -239,15 +221,17 @@ describe('recording the suggestion with what the owner did', () => {
     repo.suggestions.save(row(1));
     const ev = createEvents(db);
     ev.record({
-      itemId: id(1),
+      itemId: prId(1),
       at: '2026-11-12T10:00:00.000Z',
       kind: 'state',
       from: 'inbox',
       to: 'done',
       source: 'sync',
     });
-    ev.record({ itemId: id(1), at: '2026-11-12T10:00:00.000Z', kind: 'open', to: 'inbox', source: 'user' });
-    const metas = db.prepare('SELECT meta FROM item_events WHERE item_id = ?').all(id(1)) as { meta: string | null }[];
+    ev.record({ itemId: prId(1), at: '2026-11-12T10:00:00.000Z', kind: 'open', to: 'inbox', source: 'user' });
+    const metas = db.prepare('SELECT meta FROM item_events WHERE item_id = ?').all(prId(1)) as {
+      meta: string | null;
+    }[];
     expect(metas.every((m) => m.meta === null)).toBe(true);
   });
 });
@@ -270,7 +254,7 @@ describe('habits: suggestion hit rate', () => {
     const ev = createEvents(db);
     if (to === 'snooze')
       ev.record({
-        itemId: id(n),
+        itemId: prId(n),
         at,
         kind: 'snooze',
         from: null,
@@ -278,7 +262,7 @@ describe('habits: suggestion hit rate', () => {
         source: 'user',
         meta,
       });
-    else ev.record({ itemId: id(n), at, kind: 'state', from: 'inbox', to: state, source: 'user', meta });
+    else ev.record({ itemId: prId(n), at, kind: 'state', from: 'inbox', to: state, source: 'user', meta });
   }
 
   it('compares the suggestion with the first thing the owner did, by verdict', () => {
@@ -327,8 +311,8 @@ describe('habits: suggestion hit rate', () => {
   it('records the dismissal reason on events the app writes, and counts dismissed apart from done', () => {
     repo.suggestions.save(row(1, { verdict: 'no_reply_needed' }));
     repo.suggestions.save(row(2, { verdict: 'no_reply_needed' }));
-    repo.triage([id(1)], 'done', 'no_action');
-    repo.triage([id(2)], 'done');
+    repo.triage([prId(1)], 'done', 'no_action');
+    repo.triage([prId(2)], 'done');
     const rep = habitsReport(db);
     expect(rep.actionMix).toEqual(
       expect.arrayContaining([
@@ -343,8 +327,8 @@ describe('habits: suggestion hit rate', () => {
 
   it('records the turn the model gave with the action it was showing', () => {
     repo.suggestions.save({ ...row(3), turn: 'them', nextStep: 'Wait for a reply' });
-    repo.triage([id(3)], 'done');
-    const meta = db.prepare("SELECT meta FROM item_events WHERE item_id = ? AND kind = 'state'").get(id(3)) as {
+    repo.triage([prId(3)], 'done');
+    const meta = db.prepare("SELECT meta FROM item_events WHERE item_id = ? AND kind = 'state'").get(prId(3)) as {
       meta: string;
     };
     expect(JSON.parse(meta.meta)).toMatchObject({ suggested: 'reply', suggestedTurn: 'them' });
@@ -353,7 +337,7 @@ describe('habits: suggestion hit rate', () => {
   it('reports a notes count and the latest few notes (clipped), and nothing before there are any', () => {
     expect(habitsReport(db).notes).toEqual({ total: 0, standing: 0, item: 0, notFed: 0, recent: [] });
     repo.notes.add({ text: 'Bob is always important', scope: 'standing', source: 'voice', itemId: null });
-    const n = repo.notes.add({ text: 'x'.repeat(300), scope: 'item', source: 'text', itemId: id(1) });
+    const n = repo.notes.add({ text: 'x'.repeat(300), scope: 'item', source: 'text', itemId: prId(1) });
     repo.notes.update(n.id, { enabled: false });
     const rep = habitsReport(db);
     expect(rep.notes).toMatchObject({ total: 2, standing: 1, item: 1, notFed: 1 });
@@ -376,9 +360,9 @@ describe('habits: suggestion hit rate', () => {
       repo.suggestions.save(row(2, { verdict: 'no_reply_needed' }));
       repo.suggestions.save(row(3, { verdict: 'needs_reply' }));
       repo.suggestions.save(row(4, { verdict: 'needs_reply' }));
-      repo.triage([id(1), id(2)], 'done', 'no_action'); // one action, two items: bulk
-      repo.triage([id(3)], 'replied'); // alone: single, and agreed
-      repo.triage([id(4)], 'done'); // alone: single, and disagreed
+      repo.triage([prId(1), prId(2)], 'done', 'no_action'); // one action, two items: bulk
+      repo.triage([prId(3)], 'replied'); // alone: single, and agreed
+      repo.triage([prId(4)], 'done'); // alone: single, and disagreed
       const rep = habitsReport(db);
       expect(rep.suggestionSummary).toEqual({
         single: { total: 2, hits: 1, ambiguous: 0 },
@@ -394,10 +378,10 @@ describe('habits: suggestion hit rate', () => {
 
     it('also trusts the browser decision event when it says bulk (a bulk of items that were already done)', () => {
       repo.suggestions.save(row(1, { verdict: 'needs_reply' }));
-      repo.triage([id(1)], 'done');
+      repo.triage([prId(1)], 'done');
       db.prepare(
         "INSERT INTO item_events (item_id, at, kind, to_value, source, meta) VALUES (?, ?, 'decision', 'done', 'user', ?)",
-      ).run(id(1), new Date().toISOString(), JSON.stringify({ bulk: true, selectionSize: 40 }));
+      ).run(prId(1), new Date().toISOString(), JSON.stringify({ bulk: true, selectionSize: 40 }));
       expect(habitsReport(db).suggestionSummary).toEqual({
         single: { total: 0, hits: 0, ambiguous: 0 },
         bulk: { total: 1, hits: 0, ambiguous: 0 },
@@ -408,8 +392,8 @@ describe('habits: suggestion hit rate', () => {
       repo.suggestions.save(row(1, { verdict: 'needs_reply' }));
       db.prepare(
         "INSERT INTO item_events (item_id, at, kind, to_value, source, meta) VALUES (?, '2020-01-01T00:00:00.000Z', 'decision', 'inbox', 'user', ?)",
-      ).run(id(1), JSON.stringify({ bulk: true }));
-      repo.triage([id(1)], 'replied');
+      ).run(prId(1), JSON.stringify({ bulk: true }));
+      repo.triage([prId(1)], 'replied');
       expect(habitsReport(db).suggestionSummary.single).toEqual({ total: 1, hits: 1, ambiguous: 0 });
     });
   });
