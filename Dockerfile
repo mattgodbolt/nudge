@@ -1,7 +1,8 @@
 # Multi-stage: the unit tests must pass for the image to build, so a bad push never replaces a working deployment.
 # better-sqlite3 compiles from source when no prebuilt binary matches, so the build stages carry a toolchain; the
 # runtime image does not.
-FROM node:22-bookworm-slim AS toolchain
+# The base image is pinned by digest as well as tag (Dependabot keeps both current), so a rebuild is reproducible.
+FROM node:22-bookworm-slim@sha256:e9f565d32859f0cbfb52125eafe8be39390f24dac302dc3cdf566e8ba3ab21ee AS toolchain
 RUN apt-get update && apt-get install -y --no-install-recommends python3 make g++ \
   && rm -rf /var/lib/apt/lists/*
 
@@ -26,7 +27,7 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
 
-FROM node:22-bookworm-slim
+FROM node:22-bookworm-slim@sha256:e9f565d32859f0cbfb52125eafe8be39390f24dac302dc3cdf566e8ba3ab21ee
 ARG GIT_SHA=
 WORKDIR /app
 ENV NODE_ENV=production NUDGE_HOST=0.0.0.0 GIT_SHA=$GIT_SHA
