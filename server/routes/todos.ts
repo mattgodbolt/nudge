@@ -117,6 +117,7 @@ export function registerTodoRoutes(app: FastifyInstance, deps: AppDeps): void {
       if (a.type === 'add_todo') {
         // Checked here too, so no LlmClient can put words the owner never said into a todo.
         const g = groundTodo(a.title, a.notes, text);
+        if (!g.title) continue;
         const id = repo.addTodo({ title: g.title, notes: g.notes, raw: text, dueAt: a.due });
         added.push(id);
         outcomes.push({ type: 'add_todo', id, title: g.title, due: a.due });

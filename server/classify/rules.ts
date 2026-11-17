@@ -12,18 +12,13 @@ export interface RuleHit {
 
 /**
  * Phrases that only make sense as an attempt to instruct a model. Conservative on purpose: each needs the instruction
- * word AND its target ("ignore the above warning" or "you are now able to" must not match), and a model call still
- * catches subtler attempts. The flag only labels the item Suspicious; nothing is hidden.
+ * word AND its target ("ignore the above warning" must not match). Role labels ("System: Ubuntu"), "you are now", and
+ * "mark this as" read as ordinary prose, so only the model call weighs them. The flag only labels the item Suspicious; nothing is hidden.
  */
 const INJECTION_PATTERNS: RegExp[] = [
   /\b(?:ignore|disregard|forget|override)\s+(?:all\s+|any\s+|your\s+|the\s+|my\s+)?(?:previous|prior|above|earlier|preceding)\s+(?:instructions?|prompts?|rules|directions?|context)\b/i,
   /\b(?:ignore|disregard|forget)\s+(?:all\s+)?(?:your|these|those)\s+(?:instructions?|rules|guidelines)\b/i,
-  /\byou\s+are\s+now\s+(?:a|an|the|in|my|dan)\b(?!\s+(?:able|ready|free|done|set|good|all|going))/i,
-  /\b(?:classify|mark|label|rate|treat|categori[sz]e)\s+(?:this|it|the\s+(?:item|comment|issue|message))\s+as\s+(?:needs[_ ]action|no[_ ]reply|urgent|important|not\s+spam|spam|safe|trusted|high\s+priority)\b/i,
-  /<\/?\s*(?:system|assistant|tool|developer|instructions?)\s*>/i,
-  /^\s*(?:system|assistant|developer)\s*:\s*\S/im,
-  /\[\s*(?:system|assistant|inst)\s*\]|<\|(?:im_start|system|assistant)\|>/i,
-  /\b(?:reveal|show|print|repeat|leak)\s+(?:me\s+)?(?:your|the)\s+(?:system\s+prompt|instructions)\b/i,
+  /<\|(?:im_start|im_end|system|assistant|user|endoftext)\|>/i,
 ];
 
 /** Does this text look like an attempt to instruct the model? Exported for tests. */

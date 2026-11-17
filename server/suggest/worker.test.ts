@@ -811,7 +811,7 @@ describe('suggestion worker', () => {
     expect(repo.suggestions.progress(PROMPT_VERSION)).toEqual({ total: 2, done: 0 });
     expect(await worker().runOnce()).toMatchObject({ saved: 2, modelCalls: 2 });
     expect(rows().map((r) => r.prompt_version)).toEqual([PROMPT_VERSION, PROMPT_VERSION]);
-    expect(PROMPT_VERSION).toBe('p0-11');
+    expect(PROMPT_VERSION).toBe('p0-12');
   });
 
   describe('triggers', () => {
