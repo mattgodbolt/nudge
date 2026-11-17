@@ -27,6 +27,9 @@ import { ACTION_OF } from './suggestions.js';
  *                  covers many items; the ones archived on the spot get their own `state` events from triage).
  *  - undo:         compensates an earlier event (meta.actionId, and meta.originalEventId when it is found). Earlier
  *                  events are never edited or deleted. from_value is what was undone, to_value what was restored.
+ *                  meta.original says which kind it compensates ('state' or 'snooze'). Undoing a move back to the inbox
+ *                  that also ended a snooze writes a 'snooze' undo (from null to the restored until) for that item, next
+ *                  to its 'state' undo if its state moved too.
  *
  * Source says who decided, and matches the state_source the same change writes: `user` is a deliberate action in the
  * UI or API, `auto` a rule the app applied by itself (auto-clear after my reply, snooze wake-ups), `sync` state that
@@ -99,8 +102,11 @@ export interface Events {
     at: string,
     meta?: Record<string, unknown>,
   ): void;
-  /** The id of the earliest state/snooze event that action wrote for the item, to reference from an undo. */
-  originalEventId(itemId: string, actionId: number): number | null;
+  /**
+   * The id of the earliest state/snooze event (or only of `kind`) that action wrote for the item, to reference from an
+   * undo. A move back to the inbox can write both for one item, and each has its own undo.
+   */
+  originalEventId(itemId: string, actionId: number, kind?: 'state' | 'snooze'): number | null;
   /**
    * Merge extra context into the meta of the snooze event an action wrote for an item, after the fact (the context
    * comes from a slow lookup that must not hold up the snooze). Existing keys are kept unless the patch names them.
@@ -217,13 +223,14 @@ export function createEvents(db: Db): Events {
     }
   }
 
-  function originalEventId(itemId: string, actionId: number): number | null {
+  function originalEventId(itemId: string, actionId: number, kind?: 'state' | 'snooze'): number | null {
+    const kinds = JSON.stringify(kind ? [kind] : ['state', 'snooze']);
     const r = db
       .prepare(
-        `SELECT id FROM item_events WHERE item_id = ? AND kind IN ('state', 'snooze')
+        `SELECT id FROM item_events WHERE item_id = ? AND kind IN (SELECT value FROM json_each(?))
            AND json_extract(meta, '$.actionId') = ? ORDER BY id LIMIT 1`,
       )
-      .get(itemId, actionId) as { id: number } | undefined;
+      .get(itemId, kinds, actionId) as { id: number } | undefined;
     return r?.id ?? null;
   }
 
