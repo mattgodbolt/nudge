@@ -9,8 +9,7 @@ if (!dest) {
   console.error('usage: backup-db.mjs <dest.db>');
   process.exit(2);
 }
-// YOUTUBEY_DB is the legacy name from before the rename, kept only as a fallback for old setups.
-const src = process.env.NUDGE_DB || process.env.YOUTUBEY_DB || 'data/nudge.db';
+const src = process.env.NUDGE_DB || 'data/nudge.db';
 // The copy holds every token and key: the directory, the copy and SQLite's journal beside it are owner-only from
 // creation, not world-readable until the chmod below.
 process.umask(0o077);

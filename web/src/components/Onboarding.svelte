@@ -37,8 +37,8 @@
       >{busy ? 'Checking…' : 'Verify and save'}</button
     >
     <p class="meta faint">
-      You can also put the key in <code>~/.nudge-key</code> or the <code>YOUTUBE_API_KEY</code> environment variable. It never
-      leaves this machine except in requests to YouTube.
+      You can also set the <code>YOUTUBE_API_KEY</code> environment variable instead. It never leaves this machine except
+      in requests to YouTube.
     </p>
   </form>
 </div>

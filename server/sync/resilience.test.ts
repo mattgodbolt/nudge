@@ -328,7 +328,7 @@ describe('failure backoff for background polls', () => {
 
   it('resumes polling when a key from the environment or key file is fixed, not only one typed in Settings', async () => {
     const { env } = feedEnv();
-    // The key does not come from Settings at all (YOUTUBE_API_KEY or ~/.nudge-key): Settings stays empty throughout.
+    // The key does not come from Settings at all (YOUTUBE_API_KEY): Settings stays empty throughout.
     let fileKey = 'bad';
     const engine = createSyncEngine({
       repo: env.repo,

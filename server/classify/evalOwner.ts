@@ -1,4 +1,4 @@
-// The offline eval's owner profile. A module of its own so tests can import it without running the eval's command line.
+// The offline eval's owner profile and Anthropic key. A module of its own so tests can import it without running the eval's command line.
 import Database from 'better-sqlite3';
 import { ownerProfileComplete, type OwnerProfile } from '../../shared/owner.js';
 
@@ -32,4 +32,28 @@ export function evalOwner(argv: { arg: (n: string) => string | undefined }): Own
     );
   }
   return owner;
+}
+
+/**
+ * The Anthropic key for `run`: ANTHROPIC_API_KEY, else the key stored in Settings in the database copy named by
+ * `--db` (opened read-only). There is no key file: a separate key with a small spend limit goes in the variable.
+ */
+export function evalApiKey(env: NodeJS.ProcessEnv, argv: { arg: (n: string) => string | undefined }): string {
+  const fromEnv = env.ANTHROPIC_API_KEY?.trim();
+  if (fromEnv) return fromEnv;
+  const dbPath = argv.arg('db');
+  if (dbPath) {
+    const db = new Database(dbPath, { readonly: true, fileMustExist: true });
+    try {
+      const row = db.prepare("SELECT value FROM settings WHERE key = 'llm'").get() as { value: string } | undefined;
+      const stored = row ? (JSON.parse(row.value) as { apiKey?: unknown }).apiKey : undefined;
+      if (typeof stored === 'string' && stored.trim()) return stored.trim();
+    } finally {
+      db.close();
+    }
+  }
+  throw new Error(
+    'No Anthropic key: set ANTHROPIC_API_KEY, or pass --db <copy of nudge.db> whose Settings > Assistant: ' +
+      'Anthropic API key is filled in.',
+  );
 }

@@ -795,7 +795,7 @@ export interface AppDeps {
   snoozeAi?: SnoozeAi;
   /** The suggestion worker, so a note can ask for items to be looked at again (absent in tests that do not need it). */
   suggest?: { notify(ids: string[]): void; kick(): void; status?(): SuggestStatusDTO };
-  resolveApiKey(): { key: string | null; source: 'env' | 'settings' | 'file' | null };
+  resolveApiKey(): { key: string | null; source: 'env' | 'settings' | null };
   demo: boolean;
   /** Short commit SHA of this server, shown in Settings. */
   version?: string;

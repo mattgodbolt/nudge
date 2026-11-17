@@ -1,7 +1,4 @@
 import { createHash } from 'node:crypto';
-import { mkdtempSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { resolveGoogleClient, type Config, type GoogleClient } from '../config.js';
 import { PostError, type PostGateway, type Repo } from '../contracts.js';
@@ -352,14 +349,8 @@ describe('resolveGoogleClient', () => {
   const cfg = (o: Partial<Config> = {}) => ({
     envGoogleClientId: null,
     envGoogleClientSecret: null,
-    googleClientFile: '/nonexistent/none.json',
     ...o,
   });
-  const file = (content: unknown) => {
-    const p = join(mkdtempSync(join(tmpdir(), 'yt-gc-')), 'c.json');
-    writeFileSync(p, typeof content === 'string' ? content : JSON.stringify(content));
-    return p;
-  };
   const ID = 'abc.apps.googleusercontent.com';
   let repo: Repo;
   beforeEach(() => {
@@ -370,44 +361,23 @@ describe('resolveGoogleClient', () => {
     expect(resolveGoogleClient(cfg(), repo)).toBeNull();
   });
 
-  it('prefers env over settings over file', () => {
-    const f = file({ installed: { client_id: 'file.apps.googleusercontent.com', client_secret: 'fs' } });
+  it('prefers env over settings, and has nowhere else to look', () => {
     repo.updateSettings({ googleClient: { clientId: 'db.apps.googleusercontent.com', clientSecret: 'ds' } });
     const env = { envGoogleClientId: 'env.apps.googleusercontent.com', envGoogleClientSecret: 'es' };
-    expect(resolveGoogleClient(cfg({ ...env, googleClientFile: f }), repo)).toEqual({
+    expect(resolveGoogleClient(cfg(env), repo)).toEqual({
       clientId: env.envGoogleClientId,
       clientSecret: 'es',
       source: 'env',
     });
-    expect(resolveGoogleClient(cfg({ googleClientFile: f }), repo)).toMatchObject({
+    expect(resolveGoogleClient(cfg(), repo)).toMatchObject({
       clientSecret: 'ds',
       source: 'settings',
     });
     repo.updateSettings({ googleClient: null });
-    expect(resolveGoogleClient(cfg({ googleClientFile: f }), repo)).toMatchObject({
-      clientSecret: 'fs',
-      source: 'file',
-    });
+    expect(resolveGoogleClient(cfg(), repo)).toBeNull();
   });
 
   it('ignores a half-set env pair', () => {
     expect(resolveGoogleClient(cfg({ envGoogleClientId: ID }), repo)).toBeNull();
-  });
-
-  it.each([
-    ['installed', { installed: { client_id: ID, client_secret: 's', project_id: 'p' } }],
-    ['web', { web: { client_id: ID, client_secret: 's' } }],
-    ['flat', { client_id: ID, client_secret: 's' }],
-  ])('parses the %s file shape', (_n, json) => {
-    expect(resolveGoogleClient(cfg({ googleClientFile: file(json) }), repo)).toEqual({
-      clientId: ID,
-      clientSecret: 's',
-      source: 'file',
-    });
-  });
-
-  it('ignores a malformed file', () => {
-    expect(resolveGoogleClient(cfg({ googleClientFile: file('{nope') }), repo)).toBeNull();
-    expect(resolveGoogleClient(cfg({ googleClientFile: file({ installed: {} }) }), repo)).toBeNull();
   });
 });

@@ -4,14 +4,14 @@
 //   npm run eval:classify -- run --set scored        classify (asks to confirm the projected cost; add --yes)
 //   npm run eval:classify -- score --labels data/eval/labels.json
 //
-// Needs ANTHROPIC_API_KEY (or ~/.nudge-eval-key, mode 600) for `run`. Input is the JSONL from scripts/triage-eval/export.mjs.
-// `run` also needs the owner's profile (Settings > About you), which the prompt is built from: `--db <copy of nudge.db>`
-// reads it from a database copy, or `--owner-name` and `--owner-about` give it. A `--prompt` file needs neither.
+// Input is the JSONL from scripts/triage-eval/export.mjs. `run` needs an Anthropic key: ANTHROPIC_API_KEY, else the
+// one stored in Settings in the `--db` copy (read-only). `run` also needs the owner's profile (Settings > About you),
+// which the prompt is built from: `--db <copy of nudge.db>` reads it from a database copy, or `--owner-name` and
+// `--owner-about` give it. A `--prompt` file needs neither.
 import { createHash } from 'node:crypto';
-import { homedir } from 'node:os';
 import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { ClassifierError, PROMPT_VERSION, costMicros, createAnthropicClassifier } from './anthropic.js';
-import { evalOwner } from './evalOwner.js';
+import { evalApiKey, evalOwner } from './evalOwner.js';
 import { ownerHash } from '../suggest/worker.js';
 import type { OwnerProfile } from '../../shared/owner.js';
 import { labelArtifactHtml, labelPageHtml } from './labelPage.js';
@@ -152,9 +152,7 @@ async function cmdRun(): Promise<void> {
   );
   if (todo.length === 0) return;
   if (!flag('yes')) return void console.log('Add --yes to spend it.');
-  const keyFile = `${homedir()}/.nudge-eval-key`;
-  const apiKey = process.env.ANTHROPIC_API_KEY ?? (existsSync(keyFile) ? readFileSync(keyFile, 'utf8').trim() : '');
-  if (!apiKey) throw new Error('Set ANTHROPIC_API_KEY or put a key (with a small spend limit) in ~/.nudge-eval-key');
+  const apiKey = evalApiKey(process.env, { arg });
   const system = systemOverride();
   // A prompt file is the whole system prompt; the default one is built from the owner's profile.
   const clf = createAnthropicClassifier({

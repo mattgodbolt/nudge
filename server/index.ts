@@ -5,7 +5,7 @@ import { buildApp } from './app.js';
 import type { AppDeps, GoogleAuth, PostGateway, ReplyPoster } from './contracts.js';
 import { createGoogleAuth } from './auth/google.js';
 import { checkExposure, securityOptions } from './security.js';
-import { loadConfig, migrateLegacyDb, resolveApiKey, resolveGoogleClient } from './config.js';
+import { loadConfig, memoryDbRefusal, resolveApiKey, resolveGoogleClient } from './config.js';
 import { openDb } from './db/db.js';
 import { createRepo } from './db/repo.js';
 import { createRpgReader } from './db/rpg.js';
@@ -60,7 +60,11 @@ async function main(): Promise<void> {
     process.exit(1);
   }
   for (const w of exposure.warnings) console.warn(w);
-  if (migrateLegacyDb(config.dbPath)) console.log('Moved data/youtubey.db to data/nudge.db');
+  const dbRefusal = memoryDbRefusal(config);
+  if (dbRefusal) {
+    console.error(`${dbRefusal}. Set NUDGE_DB to a file path, or leave it unset for data/nudge.db.`);
+    process.exit(1);
+  }
   // Demo servers can be told that days have passed, for one sweep (e2e checks what a snooze does at its fallback date).
   let demoSkewMs = 0;
   // Adventure mode's own clock can run ahead in demo mode only, to show a missed campfire day in e2e.
@@ -75,7 +79,8 @@ async function main(): Promise<void> {
       console.error(
         `Refusing to start in NUDGE_DEMO mode: ${config.dbPath} already contains non-demo sources ` +
           `(${foreign.slice(0, 3).join(', ')}${foreign.length > 3 ? ', ...' : ''}).\n` +
-          'Demo mode would sync fake data into your real database. Set NUDGE_DB=data/demo.db (or :memory:).',
+          'Demo mode would sync fake data into your real database. Set NUDGE_DB=data/demo.db, or NUDGE_DB=:memory: ' +
+          '(allowed only in demo mode: its data is gone when the process exits).',
       );
       repo.close();
       process.exit(1);
@@ -203,7 +208,7 @@ async function main(): Promise<void> {
 
   let auth: GoogleAuth;
   let gateway: PostGateway;
-  if (config.demo && (process.env.NUDGE_DEMO_POST ?? process.env.YOUTUBEY_DEMO_POST) === 'api') {
+  if (config.demo && process.env.NUDGE_DEMO_POST === 'api') {
     // Demo "API" posting: a fake GoogleAuth (starts connected as the demo channel) + a gateway that appends to the world.
     ({ auth, gateway } = createDemoPosting({ repo, world: world!, onChange: onAuthChange }));
   } else {

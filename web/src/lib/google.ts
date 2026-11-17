@@ -34,7 +34,6 @@ export function googleToast(code: string): GoogleToast {
 export const clientSourceLabel = {
   env: 'environment variables',
   settings: 'Settings (stored in the local database)',
-  file: 'a client_secret JSON file',
 } as const;
 
 export type GoogleState = 'no-client' | 'no-account' | 'connected';

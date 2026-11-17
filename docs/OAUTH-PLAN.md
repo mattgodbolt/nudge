@@ -82,9 +82,8 @@ Add this to README under "Replying from the app (optional)". Use the same Google
 7. **Clients → Create client.**
    - Application type: **Desktop app**. Name: `Nudge local`. Click **Create**, then **Download JSON**.
    - No redirect URI is needed. Nudge always uses `http://127.0.0.1:4517/api/auth/callback`, or your `NUDGE_PORT`.
-8. Give Nudge the client in any one of these ways:
+8. Give Nudge the client in either of these ways:
    - paste the downloaded JSON into **Settings → Reply from Nudge**;
-   - save it as `~/.nudge-google-client.json` and run `chmod 600` on it;
    - set `NUDGE_GOOGLE_CLIENT_ID` and `NUDGE_GOOGLE_CLIENT_SECRET`.
 9. **Settings → Connect Google account.**
    - Choose the account, then the channel if Google asks (Brand Accounts are listed separately).
@@ -100,7 +99,7 @@ Add this to README under "Replying from the app (optional)". Use the same Google
 
 ### 3.1 Config (`server/config.ts`)
 
-- Add `envGoogleClientId`, `envGoogleClientSecret` (from `NUDGE_GOOGLE_CLIENT_ID` / `_SECRET`) and `googleClientFile` (`~/.nudge-google-client.json`) to `Config`.
+- Add `envGoogleClientId`, `envGoogleClientSecret` (from `NUDGE_GOOGLE_CLIENT_ID` / `_SECRET`) and `googleClientFile` (a JSON file in the home directory) to `Config`. (The file was later removed: the client now comes from the environment or Settings only.)
 - Add `resolveGoogleClient(config, repo)`, mirroring `resolveApiKey`.
   - Order: env > settings (DB) > file.
   - Returns `{clientId, clientSecret, source} | null`.

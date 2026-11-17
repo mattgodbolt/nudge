@@ -65,7 +65,7 @@ leave it bound to the loopback address and do not expose the port.
 
 YouTube comments need a YouTube Data API v3 key (free): in the [Google Cloud console](https://console.cloud.google.com/)
 create a project, enable "YouTube Data API v3", and create an API key. GitHub-only use needs no YouTube key. The key is
-read from `YOUTUBE_API_KEY`, then the Settings screen, then `~/.nudge-key`.
+read from `YOUTUBE_API_KEY`, then the Settings screen.
 On first run, paste your channel URL or @handle when asked (or under **Settings > My channels**): comments by it
 are never inbox items, a reply from it auto-clears older comments in the same thread, and its uploads are tracked.
 Ticking "This is my channel" when adding a channel source does exactly the same thing.
@@ -83,14 +83,14 @@ database). For Docker, [`.env.example`](.env.example) lists what `compose.yaml` 
 
 | Variable                                               | Meaning                                                                                                      |
 | ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------ |
-| `YOUTUBE_API_KEY`                                      | YouTube Data API key (else Settings, else `~/.nudge-key`)                                                    |
+| `YOUTUBE_API_KEY`                                      | YouTube Data API key (else Settings)                                                                         |
 | `NUDGE_PORT`                                           | API port, default `4517`                                                                                     |
 | `NUDGE_HOST`                                           | Listen address, default `127.0.0.1`                                                                          |
-| `NUDGE_DB`                                             | SQLite path, default `data/nudge.db` (`:memory:` works)                                                      |
+| `NUDGE_DB`                                             | SQLite path, default `data/nudge.db` (`:memory:` only in demo mode)                                          |
 | `NUDGE_ACCESS_HOSTS`                                   | Comma-separated hostnames behind Cloudflare Access, see [Security](#security-model)                          |
 | `NUDGE_ACCESS_TEAM_DOMAIN`, `NUDGE_ACCESS_AUD`         | The Access team domain (`<team>.cloudflareaccess.com`) and the application's audience tag                    |
 | `NUDGE_ALLOWED_USERS`                                  | Comma-separated emails allowed in through Access (required with `NUDGE_ACCESS_HOSTS`)                        |
-| `NUDGE_GOOGLE_CLIENT_ID`, `NUDGE_GOOGLE_CLIENT_SECRET` | OAuth client for posting replies (else Settings, else `~/.nudge-google-client.json`)                         |
+| `NUDGE_GOOGLE_CLIENT_ID`, `NUDGE_GOOGLE_CLIENT_SECRET` | OAuth client for posting replies (else Settings)                                                             |
 | `NUDGE_PUSH_SUBJECT`                                   | Contact `mailto:` sent to push services, default `mailto:nudge@example.invalid`                              |
 | `NUDGE_WEB_DIR`                                        | Built web UI to serve, relative to the repository (default `dist/web`)                                       |
 | `GIT_SHA`                                              | Commit shown in Settings > Version; the build reads it from git when unset (the Docker build passes it in)   |
@@ -174,9 +174,8 @@ units) as your channel, with no copy and paste. One-time Google Cloud setup, in 
 7. **Clients > Create client.** Application type **Desktop app**, name `Nudge local`, **Create**, then
    **Download JSON**. No redirect URI is needed: Nudge always uses `http://127.0.0.1:4517/api/auth/callback`
    (or your `NUDGE_PORT`).
-8. Give Nudge the client in any one of these ways:
+8. Give Nudge the client in either of these ways:
    - paste the downloaded JSON into **Settings > Post replies from Nudge**;
-   - save it as `~/.nudge-google-client.json` and run `chmod 600` on it;
    - set `NUDGE_GOOGLE_CLIENT_ID` and `NUDGE_GOOGLE_CLIENT_SECRET`.
 9. **Settings > Connect Google account.** Choose the account, then the channel if Google asks (Brand Accounts are
    listed separately). On "Google hasn't verified this app", click **Advanced > Go to Nudge (unsafe)**: it is
@@ -308,7 +307,7 @@ None of this runs in the app; it all works on a copy of a database.
 - `npm run report:habits -- <db>` prints a read-only summary of how you triage.
 - `scripts/triage-eval/export.mjs <db>` exports a secrets-free slice of items (public text only) as JSONL.
 - `npm run eval:classify` (`server/classify`) evaluates an LLM triage classifier against your own decisions:
-  `sample` builds a set to label by hand, `run` classifies it (needs `ANTHROPIC_API_KEY` or `~/.nudge-eval-key`, and
+  `sample` builds a set to label by hand, `run` classifies it (needs `ANTHROPIC_API_KEY`, else the Anthropic key stored in the `--db` copy's Settings, and
   asks to confirm the projected cost), `score` compares with your labels; `run` and `score` build the prompt from your
   profile, read from `--db <copy of nudge.db>` or given as `--owner-name` and `--owner-about`, and stop with a message
   when there is none; `rank-sample` and `rank-score` do the same
@@ -335,8 +334,7 @@ deploy/install-cron.sh                  # auto-update + nightly backup
 
 In Cloudflare Zero Trust: create a self-hosted Access application for the hostname with a policy that allows only you,
 copy its audience (AUD) tag into `NUDGE_ACCESS_AUD`, and add a bypass policy for the PWA's static files (listed under
-[Security model](#security-model)). The container cannot see `~/.nudge-key`, so give the YouTube key in `.env` or
-Settings.
+[Security model](#security-model)). Give the YouTube key in `.env` or Settings.
 
 - **Auto-update:** `deploy/update.sh` (cron, every 5 minutes) fetches `origin/main`; on a new commit it takes a
   pre-update snapshot (and skips the update, to retry next time, if none could be made while the app is up), builds (a
@@ -478,9 +476,9 @@ all of this at view time, in your browser's time zone, and writes nothing.
 
 ## Naming
 
-The app was called Youtubey. Existing setups keep working: `YOUTUBEY_*` environment variables, `~/.youtubey-key` and
-`~/.youtubey-google-client.json` are still read when the `NUDGE_*` / `~/.nudge-*` equivalents are absent, and
-`data/youtubey.db` is moved to `data/nudge.db` automatically on first start.
+Nudge started out as a YouTube-only tool under another name. The pre-rename environment variables, home-directory
+key files and default database name are no longer read: configuration comes from the `NUDGE_*` variables (and
+`YOUTUBE_API_KEY`) and from Settings, and the database is `data/nudge.db` unless `NUDGE_DB` says otherwise.
 
 ## License
 

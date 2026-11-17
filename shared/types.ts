@@ -394,13 +394,13 @@ export interface GoogleAccountDTO {
 }
 export interface GoogleAuthDTO {
   clientConfigured: boolean;
-  clientSource: 'env' | 'settings' | 'file' | null;
+  clientSource: 'env' | 'settings' | null;
   /** The loopback redirect URI the OAuth client must allow (shown in Settings for the web-client fallback). */
   redirectUri: string;
   accounts: GoogleAccountDTO[];
 }
 export interface SettingsDTO {
-  apiKey: { configured: boolean; source: 'env' | 'settings' | 'file' | null; last4: string | null };
+  apiKey: { configured: boolean; source: 'env' | 'settings' | null; last4: string | null };
   ownChannelIds: string[];
   /** Same channels as ownChannelIds, with display info from the tracked channel source (null if untracked). */
   ownChannels: { id: string; title: string | null; thumbnailUrl: string | null }[];

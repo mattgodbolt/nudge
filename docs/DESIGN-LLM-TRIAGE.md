@@ -126,8 +126,8 @@ for a limited window (officially up to 30 days, with exceptions such as batch re
 third parties report this was shortened, so check the current DPA if it matters). For public comments that is a
 non-issue. The policy above keeps anything non-public out unless you opt a source in. The Anthropic key sits in
 `settings` and so in the nightly backups and the off-box backup directory (`NUDGE_BACKUP_DIR`), the same trust level the README already documents for the
-YouTube key and Google token. Resolution order mirrors the YouTube key: `ANTHROPIC_API_KEY` env, then the settings
-field, then `~/.nudge-anthropic-key`. The UI only ever shows `{configured, source, last4}`.
+YouTube key and Google token. As built, the app reads it from the settings field only (`ANTHROPIC_API_KEY` is read by
+the offline eval alone, and there is no key file). The UI only ever shows `{configured, source, last4}`.
 
 ## 2. What to classify, and whether it needs an LLM
 

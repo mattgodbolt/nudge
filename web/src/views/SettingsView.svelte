@@ -248,11 +248,10 @@
     }
   }
 
-  // Only a key stored in the database can be replaced here; an env or file key takes priority over it anyway.
+  // Only a key stored in the database can be replaced here; an env key takes priority over it anyway.
   const sourceLabel = {
     env: 'from the YOUTUBE_API_KEY environment variable (change it there)',
     settings: "stored in Nudge's database",
-    file: 'from ~/.nudge-key (change it there)',
   } as const;
 </script>
 

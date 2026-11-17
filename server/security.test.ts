@@ -1,7 +1,4 @@
 import { createSign, generateKeyPairSync } from 'node:crypto';
-import { mkdtempSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import Fastify from 'fastify';
 import { describe, expect, it } from 'vitest';
 import type { Jwk } from './auth/access.js';
@@ -257,7 +254,7 @@ describe('a deployment whose .env predates the end of Tailscale', () => {
   };
 
   it('starts, with a one-line warning that NUDGE_ALLOWED_HOSTS is no longer used', () => {
-    const config = loadConfig(env, mkdtempSync(join(tmpdir(), 'nudge-home-')));
+    const config = loadConfig(env);
     const { fatal, warnings } = checkExposure(config);
     expect(fatal).toBeNull();
     const retired = warnings.filter((w) => w.includes('NUDGE_ALLOWED_HOSTS'));
@@ -266,7 +263,7 @@ describe('a deployment whose .env predates the end of Tailscale', () => {
   });
 
   it('lets a request with a valid Access token for an allowed email in, and nothing else', async () => {
-    const config = loadConfig(env, mkdtempSync(join(tmpdir(), 'nudge-home-')));
+    const config = loadConfig(env);
     const app = Fastify();
     registerSecurity(app, securityOptions(config, { fetchKeys: async () => [jwk], now: () => NOW }));
     app.get('/api/x', async () => ({ ok: true }));
