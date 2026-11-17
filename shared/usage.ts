@@ -79,8 +79,6 @@ export const SERVER_USAGE_KEYS = [
   'snooze_ai.cost_micros', // micro-dollars, for the usage page only (the cost cap reads server/db/spend.ts)
 ] as const;
 
-export type ServerUsageKey = (typeof SERVER_USAGE_KEYS)[number];
-
 const actionKeys = (Object.keys(USAGE_ACTIONS) as UsageAction[]).flatMap((a) =>
   USAGE_ACTIONS[a].map((v) => `${a}.${v}`),
 );

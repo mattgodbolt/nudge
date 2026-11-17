@@ -2,7 +2,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { RpgClaim, RpgSheet } from '../../shared/types.js';
 import type { AppDeps, RpgStored } from '../contracts.js';
 import { planClaim } from '../db/rpg.js';
-import { HttpError, asObject, bad, int } from './util.js';
+import { HttpError, asObject, bad, int, tz as tzOf } from './util.js';
 
 /**
  * Adventure mode (docs/RPG.md). Cosmetic only: these routes read the history through the RPG reader and write nothing
@@ -13,11 +13,6 @@ export function registerRpgRoutes(app: FastifyInstance, deps: AppDeps): void {
   if (!reader) return;
   const { repo } = deps;
 
-  const tzOf = (v: unknown): string => {
-    if (v === undefined || v === null || v === '') return 'UTC';
-    if (typeof v !== 'string' || v.length > 64) throw bad('"tz" must be an IANA time zone name');
-    return v;
-  };
   const stored = (): RpgStored => {
     const r = repo.getSettings().rpg;
     if (!r.enabled) throw new HttpError(409, 'Adventure mode is off', 'rpg_off');
