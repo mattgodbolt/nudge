@@ -176,16 +176,6 @@
 {/if}
 
 <style>
-  .scrim {
-    position: fixed;
-    inset: 0;
-    background: var(--scrim);
-    z-index: 70;
-    display: flex;
-    justify-content: center;
-    align-items: flex-start;
-    padding: 14vh var(--s4) 0;
-  }
   .palette {
     width: min(560px, 100%);
     box-shadow: var(--shadow-pop);

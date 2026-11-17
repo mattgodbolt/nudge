@@ -1,11 +1,10 @@
 <script lang="ts">
-  import { keymap } from '../lib/keys/keymap.svelte';
+  import { modalScope } from '../lib/keys/modalScope';
   import { assistant } from '../lib/stores/assistant.svelte';
   import { inbox } from '../lib/stores/inbox.svelte';
   import { settings } from '../lib/stores/settings.svelte';
   import Icon from './Icon.svelte';
   import { fade } from 'svelte/transition';
-  import { tick } from 'svelte';
 
   let box: HTMLTextAreaElement | undefined = $state();
   const selected = $derived(inbox.selected?.item.title ?? null);
@@ -14,23 +13,12 @@
   $effect(() => {
     if (!assistant.open) return;
     void assistant.focusTick;
-    void tick().then(() => box?.focus());
-    const unscope = keymap.pushScope('modal');
-    const unreg = keymap.register([
-      {
-        id: 'assistant.close',
-        keys: ['Escape'],
-        scope: 'modal' as const,
-        group: 'App' as const,
-        description: 'Close the assistant',
-        palette: false,
-        run: () => assistant.close(),
-      },
-    ]);
-    return () => {
-      unreg();
-      unscope();
-    };
+    return modalScope({
+      id: 'assistant',
+      description: 'Close the assistant',
+      focus: () => box,
+      bindings: [{ id: 'close', keys: ['Escape'], run: () => assistant.close() }],
+    });
   });
 
   function onkeydown(e: KeyboardEvent) {
@@ -43,7 +31,7 @@
 
 {#if assistant.open}
   <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-  <div class="scrim" transition:fade={{ duration: 100 }} onclick={() => assistant.close()}>
+  <div class="scrim sheet" transition:fade={{ duration: 100 }} onclick={() => assistant.close()}>
     <div
       class="box panel"
       data-testid="assistant"
@@ -106,14 +94,7 @@
 
 <style>
   .scrim {
-    position: fixed;
-    inset: 0;
-    background: var(--scrim);
-    z-index: 70;
-    display: flex;
-    justify-content: center;
-    align-items: flex-start;
-    padding: 12vh var(--s4) 0;
+    --scrim-top: 12vh;
   }
   .box {
     width: min(520px, 100%);
@@ -159,10 +140,6 @@
     color: #fff;
   }
   @media (max-width: 899px) {
-    .scrim {
-      align-items: flex-end;
-      padding: 0;
-    }
     .box {
       width: 100%;
       border-radius: var(--radius-lg) var(--radius-lg) 0 0;
