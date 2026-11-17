@@ -1,4 +1,5 @@
 import type { Page, YtChannel, YtComment, YtPlaylist, YtThread, YtVideo } from '../contracts.js';
+import { mulberry32 } from '../prng.js';
 import {
   AUTHOR_NAMES,
   CRITICISM,
@@ -24,17 +25,6 @@ export const DEMO_PLAYLIST_B = 'PLdemoPlaylistB000001';
 export const DEMO_STANDALONE_VIDEOS = ['demoStd0001', 'demoStd0002', 'demoStd0003'];
 export const DEMO_COMMENTS_DISABLED_VIDEO = 'demoNoComms';
 export const DEMO_MISSING_VIDEO = 'demoMissing';
-
-export function mulberry32(seed: number): () => number {
-  let a = seed >>> 0;
-  return () => {
-    a = (a + 0x6d2b79f5) >>> 0;
-    let t = a;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
 
 export interface WorldThread {
   id: string;

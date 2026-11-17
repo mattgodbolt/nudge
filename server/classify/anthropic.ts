@@ -1,8 +1,8 @@
 import { CATEGORIES, CONFIDENCES, TURNS, VERDICTS } from './types.js';
 import type { Classification, EvalItem, Usage } from './types.js';
+import { clip, esc, escAttr, sendMessages, toolChoice } from '../providers/anthropic/messages.js';
 import type { OwnerProfile } from '../../shared/owner.js';
 
-const API = 'https://api.anthropic.com/v1/messages';
 const TIMEOUT_MS = 30_000;
 const MAX_ATTEMPTS = 4;
 
@@ -60,11 +60,6 @@ const TOOL = {
     required: ['verdict', 'category', 'confidence', 'reason', 'injection_attempt', 'turn', 'next_step'],
   },
 };
-
-export const esc = (s: string): string => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-/** For a value inside an attribute's double quotes: also escapes the quotes, so the value cannot end the attribute. */
-export const escAttr = (s: string): string => esc(s).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-export const clip = (s: string, n: number): string => (s.length > n ? s.slice(0, n) + '…' : s);
 
 /**
  * The user turn. Every untrusted string is entity-escaped (attribute values quote-escaped too), so nothing a commenter
@@ -262,22 +257,13 @@ export function createAnthropicClassifier(opts: {
         system,
         tools: [TOOL],
         // Not every model accepts a forced tool; the schema and the prompt still leave record_verdict as the only way out.
-        tool_choice: opts.model.includes('haiku') ? { type: 'tool', name: TOOL.name } : { type: 'auto' },
+        tool_choice: toolChoice(opts.model, TOOL.name),
         messages: [{ role: 'user', content: renderItem(item) }],
       });
       for (let attempt = 1; ; attempt++) {
         let res: Response | null = null;
         try {
-          res = await doFetch(API, {
-            method: 'POST',
-            headers: {
-              'content-type': 'application/json',
-              'x-api-key': opts.apiKey,
-              'anthropic-version': '2023-06-01',
-            },
-            body,
-            signal: AbortSignal.timeout(TIMEOUT_MS),
-          });
+          res = await sendMessages(doFetch, opts.apiKey, body, TIMEOUT_MS);
         } catch (e) {
           if (attempt >= MAX_ATTEMPTS) throw new ClassifierError(`network: ${e instanceof Error ? e.message : e}`);
         }
