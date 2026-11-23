@@ -42,16 +42,16 @@
         <span class="glyphs">
           {#if s.today.cloak}<RpgArt kind="loot" id="cloak" size={13} label="Cloak of Inbox Zero" />{/if}
           {#if s.today.lantern}<RpgArt kind="loot" id="lantern" size={13} label="Necromancer's Lantern" />{/if}
-          {#if s.today.flame}<span class="flame" role="img" aria-label="Campfire lit, {s.campfire.current} days"
-              ><svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"
-                ><path
+          {#if s.today.flame}<span class="flame" role="img" aria-label="Campfire lit, {s.campfire.current} days">
+              <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
+                <path
                   d="M8 1.5 Q12.5 6 12 10 A4 4 0 0 1 4 10 Q4 7.5 6 6 Q6 8.5 7.5 8.5 Q6.5 5 8 1.5 Z"
                   fill="var(--warn)"
                   stroke="var(--accent)"
                   stroke-width="1"
-                /></svg
-              ></span
-            >{/if}
+                />
+              </svg>
+            </span>{/if}
         </span>
       </span>
       <span class="bar" aria-hidden="true"><span class="fill" style="width: {xpFraction(s) * 100}%"></span></span>

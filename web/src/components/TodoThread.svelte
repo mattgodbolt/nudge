@@ -43,10 +43,10 @@
       {/if}
     </article>
     <p class="faint meta hint">
-      <span class="keys-only"
-        ><Kbd id="triage.done" /> marks it done, <Kbd id="snooze.open" /> snoozes it. Press
-        <Kbd id="assistant.open" /> and say “snooze this till Monday” to do it by voice.</span
-      >
+      <span class="keys-only">
+        <Kbd id="triage.done" /> marks it done, <Kbd id="snooze.open" /> snoozes it. Press
+        <Kbd id="assistant.open" /> and say “snooze this till Monday” to do it by voice.
+      </span>
       <span class="touch-only">Use the buttons above, or tap the mic and say “snooze this till Monday”.</span>
     </p>
   </div>

@@ -61,24 +61,23 @@
 <div class="page">
   {#if detail}
     <header class="head">
-      <button class="btn ghost sm" onclick={() => router.navigate('sources')}
-        ><Icon name="chevron-left" size={14} /> Sources</button
-      >
+      <button class="btn ghost sm" onclick={() => router.navigate('sources')}>
+        <Icon name="chevron-left" size={14} /> Sources
+      </button>
       <h1>{detail.title ?? detail.ytId}</h1>
       <span class="badge">{detail.kind}</span>
       {#if detail.isOwn}<span class="badge accent">Mine</span>{/if}
       <span class="grow"></span>
-      <button class="btn sm" onclick={() => void sync.run({ scope: 'source', id: detail.id }, 'Source sync started')}
-        ><Icon name="refresh" size={13} /> Sync source</button
-      >
+      <button class="btn sm" onclick={() => void sync.run({ scope: 'source', id: detail.id }, 'Source sync started')}>
+        <Icon name="refresh" size={13} /> Sync source
+      </button>
     </header>
     {#if detail.lastError}<p class="err meta">{detail.lastError}</p>{/if}
     <div class="panel tablewrap">
       <table class="grid" data-testid="video-table">
-        <thead
-          ><tr><th>Video</th><th>Tier</th><th>Override</th><th>Last synced</th><th class="num">Inbox</th><th></th></tr
-          ></thead
-        >
+        <thead>
+          <tr><th>Video</th><th>Tier</th><th>Override</th><th>Last synced</th><th class="num">Inbox</th><th></th></tr>
+        </thead>
         <tbody>
           {#each videos as v (v.id)}
             <tr>
@@ -87,8 +86,10 @@
                   href="https://www.youtube.com/watch?v={v.id}"
                   target="_blank"
                   rel="noopener noreferrer"
-                  class="truncate">{v.title || v.id}</a
+                  class="truncate"
                 >
+                  {v.title || v.id}
+                </a>
                 {#if v.commentsDisabled}<span class="badge warn">Comments disabled</span>{/if}
                 {#if v.missing}<span class="badge warn">Missing</span>{/if}
                 {#if v.lastError}<span class="badge warn" title={v.lastError}>Error</span>{/if}
@@ -107,19 +108,21 @@
               </td>
               <td class="muted">{ago(v.lastSyncedAt, sync.now)}</td>
               <td class="num">{v.inboxCount}</td>
-              <td class="num"
-                ><button
+              <td class="num">
+                <button
                   class="btn sm"
-                  onclick={() => void sync.run({ scope: 'video', id: v.id }, 'Video sync started')}>Sync now</button
-                ></td
-              >
+                  onclick={() => void sync.run({ scope: 'video', id: v.id }, 'Video sync started')}
+                >
+                  Sync now
+                </button>
+              </td>
             </tr>
           {:else}
-            <tr
-              ><td colspan="6" class="muted center"
-                >{videosLoading ? 'Loading…' : 'No videos yet. They appear after the first sync.'}</td
-              ></tr
-            >
+            <tr>
+              <td colspan="6" class="muted center">
+                {videosLoading ? 'Loading…' : 'No videos yet. They appear after the first sync.'}
+              </td>
+            </tr>
           {/each}
         </tbody>
       </table>
@@ -142,8 +145,10 @@
         onclick={(e) => {
           e.preventDefault();
           router.navigate('settings', {}, { hash: 'my-channels' });
-        }}>Settings &rsaquo; My channels</a
-      >.
+        }}
+      >
+        Settings &rsaquo; My channels
+      </a>.
     </p>
 
     {#if budget > 0 && projected > 0}
@@ -160,13 +165,13 @@
     {:else}
       <div class="panel tablewrap">
         <table class="grid" data-testid="sources-table">
-          <thead
-            ><tr
-              ><th>Source</th><th class="num">Videos</th><th class="num">Inbox</th><th class="num">Units/day</th><th
-                >On</th
-              ><th></th></tr
-            ></thead
-          >
+          <thead>
+            <tr>
+              <th>Source</th><th class="num">Videos</th><th class="num">Inbox</th><th class="num">Units/day</th><th>
+                On
+              </th><th></th>
+            </tr>
+          </thead>
           <tbody>
             {#each sources.list as s (s.id)}
               <tr class:off={!s.enabled} data-testid="source-row">
@@ -187,31 +192,35 @@
                 <td class="num">{s.videoCount}</td>
                 <td class="num">{s.inboxCount}</td>
                 <td class="num muted">{formatNumber(Math.round(s.projectedUnitsPerDay))}</td>
-                <td
-                  ><input
+                <td>
+                  <input
                     type="checkbox"
                     checked={s.enabled}
                     aria-label="Enabled"
                     onchange={(e) => void sources.patch(s.id, { enabled: e.currentTarget.checked })}
-                  /></td
-                >
+                  />
+                </td>
                 <td class="num actions">
                   <button
                     class="btn sm"
-                    onclick={() => void sync.run({ scope: 'source', id: s.id }, 'Source sync started')}>Sync</button
+                    onclick={() => void sync.run({ scope: 'source', id: s.id }, 'Source sync started')}
                   >
+                    Sync
+                  </button>
                   {#if confirmRemove === s.id}
                     <button class="btn sm danger" onclick={() => void remove(s, false)}>Remove</button>
                     <button
                       class="btn sm danger"
                       onclick={() => void remove(s, true)}
-                      title="Also delete its stored comments">Remove + purge</button
+                      title="Also delete its stored comments"
                     >
+                      Remove + purge
+                    </button>
                     <button class="btn sm ghost" onclick={() => (confirmRemove = null)}>Cancel</button>
                   {:else}
-                    <button class="btn sm ghost" aria-label="Remove source" onclick={() => (confirmRemove = s.id)}
-                      ><Icon name="trash" size={13} /></button
-                    >
+                    <button class="btn sm ghost" aria-label="Remove source" onclick={() => (confirmRemove = s.id)}>
+                      <Icon name="trash" size={13} />
+                    </button>
                   {/if}
                 </td>
               </tr>

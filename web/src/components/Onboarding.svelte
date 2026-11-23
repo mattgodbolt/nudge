@@ -40,12 +40,12 @@
     </p>
     <label class="label" for="key">API key</label>
     <input id="key" class="input mono" type="password" bind:value={key} placeholder="AIza…" autocomplete="off" />
-    <button class="btn primary" type="submit" disabled={!key.trim() || busy}
-      >{busy ? 'Checking…' : 'Verify and save'}</button
-    >
-    <button class="btn" type="button" onclick={skip} data-testid="onboarding-skip"
-      >I only use GitHub or todos: skip this</button
-    >
+    <button class="btn primary" type="submit" disabled={!key.trim() || busy}>
+      {busy ? 'Checking…' : 'Verify and save'}
+    </button>
+    <button class="btn" type="button" onclick={skip} data-testid="onboarding-skip">
+      I only use GitHub or todos: skip this
+    </button>
     <p class="meta faint">
       You can also set the <code>YOUTUBE_API_KEY</code> environment variable instead. It never leaves this machine except
       in requests to YouTube.

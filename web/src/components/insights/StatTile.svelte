@@ -28,8 +28,10 @@
           e.preventDefault();
           onopen();
         }
-      }}>{linkText}</a
+      }}
     >
+      {linkText}
+    </a>
   {/if}
 </div>
 

@@ -120,8 +120,10 @@
           class:primary={range === r}
           aria-pressed={range === r}
           data-testid="insights-range-{r}"
-          onclick={() => choose(r)}>{RANGE_LABEL[r]}</button
+          onclick={() => choose(r)}
         >
+          {RANGE_LABEL[r]}
+        </button>
       {/each}
     </div>
   </header>
@@ -186,10 +188,9 @@
                 </tbody>
               </table>
               <table class="itable">
-                <thead
-                  ><tr><th>Day</th><th class="num">Seen</th><th class="num">Written</th><th class="num">Per day</th></tr
-                  ></thead
-                >
+                <thead>
+                  <tr><th>Day</th><th class="num">Seen</th><th class="num">Written</th><th class="num">Per day</th></tr>
+                </thead>
                 <tbody>
                   {#each [1, 2, 3, 4, 5, 6, 0] as wd (wd)}
                     {@const seen = d.counts[wd]!.reduce((a, b) => a + b, 0)}
@@ -223,10 +224,9 @@
             {@const d = i.rhythm.actions.data!}
             <div class="tablewrap">
               <table class="itable">
-                <thead
-                  ><tr><th>Day</th><th class="num">Actions</th><th class="num">Per day</th><th>Busiest hour</th></tr
-                  ></thead
-                >
+                <thead>
+                  <tr><th>Day</th><th class="num">Actions</th><th class="num">Per day</th><th>Busiest hour</th></tr>
+                </thead>
                 <tbody>
                   {#each [1, 2, 3, 4, 5, 6, 0] as wd (wd)}
                     {@const row = d.counts[wd]!}
@@ -260,11 +260,11 @@
                 <thead><tr><th>Hour</th><th class="num">Arrivals</th><th class="num">Actions</th></tr></thead>
                 <tbody>
                   {#each i.rhythm.hourly.data!.arrivals as a, h (h)}
-                    <tr
-                      ><td>{hourLabel(h)}</td><td class="num">{a}</td><td class="num"
-                        >{i.rhythm.hourly.data!.actions[h]}</td
-                      ></tr
-                    >
+                    <tr>
+                      <td>{hourLabel(h)}</td><td class="num">{a}</td><td class="num">
+                        {i.rhythm.hourly.data!.actions[h]}
+                      </td>
+                    </tr>
                   {/each}
                 </tbody>
               </table>
@@ -304,17 +304,16 @@
             {@const d = i.rhythm.firstResponse.data!}
             <div class="tablewrap">
               <table class="itable">
-                <thead
-                  ><tr><th>Source</th><th class="num">n</th><th class="num">Median</th><th class="num">p75</th></tr
-                  ></thead
-                >
+                <thead>
+                  <tr><th>Source</th><th class="num">n</th><th class="num">Median</th><th class="num">p75</th></tr>
+                </thead>
                 <tbody>
                   {#each d.byProvider as r (r.provider)}
-                    <tr
-                      ><td>{providerLabel(r.provider)}</td><td class="num">{r.n}</td><td class="num"
-                        >{shortDuration(r.medianMs)}</td
-                      ><td class="num">{shortDuration(r.p75Ms)}</td></tr
-                    >
+                    <tr>
+                      <td>{providerLabel(r.provider)}</td><td class="num">{r.n}</td><td class="num">
+                        {shortDuration(r.medianMs)}
+                      </td><td class="num">{shortDuration(r.p75Ms)}</td>
+                    </tr>
                   {/each}
                 </tbody>
               </table>
@@ -322,11 +321,11 @@
                 <thead><tr><th>Arrived</th><th class="num">n</th><th class="num">Median</th></tr></thead>
                 <tbody>
                   {#each d.byHour as h (h.hour)}
-                    <tr
-                      ><td>{hourLabel(h.hour)}</td><td class="num">{h.n}</td><td class="num"
-                        >{shortDuration(h.medianMs)}</td
-                      ></tr
-                    >
+                    <tr>
+                      <td>{hourLabel(h.hour)}</td><td class="num">{h.n}</td><td class="num">
+                        {shortDuration(h.medianMs)}
+                      </td>
+                    </tr>
                   {/each}
                 </tbody>
               </table>
@@ -378,11 +377,11 @@
               <thead><tr><th>First thing that happened</th><th class="num">n</th><th class="num">Share</th></tr></thead>
               <tbody>
                 {#each OUTCOMES as o (o)}
-                  <tr
-                    ><td>{OUTCOME_LABEL[o]}</td><td class="num">{d.counts[o]}</td><td class="num"
-                      >{pct(d.counts[o] / Math.max(1, total))}</td
-                    ></tr
-                  >
+                  <tr>
+                    <td>{OUTCOME_LABEL[o]}</td><td class="num">{d.counts[o]}</td><td class="num">
+                      {pct(d.counts[o] / Math.max(1, total))}
+                    </td>
+                  </tr>
                 {/each}
               </tbody>
             </table>
@@ -447,20 +446,20 @@
           {/snippet}
           {#snippet table()}
             <table class="itable">
-              <thead
-                ><tr
-                  ><th>How</th><th class="num">n</th><th class="num">p25</th><th class="num">Median</th><th class="num"
-                    >p75</th
-                  ></tr
-                ></thead
-              >
+              <thead>
+                <tr>
+                  <th>How</th><th class="num">n</th><th class="num">p25</th><th class="num">Median</th><th class="num">
+                    p75
+                  </th>
+                </tr>
+              </thead>
               <tbody>
                 {#each i.responses.ageWhenAnswered.data!.rows as r (r.outcome)}
-                  <tr
-                    ><td>{OUTCOME_LABEL[r.outcome]}</td><td class="num">{r.n}</td><td class="num"
-                      >{shortDuration(r.p25Ms)}</td
-                    ><td class="num">{shortDuration(r.medianMs)}</td><td class="num">{shortDuration(r.p75Ms)}</td></tr
-                  >
+                  <tr>
+                    <td>{OUTCOME_LABEL[r.outcome]}</td><td class="num">{r.n}</td><td class="num">
+                      {shortDuration(r.p25Ms)}
+                    </td><td class="num">{shortDuration(r.medianMs)}</td><td class="num">{shortDuration(r.p75Ms)}</td>
+                  </tr>
                 {/each}
               </tbody>
             </table>
@@ -493,21 +492,27 @@
             <div class="tablewrap">
               <table class="itable">
                 <thead>
-                  <tr
-                    ><th>Reason</th><th class="num">n</th><th class="num">Activity</th><th class="num">Fallback</th><th
-                      class="num">By hand</th
-                    ><th class="num">Timed</th><th class="num">Still</th><th class="num">Median</th></tr
-                  >
+                  <tr>
+                    <th>Reason</th><th class="num">n</th><th class="num">Activity</th><th class="num">Fallback</th><th
+                      class="num"
+                    >
+                      By hand
+                    </th><th class="num">Timed</th><th class="num">Still</th><th class="num">Median</th>
+                  </tr>
                 </thead>
                 <tbody>
                   {#each i.responses.snoozes.data!.rows as r (r.bucket)}
-                    <tr
-                      ><td>{bucketLabel(r.bucket)}</td><td class="num">{r.n}</td><td class="num">{r.activity}</td><td
-                        class="num">{r.fallback}</td
-                      ><td class="num">{r.manual}</td><td class="num">{r.timed}</td><td class="num">{r.open}</td><td
-                        class="num">{shortDuration(r.medianMs)}</td
-                      ></tr
-                    >
+                    <tr>
+                      <td>{bucketLabel(r.bucket)}</td><td class="num">{r.n}</td><td class="num">{r.activity}</td><td
+                        class="num"
+                      >
+                        {r.fallback}
+                      </td><td class="num">{r.manual}</td><td class="num">{r.timed}</td><td class="num">{r.open}</td><td
+                        class="num"
+                      >
+                        {shortDuration(r.medianMs)}
+                      </td>
+                    </tr>
                   {/each}
                 </tbody>
               </table>
@@ -604,9 +609,9 @@
             <div class="tablewrap">
               <table class="itable confusion" aria-label="Suggested against what you did first">
                 <thead>
-                  <tr
-                    ><th>Said / did</th>{#each FIRST_ACTIONS as a (a)}<th class="num">{ACTION_LABEL[a]}</th>{/each}</tr
-                  >
+                  <tr>
+                    <th>Said / did</th>{#each FIRST_ACTIONS as a (a)}<th class="num">{ACTION_LABEL[a]}</th>{/each}
+                  </tr>
                 </thead>
                 <tbody>
                   {#each SUGGESTED as s, si (s)}
@@ -802,11 +807,11 @@
               <thead><tr><th>Reason</th><th class="num">n</th><th class="num">Median days parked</th></tr></thead>
               <tbody>
                 {#each i.backlog.snoozedNow.data!.rows as r (r.bucket)}
-                  <tr
-                    ><td>{bucketLabel(r.bucket)}</td><td class="num">{r.n}</td><td class="num"
-                      >{r.medianDays === null ? '–' : r.medianDays.toFixed(1)}</td
-                    ></tr
-                  >
+                  <tr>
+                    <td>{bucketLabel(r.bucket)}</td><td class="num">{r.n}</td><td class="num">
+                      {r.medianDays === null ? '–' : r.medianDays.toFixed(1)}
+                    </td>
+                  </tr>
                 {/each}
               </tbody>
             </table>

@@ -23,8 +23,10 @@
     style:width="{size}px"
     style:height="{size}px"
     style:font-size="{size * 0.46}px"
-    style:background="hsl({hue} 35% 45%)">{initial}</span
+    style:background="hsl({hue} 35% 45%)"
   >
+    {initial}
+  </span>
 {/if}
 
 <style>

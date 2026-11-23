@@ -45,8 +45,10 @@
         onclick={(e) => {
           e.preventDefault();
           router.navigate('settings', {}, { hash: 'github' });
-        }}>Settings &rsaquo; GitHub</a
-      >.
+        }}
+      >
+        Settings &rsaquo; GitHub
+      </a>.
     {/if}
   </p>
 
@@ -71,8 +73,10 @@
       class="btn primary"
       type="submit"
       disabled={busy || !owner.trim() || (!prs && !issues)}
-      data-testid="feed-add">Add</button
+      data-testid="feed-add"
     >
+      Add
+    </button>
   </form>
 
   {#if feeds.list.length > 0}
@@ -103,17 +107,17 @@
               <td class="muted meta">
                 {f.lastPolledAt ? ago(f.lastPolledAt, sync.now) : 'not yet'}
                 {#if f.rate}<span class="faint" title="GitHub API calls left this hour">
-                    · {f.rate.remaining} left</span
-                  >{/if}
+                    · {f.rate.remaining} left
+                  </span>{/if}
               </td>
-              <td
-                ><input
+              <td>
+                <input
                   type="checkbox"
                   checked={f.enabled}
                   aria-label="Enabled"
                   onchange={(e) => void feeds.patch(f.id, { enabled: e.currentTarget.checked })}
-                /></td
-              >
+                />
+              </td>
               <td class="num actions">
                 <button class="btn sm" onclick={() => void feeds.poll(f.id)} data-testid="feed-poll">Poll now</button>
                 {#if confirmRemove === f.id}
@@ -123,13 +127,15 @@
                       confirmRemove = null;
                       void feeds.remove(f.id);
                     }}
-                    title="Also removes its items from Nudge">Remove</button
+                    title="Also removes its items from Nudge"
                   >
+                    Remove
+                  </button>
                   <button class="btn sm ghost" onclick={() => (confirmRemove = null)}>Cancel</button>
                 {:else}
-                  <button class="btn sm ghost" aria-label="Remove feed" onclick={() => (confirmRemove = f.id)}
-                    ><Icon name="trash" size={13} /></button
-                  >
+                  <button class="btn sm ghost" aria-label="Remove feed" onclick={() => (confirmRemove = f.id)}>
+                    <Icon name="trash" size={13} />
+                  </button>
                 {/if}
               </td>
             </tr>
@@ -151,9 +157,9 @@
         <li data-testid="mute-rule">
           <span class="badge">{kindText(m)}</span>
           <span class="truncate grow">{ruleText(m)}</span>
-          <button class="btn sm ghost" onclick={() => void feeds.unmute(m.id)} aria-label="Unmute {ruleText(m)}"
-            >Unmute</button
-          >
+          <button class="btn sm ghost" onclick={() => void feeds.unmute(m.id)} aria-label="Unmute {ruleText(m)}">
+            Unmute
+          </button>
         </li>
       {/each}
     </ul>

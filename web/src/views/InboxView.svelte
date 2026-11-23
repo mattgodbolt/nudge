@@ -198,9 +198,9 @@
   <section class="list" style:width="{ui.listWidth}px" aria-label="{title} list">
     <header>
       <h1>{title}</h1>
-      <span class="faint meta count"
-        >{pluralize(inbox.total || inbox.items.length, feeds.list.length > 0 ? 'item' : 'comment')}</span
-      >
+      <span class="faint meta count">
+        {pluralize(inbox.total || inbox.items.length, feeds.list.length > 0 ? 'item' : 'comment')}
+      </span>
       <span class="grow"></span>
       <label class="sort faint meta">
         <span class="sr">Sort</span>
@@ -242,36 +242,46 @@
         />
         {#if !searchText}<Kbd id="search.focus" />{/if}
       </label>
-      {#if feed}<span class="chip" data-testid="feed-chip"
-          >{feed.owner}<button
+      {#if feed}<span class="chip" data-testid="feed-chip">
+          {feed.owner}<button
             aria-label="Clear feed filter"
-            onclick={() => router.setQuery({ feed: undefined, c: undefined }, { replace: false })}>×</button
-          ></span
-        >{/if}
-      {#if kind === 'todo'}<span class="chip" data-testid="todo-chip"
-          >Todos<button
+            onclick={() => router.setQuery({ feed: undefined, c: undefined }, { replace: false })}
+          >
+            ×
+          </button>
+        </span>{/if}
+      {#if kind === 'todo'}<span class="chip" data-testid="todo-chip">
+          Todos<button
             aria-label="Clear todo filter"
-            onclick={() => router.setQuery({ kind: undefined, c: undefined }, { replace: false })}>×</button
-          ></span
-        >{/if}
-      {#if repo}<span class="chip" data-testid="repo-chip"
-          >{repo}<button
+            onclick={() => router.setQuery({ kind: undefined, c: undefined }, { replace: false })}
+          >
+            ×
+          </button>
+        </span>{/if}
+      {#if repo}<span class="chip" data-testid="repo-chip">
+          {repo}<button
             aria-label="Clear repository filter"
-            onclick={() => router.setQuery({ repo: undefined, c: undefined }, { replace: false })}>×</button
-          ></span
-        >{/if}
-      {#if source}<span class="chip"
-          >{source.title ?? source.ytId}<button
+            onclick={() => router.setQuery({ repo: undefined, c: undefined }, { replace: false })}
+          >
+            ×
+          </button>
+        </span>{/if}
+      {#if source}<span class="chip">
+          {source.title ?? source.ytId}<button
             aria-label="Clear source filter"
-            onclick={() => router.setQuery({ source: undefined, c: undefined }, { replace: false })}>×</button
-          ></span
-        >{/if}
-      {#if filterVideoTitle}<span class="chip"
-          ><span class="truncate" style="max-width:160px">{filterVideoTitle}</span><button
+            onclick={() => router.setQuery({ source: undefined, c: undefined }, { replace: false })}
+          >
+            ×
+          </button>
+        </span>{/if}
+      {#if filterVideoTitle}<span class="chip">
+          <span class="truncate" style="max-width:160px">{filterVideoTitle}</span><button
             aria-label="Clear video filter"
-            onclick={() => router.setQuery({ video: undefined, c: undefined }, { replace: false })}>×</button
-          ></span
-        >{/if}
+            onclick={() => router.setQuery({ video: undefined, c: undefined }, { replace: false })}
+          >
+            ×
+          </button>
+        </span>{/if}
     </div>
 
     {#if (feeds.list.length > 0 && kind !== 'todo') || showSuggestionFilter}
@@ -301,8 +311,9 @@
               aria-pressed={(audience ?? '') === value}
               data-testid="who-{value || 'all'}"
               onclick={() => router.setQuery({ who: value || undefined, c: undefined }, { replace: false })}
-              >{text}</button
             >
+              {text}
+            </button>
           {/each}
           <span class="sep"></span>
           {#each [['', 'Any'], ['pr', 'PRs'], ['issue', 'Issues']] as [value, text] (value)}
@@ -312,8 +323,9 @@
               aria-pressed={(kind ?? '') === value}
               data-testid="kind-{value || 'any'}"
               onclick={() => router.setQuery({ kind: value || undefined, c: undefined }, { replace: false })}
-              >{text}</button
             >
+              {text}
+            </button>
           {/each}
         {/if}
       </div>
@@ -326,15 +338,15 @@
         aria-label="Selected items: actions apply to these {inbox.selectedCount} only"
         data-testid="bulk-bar"
       >
-        <span class="badge accent" data-testid="bulk-count"
-          >{inbox.selectedCount === inbox.total || inbox.total === 0
+        <span class="badge accent" data-testid="bulk-count">
+          {inbox.selectedCount === inbox.total || inbox.total === 0
             ? `${formatNumber(inbox.selectedCount)} selected`
-            : `${formatNumber(inbox.selectedCount)} selected of ${formatNumber(inbox.total)}`}</span
-        >
+            : `${formatNumber(inbox.selectedCount)} selected of ${formatNumber(inbox.total)}`}
+        </span>
         {#if inbox.nextCursor && inbox.selectedCount === inbox.items.length}
-          <button class="btn sm" data-testid="bulk-all-matching" onclick={() => void inbox.selectAllMatching()}
-            >Select all {formatNumber(inbox.total)}</button
-          >
+          <button class="btn sm" data-testid="bulk-all-matching" onclick={() => void inbox.selectAllMatching()}>
+            Select all {formatNumber(inbox.total)}
+          </button>
         {/if}
         <ActionButton id="sel.all" label="All" icon="check-all" {tile} testid="bulk-all" />
         <ActionButton id="triage.done" label="Done" icon="check" {tile} testid="bulk-done" />
@@ -387,9 +399,9 @@
         </EmptyState>
       {:else if filtered}
         <EmptyState title="Nothing matches" body="No comments for the current filters.">
-          <button class="btn" onclick={() => router.setQuery(clearedQuery(), { replace: false })}
-            >Clear filters <Kbd id="filter.clear" /></button
-          >
+          <button class="btn" onclick={() => router.setQuery(clearedQuery(), { replace: false })}>
+            Clear filters <Kbd id="filter.clear" />
+          </button>
         </EmptyState>
       {:else if view === 'snoozed'}
         <EmptyState

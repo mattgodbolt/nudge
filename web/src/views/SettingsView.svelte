@@ -250,8 +250,10 @@
   <h1>Settings</h1>
   <nav class="toc meta" aria-label="Settings sections">
     <a href="#you">You</a><span aria-hidden="true">·</span><a href="#preferences">Preferences</a><span
-      aria-hidden="true">·</span
-    ><a href="#connections">Connections</a><span aria-hidden="true">·</span><a href="#sync">Sync and data</a>
+      aria-hidden="true"
+    >
+      ·
+    </span><a href="#connections">Connections</a><span aria-hidden="true">·</span><a href="#sync">Sync and data</a>
   </nav>
   {#if s}
     {#if needsSetup}
@@ -294,8 +296,8 @@
         </p>
       {/if}
       <form class="owner" onsubmit={saveOwner}>
-        <label class="stack" for="owner-name"
-          ><span>What should the assistant call you?</span>
+        <label class="stack" for="owner-name">
+          <span>What should the assistant call you?</span>
           <input
             id="owner-name"
             class="input"
@@ -306,11 +308,11 @@
             data-testid="owner-name"
           />
         </label>
-        <label class="stack" for="owner-about"
-          ><span
-            >A short paragraph about who you are and what you maintain. It is sent to the model with every
-            classification, so keep it factual.</span
-          >
+        <label class="stack" for="owner-about">
+          <span>
+            A short paragraph about who you are and what you maintain. It is sent to the model with every
+            classification, so keep it factual.
+          </span>
           <textarea
             id="owner-about"
             class="input about"
@@ -322,9 +324,9 @@
         </label>
         <div class="line">
           <span class="faint meta grow">{ownerAbout.trim().length} / {OWNER_ABOUT_MAX}</span>
-          <button class="btn primary" type="submit" disabled={!ownerDirty || ownerBusy} data-testid="owner-save"
-            >{ownerBusy ? 'Saving…' : 'Save'}</button
-          >
+          <button class="btn primary" type="submit" disabled={!ownerDirty || ownerBusy} data-testid="owner-save">
+            {ownerBusy ? 'Saving…' : 'Save'}
+          </button>
         </div>
       </form>
     </section>
@@ -340,8 +342,9 @@
           <span class="chip" data-testid="own-channel-chip">
             <Avatar name={c.title ?? c.id} url={c.thumbnailUrl} size={18} />
             <span title={c.id}>{c.title ?? c.id}</span>
-            <button aria-label="Remove {c.title ?? c.id}" onclick={() => void settings.removeOwnChannel(c.id)}>×</button
-            >
+            <button aria-label="Remove {c.title ?? c.id}" onclick={() => void settings.removeOwnChannel(c.id)}>
+              ×
+            </button>
           </span>
         {:else}
           <span class="faint meta">None yet.</span>
@@ -358,9 +361,9 @@
           autocomplete="off"
           data-testid="own-channel-input"
         />
-        <button class="btn" type="submit" disabled={!chanInput.trim() || chanBusy}
-          >{chanBusy ? 'Finding…' : 'Add'}</button
-        >
+        <button class="btn" type="submit" disabled={!chanInput.trim() || chanBusy}>
+          {chanBusy ? 'Finding…' : 'Add'}
+        </button>
       </form>
       {#if chanError}<p class="bad meta" role="alert">{chanError}</p>{/if}
     </section>
@@ -373,9 +376,9 @@
       </p>
       <div class="chips" data-testid="github-accounts">
         {#each s.github.myAccounts as login (login)}
-          <span class="chip"
-            >{login}<button aria-label="Remove {login}" onclick={() => void removeAccount(login)}>×</button></span
-          >
+          <span class="chip">
+            {login}<button aria-label="Remove {login}" onclick={() => void removeAccount(login)}>×</button>
+          </span>
         {:else}
           <span class="faint meta">None yet.</span>
         {/each}
@@ -407,8 +410,10 @@
             class="segbtn"
             class:on={theme.preference === v}
             aria-pressed={theme.preference === v}
-            onclick={() => theme.set(v as ThemePref)}>{l}</button
+            onclick={() => theme.set(v as ThemePref)}
           >
+            {l}
+          </button>
         {/each}
       </div>
       <p class="faint meta keys-only">Press <kbd class="mono">t</kbd> anywhere to cycle.</p>
@@ -416,8 +421,8 @@
 
     <section class="panel sec" id="suggestions" data-testid="settings-suggestions">
       <h3>Suggestions</h3>
-      <label class="field"
-        ><span>Show suggestions</span>
+      <label class="field">
+        <span>Show suggestions</span>
         <input
           type="checkbox"
           checked={ui.showSuggestions}
@@ -448,12 +453,13 @@
           <li class="note" class:off={!n.enabled} data-testid="note-row">
             <div class="notehead meta faint">
               <span>{new Date(n.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>
-              <span class="badge" data-testid="note-scope">{n.scope === 'standing' ? 'Standing' : 'About an item'}</span
-              >
+              <span class="badge" data-testid="note-scope">
+                {n.scope === 'standing' ? 'Standing' : 'About an item'}
+              </span>
               {#if n.source === 'voice'}<span class="badge">Voice</span>{/if}
-              {#if n.itemTitle}<span class="truncate notetitle" title={n.itemTitle} data-testid="note-item"
-                  >{n.itemTitle}</span
-                >{/if}
+              {#if n.itemTitle}<span class="truncate notetitle" title={n.itemTitle} data-testid="note-item">
+                  {n.itemTitle}
+                </span>{/if}
             </div>
             <textarea
               class="input notetext"
@@ -469,21 +475,23 @@
               }}></textarea>
             {#if noteContext(n)}<p class="meta faint">{noteContext(n)}</p>{/if}
             <div class="noteacts">
-              <label class="check"
-                ><input
+              <label class="check">
+                <input
                   type="checkbox"
                   checked={n.enabled}
                   data-testid="note-enabled"
                   onchange={(e) => void notes.patch(n.id, { enabled: e.currentTarget.checked })}
                 />
-                <span>Tell the model</span></label
-              >
+                <span>Tell the model</span>
+              </label>
               <button
                 class="btn ghost sm danger"
                 aria-label="Delete note"
                 data-testid="note-delete"
-                onclick={() => void notes.remove(n.id)}><Icon name="trash" size={14} /></button
+                onclick={() => void notes.remove(n.id)}
               >
+                <Icon name="trash" size={14} />
+              </button>
             </div>
           </li>
         {:else}
@@ -492,9 +500,9 @@
       </ul>
       {#if notes.list.length > NOTES_SHOWN}
         <div>
-          <button class="btn" data-testid="notes-all" onclick={() => (allNotes = !allNotes)}
-            >{allNotes ? 'Show fewer' : `Show all (${notes.list.length})`}</button
-          >
+          <button class="btn" data-testid="notes-all" onclick={() => (allNotes = !allNotes)}>
+            {allNotes ? 'Show fewer' : `Show all (${notes.list.length})`}
+          </button>
         </div>
       {/if}
     </section>
@@ -506,8 +514,8 @@
         happens it comes back anyway after this many days, marked as still waiting.
       </p>
       {#each SNOOZE_BUCKETS as b (b)}
-        <label class="field"
-          ><span>{BUCKETS[b].label} <small class="faint">days</small></span>
+        <label class="field">
+          <span>{BUCKETS[b].label} <small class="faint">days</small></span>
           <input
             class="input num"
             type="number"
@@ -543,22 +551,24 @@
         {:else}
           <div class="line">
             {#if push.status === 'on'}
-              <button class="btn" data-testid="push-off" disabled={push.busy} onclick={() => void push.disable()}
-                >Turn off on this device</button
-              >
+              <button class="btn" data-testid="push-off" disabled={push.busy} onclick={() => void push.disable()}>
+                Turn off on this device
+              </button>
             {:else}
               <button
                 class="btn primary"
                 data-testid="push-on"
                 disabled={push.busy || push.status === 'checking'}
-                onclick={() => void push.enable()}>Turn on for this device</button
+                onclick={() => void push.enable()}
               >
+                Turn on for this device
+              </button>
             {/if}
           </div>
         {/if}
         {#if push.status === 'on'}
-          <label class="field"
-            ><span>New comments</span>
+          <label class="field">
+            <span>New comments</span>
             <input
               type="checkbox"
               data-testid="push-new"
@@ -566,8 +576,8 @@
               onchange={(e) => void push.setPref('newComments', e.currentTarget.checked)}
             />
           </label>
-          <label class="field"
-            ><span>Snoozed comments coming back</span>
+          <label class="field">
+            <span>Snoozed comments coming back</span>
             <input
               type="checkbox"
               data-testid="push-wake"
@@ -593,8 +603,8 @@
 
     <section class="panel sec" id="adventure" data-testid="settings-adventure">
       <h3>Adventure mode</h3>
-      <label class="field"
-        ><span>Levels, titles and silly loot</span>
+      <label class="field">
+        <span>Levels, titles and silly loot</span>
         <input
           type="checkbox"
           checked={s.rpg.enabled}
@@ -602,8 +612,8 @@
           onchange={(e) => void settings.save({ rpg: { enabled: e.currentTarget.checked } })}
         />
       </label>
-      <label class="field"
-        ><span>Level-up sound</span>
+      <label class="field">
+        <span>Level-up sound</span>
         <input
           type="checkbox"
           checked={s.rpg.sound}
@@ -704,8 +714,10 @@
             class="link"
             href="https://github.com/mattgodbolt/nudge/blob/main/docs/YOUTUBE.md#replying-from-the-app-optional"
             target="_blank"
-            rel="noopener noreferrer">setup checklist</a
+            rel="noopener noreferrer"
           >
+            setup checklist
+          </a>
           walks through it.
         </p>
         {#snippet redirectLine(uri: string)}
@@ -733,9 +745,9 @@
                 aria-label="OAuth client JSON"
                 data-testid="google-client-json"></textarea>
               <div class="line">
-                <button class="btn primary" onclick={saveClient} disabled={!clientJson.trim() || clientBusy}
-                  >{clientBusy ? 'Saving…' : 'Save'}</button
-                >
+                <button class="btn primary" onclick={saveClient} disabled={!clientJson.trim() || clientBusy}>
+                  {clientBusy ? 'Saving…' : 'Save'}
+                </button>
               </div>
               {#if clientError}<p class="bad meta" role="alert">{clientError}</p>{/if}
             </li>
@@ -815,16 +827,16 @@
 
     <section class="panel sec" id="syncing" data-testid="settings-sync">
       <h3>Syncing</h3>
-      <label class="field"
-        ><span>Background polling</span>
+      <label class="field">
+        <span>Background polling</span>
         <input
           type="checkbox"
           checked={s.pollEnabled}
           onchange={(e) => void settings.save({ pollEnabled: e.currentTarget.checked })}
         />
       </label>
-      <label class="field"
-        ><span>Daily quota budget <small class="faint">units</small></span>
+      <label class="field">
+        <span>Daily quota budget <small class="faint">units</small></span>
         <input
           class="input num"
           type="number"
@@ -834,8 +846,8 @@
           onchange={(e) => num(e, 'dailyQuotaBudget')}
         />
       </label>
-      <label class="field"
-        ><span>Manual reserve <small class="faint">units kept for manual syncs</small></span>
+      <label class="field">
+        <span>Manual reserve <small class="faint">units kept for manual syncs</small></span>
         <input
           class="input num"
           type="number"
@@ -845,8 +857,8 @@
           onchange={(e) => num(e, 'manualReserve')}
         />
       </label>
-      <label class="field"
-        ><span>Backfill <small class="faint">days of history for new sources</small></span>
+      <label class="field">
+        <span>Backfill <small class="faint">days of history for new sources</small></span>
         <input
           class="input num"
           type="number"

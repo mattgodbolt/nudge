@@ -37,9 +37,9 @@
     <header>
       <span class="author">{comment.authorName}</span>
       {#if comment.isOwn}<span class="badge accent">You</span>{/if}
-      <time class="faint meta" datetime={comment.publishedAt} title={fullDate(comment.publishedAt)}
-        >{relativeTime(comment.publishedAt, now)}</time
-      >
+      <time class="faint meta" datetime={comment.publishedAt} title={fullDate(comment.publishedAt)}>
+        {relativeTime(comment.publishedAt, now)}
+      </time>
       {#if comment.updatedAt !== comment.publishedAt && Date.parse(comment.updatedAt) - Date.parse(comment.publishedAt) > 60_000}
         <span class="faint meta">(edited)</span>
       {/if}
@@ -52,8 +52,10 @@
           onclick={remove}
           disabled={deleting}
           title="Delete this reply from YouTube"
-          data-testid="delete-reply">{deleting ? 'Deleting…' : 'Delete reply'}</button
+          data-testid="delete-reply"
         >
+          {deleting ? 'Deleting…' : 'Delete reply'}
+        </button>
       {/if}
       <a
         class="btn ghost sm ext"

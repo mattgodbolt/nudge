@@ -46,6 +46,9 @@ test('n marks "no action needed", which shows as Dismissed (not Done), and z und
 });
 
 test('r then Ctrl+Enter copies the reply, opens YouTube and marks replied', async ({ page, context }) => {
+  // Never reach the real YouTube: from a CI runner it can answer with Google's /sorry/ CAPTCHA page, whose inline
+  // handlers trip the CSP guard and whose URL has no `&lc=`.
+  await context.route('https://www.youtube.com/**', (route) => route.fulfill({ contentType: 'text/html', body: '' }));
   const popup = context.waitForEvent('page');
   await page.keyboard.press('r');
   await page.keyboard.type('Thanks for watching!');

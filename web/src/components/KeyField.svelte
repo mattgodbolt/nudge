@@ -92,9 +92,9 @@
       data-testid={inputTestId}
     />
     <span class="btns">
-      <button class="btn" type="button" onclick={runTest} disabled={busy || !value.trim()}
-        >{busy ? 'Testing…' : 'Test'}</button
-      >
+      <button class="btn" type="button" onclick={runTest} disabled={busy || !value.trim()}>
+        {busy ? 'Testing…' : 'Test'}
+      </button>
       <button class="btn primary" type="submit" disabled={!value.trim()} data-testid={saveTestId}>Save</button>
       {#if replacing}<button class="btn ghost" type="button" onclick={cancel}>Cancel</button>{/if}
     </span>
@@ -105,8 +105,9 @@
     <span class="btns">
       <button class="btn" onclick={runTest} disabled={busy}>{busy ? 'Testing…' : 'Test'}</button>
       {#if replaceable}<button class="btn" onclick={startReplace}>Replace</button>{/if}
-      {#if replaceable && removable && remove}<button class="btn danger" onclick={() => void remove()}>Remove</button
-        >{/if}
+      {#if replaceable && removable && remove}<button class="btn danger" onclick={() => void remove()}>
+          Remove
+        </button>{/if}
     </span>
   </div>
 {/if}

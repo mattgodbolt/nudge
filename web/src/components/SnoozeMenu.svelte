@@ -217,9 +217,9 @@
                 }
               }}
             />
-            <button type="button" class="btn primary" data-testid="snooze-confirm" onclick={confirmCustom}
-              >Snooze</button
-            >
+            <button type="button" class="btn primary" data-testid="snooze-confirm" onclick={confirmCustom}>
+              Snooze
+            </button>
           </div>
         {/if}
         <button

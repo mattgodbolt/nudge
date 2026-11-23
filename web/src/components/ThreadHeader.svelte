@@ -73,9 +73,9 @@
 </script>
 
 <header bind:clientWidth={headerWidth}>
-  <button class="btn ghost sm back" onclick={() => (ui.pane = 'list')} aria-label="Back to list"
-    ><Icon name="chevron-left" size={phone.value ? 22 : 15} /> Back</button
-  >
+  <button class="btn ghost sm back" onclick={() => (ui.pane = 'list')} aria-label="Back to list">
+    <Icon name="chevron-left" size={phone.value ? 22 : 15} /> Back
+  </button>
   {@render lead?.()}
   <div class="vt">
     {@render title()}
@@ -86,9 +86,9 @@
         {#if stateText}<span class="badge" data-testid="thread-state">{stateText}</span>{/if}
         {@render extraTags?.()}
         {#if item.snoozedUntil}
-          <span class="snz" data-testid="thread-snoozed"
-            >⏰ {snoozedText(formatSnoozeTime(item.snoozedUntil, new Date(now)))}</span
-          >
+          <span class="snz" data-testid="thread-snoozed">
+            ⏰ {snoozedText(formatSnoozeTime(item.snoozedUntil, new Date(now)))}
+          </span>
         {:else if woke}
           <span class="snz" data-testid="thread-woke">⏰ {wokeText}</span>
         {/if}

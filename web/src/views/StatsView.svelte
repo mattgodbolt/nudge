@@ -82,9 +82,9 @@
       <div class="panel tile" title="{formatNumber(Math.round(totals.durationSeconds / 60))} minutes in total">
         <span class="label">Content</span>
         <span class="value" data-testid="stat-duration">{formatDuration(totals.durationSeconds)}</span>
-        <span class="sub"
-          >{hours(totals.durationSeconds)} hours · {formatNumber(Math.round(totals.durationSeconds / 60))} min</span
-        >
+        <span class="sub">
+          {hours(totals.durationSeconds)} hours · {formatNumber(Math.round(totals.durationSeconds / 60))} min
+        </span>
       </div>
       <div class="panel tile">
         <span class="label">Views</span>
@@ -102,9 +102,9 @@
       <div class="panel tile">
         <span class="label">Comments synced</span>
         <span class="value">{formatNumber(totals.commentsSynced)}</span>
-        <span class="sub"
-          >from other people · {formatNumber(totals.inbox)} in inbox · {formatNumber(totals.ownReplies)} replies from you</span
-        >
+        <span class="sub">
+          from other people · {formatNumber(totals.inbox)} in inbox · {formatNumber(totals.ownReplies)} replies from you
+        </span>
       </div>
       <div class="panel tile">
         <span class="label">Likes on those comments</span>
@@ -114,10 +114,10 @@
 
     {#if incomplete > 0}
       <div class="panel pad note">
-        <span class="meta"
-          >{formatNumber(incomplete)} video{incomplete === 1 ? '' : 's'} have no length or like count yet, so those totals
-          are low.</span
-        >
+        <span class="meta">
+          {formatNumber(incomplete)} video{incomplete === 1 ? '' : 's'} have no length or like count yet, so those totals
+          are low.
+        </span>
         <span class="grow"></span>
         <button class="btn sm" disabled={refreshing} onclick={() => void fetchMissing()}>
           <Icon name="refresh" size={14} />{refreshing ? 'Fetching…' : 'Fetch now'}
@@ -130,16 +130,18 @@
         <thead>
           <tr>
             <th>Source</th><th class="num">Videos</th><th class="num">Content</th><th class="num">Views</th><th
-              class="num">Video likes</th
-            ><th class="num">Comments</th><th class="num">Synced</th><th class="num">Comment likes</th>
+              class="num"
+            >
+              Video likes
+            </th><th class="num">Comments</th><th class="num">Synced</th><th class="num">Comment likes</th>
           </tr>
         </thead>
         <tbody>
           {#each stats.bySource as s (s.sourceId)}
             <tr>
-              <td
-                >{s.title}{#if s.isOwn}<span class="meta muted"> · mine</span>{/if}</td
-              >
+              <td>
+                {s.title}{#if s.isOwn}<span class="meta muted"> · mine</span>{/if}
+              </td>
               <td class="num">{formatNumber(s.videos)}</td>
               <td class="num">{formatDuration(s.durationSeconds)}</td>
               <td class="num">{formatNumber(s.views)}</td>

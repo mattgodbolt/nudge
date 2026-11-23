@@ -68,9 +68,9 @@
       autocomplete="off"
       data-testid="add-source-input"
     />
-    <button class="btn primary" type="submit" disabled={!parsed || busy}
-      ><Icon name="plus" size={14} />{busy ? 'Adding…' : 'Add source'}</button
-    >
+    <button class="btn primary" type="submit" disabled={!parsed || busy}>
+      <Icon name="plus" size={14} />{busy ? 'Adding…' : 'Add source'}
+    </button>
   </div>
   <div class="preview meta" data-testid="source-preview" aria-live="polite">
     {#if !value.trim()}
@@ -85,9 +85,9 @@
   {#if parsed}
     <div class="opts">
       {#if parsed.kind === 'channel'}
-        <label class="chk"
-          ><input type="checkbox" bind:checked={isOwn} data-testid="add-source-own" /> This is my channel</label
-        >
+        <label class="chk">
+          <input type="checkbox" bind:checked={isOwn} data-testid="add-source-own" /> This is my channel
+        </label>
       {/if}
       <div class="seg" role="group" aria-label="Import existing comments">
         <span class="muted meta">Import existing:</span>
@@ -97,8 +97,10 @@
             class="segbtn"
             class:on={importMode === m}
             aria-pressed={importMode === m}
-            onclick={() => (importMode = m as ImportMode)}>{l}</button
+            onclick={() => (importMode = m as ImportMode)}
           >
+            {l}
+          </button>
         {/each}
       </div>
     </div>

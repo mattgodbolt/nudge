@@ -10,9 +10,9 @@
     <span class="muted meta">Paste your channel URL or @handle so your own comments stay out of the inbox.</span>
     <OwnChannelForm />
   </div>
-  <button class="btn ghost sm" aria-label="Dismiss" onclick={() => ui.dismissOwnBanner()}
-    ><Icon name="x" size={14} /></button
-  >
+  <button class="btn ghost sm" aria-label="Dismiss" onclick={() => ui.dismissOwnBanner()}>
+    <Icon name="x" size={14} />
+  </button>
 </aside>
 
 <style>

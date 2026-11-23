@@ -28,9 +28,9 @@
     wokeText="back from snooze"
   >
     {#snippet title()}
-      <a class="title" href={it.url ?? '#'} target="_blank" rel="noopener noreferrer" title="Open on GitHub"
-        >{it.title}</a
-      >
+      <a class="title" href={it.url ?? '#'} target="_blank" rel="noopener noreferrer" title="Open on GitHub">
+        {it.title}
+      </a>
     {/snippet}
     {#snippet meta()}
       <div class="meta faint">
