@@ -26,8 +26,10 @@
       data-testid="update-dismiss"
       aria-label="Not now"
       title="Not now (Esc)"
-      onclick={() => update.dismiss()}><Icon name="x" size={14} /></button
+      onclick={() => update.dismiss()}
     >
+      <Icon name="x" size={14} />
+    </button>
   </div>
 {/if}
 

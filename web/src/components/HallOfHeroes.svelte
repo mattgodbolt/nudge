@@ -66,11 +66,11 @@
               <strong>{b.name}</strong>
               <span class="meta muted">{b.who}</span>
               {#if b.defeated > 0}
-                <span class="meta"
-                  >Fallen {b.defeated === 1 ? 'once' : `${b.defeated} times`}{b.firstOn
+                <span class="meta">
+                  Fallen {b.defeated === 1 ? 'once' : `${b.defeated} times`}{b.firstOn
                     ? `, first ${dayName(b.firstOn, s.day)}`
-                    : ''}</span
-                >
+                    : ''}
+                </span>
               {/if}
             </div>
           </li>
@@ -79,9 +79,9 @@
 
       <h3>
         Achievements
-        <span class="meta muted" data-testid="hall-achievement-count"
-          >{earnedCount} of {s.achievements.length} · {tiersEarned} of {tiersAll} tiers</span
-        >
+        <span class="meta muted" data-testid="hall-achievement-count">
+          {earnedCount} of {s.achievements.length} · {tiersEarned} of {tiersAll} tiers
+        </span>
       </h3>
       <ul class="grid badges">
         {#each s.achievements as a (a.id)}
@@ -106,21 +106,21 @@
             />
             <div class="cap">
               <strong>{a.name ?? '???'}{a.name && ladder && a.tier > 0 ? ` ${roman(a.tier)}` : ''}</strong>
-              <span class="meta muted"
-                >{a.name && ladder && a.earned && !done ? 'Next: ' : ''}{a.description ?? 'A secret, for now.'}</span
-              >
+              <span class="meta muted">
+                {a.name && ladder && a.earned && !done ? 'Next: ' : ''}{a.description ?? 'A secret, for now.'}
+              </span>
               {#if a.progress}
-                <span class="progress" aria-hidden="true"
-                  ><span class="fill" style="width: {(a.progress.n / a.progress.of) * 100}%"></span></span
-                >
-                <span class="meta muted" data-testid="hall-achievement-progress"
-                  >{a.progress.n.toLocaleString('en-US')} of {a.progress.of.toLocaleString('en-US')}</span
-                >
+                <span class="progress" aria-hidden="true">
+                  <span class="fill" style="width: {(a.progress.n / a.progress.of) * 100}%"></span>
+                </span>
+                <span class="meta muted" data-testid="hall-achievement-progress">
+                  {a.progress.n.toLocaleString('en-US')} of {a.progress.of.toLocaleString('en-US')}
+                </span>
               {/if}
               {#if a.earned && a.earnedOn}
-                <span class="meta" data-testid="hall-achievement-tier"
-                  >{`${ladder ? `${tierLine(a)} · earned` : 'Earned'} ${dayName(a.earnedOn, s.day)}`}</span
-                >
+                <span class="meta" data-testid="hall-achievement-tier">
+                  {`${ladder ? `${tierLine(a)} · earned` : 'Earned'} ${dayName(a.earnedOn, s.day)}`}
+                </span>
               {/if}
             </div>
           </li>

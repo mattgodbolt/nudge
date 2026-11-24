@@ -52,8 +52,10 @@
     <span
       class="end"
       style:left="calc({(xAt(points.length - 1) / W) * 100}% + 8px)"
-      style:top="{(yAt(last.count) / H) * 120}px">{last.count}</span
+      style:top="{(yAt(last.count) / H) * 120}px"
     >
+      {last.count}
+    </span>
   {/if}
   {#if !last || yAt(last.count) - yAt(max) > 16}<span class="max">{max}</span>{/if}
   <div class="axis" aria-hidden="true">

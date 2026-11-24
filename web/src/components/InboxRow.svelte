@@ -174,19 +174,22 @@
       <span class="time faint">{relativeTime(c.publishedAt, now)}</span>
       {#if item.parent}<span class="reply faint truncate">↳ reply to {item.parent.authorName}</span>{/if}
       <span class="spacer"></span>
-      {#if item.snoozedUntil}<span class="snz" data-testid="row-snoozed" title="Snoozed"
-          >⏰ {item.snoozeUntilActivity
+      {#if item.snoozedUntil}<span class="snz" data-testid="row-snoozed" title="Snoozed">
+          ⏰ {item.snoozeUntilActivity
             ? `activity · ${formatSnoozeDay(item.snoozedUntil, new Date(now))}${parked ? ` · ${parked}` : ''}`
-            : `until ${formatSnoozeTime(item.snoozedUntil, new Date(now))}`}</span
-        >{:else if woke}<span class="snz" data-testid="row-woke"
-          >⏰ {item.wakeCause === 'activity' ? 'back: new activity' : 'back from snooze'}</span
-        >{/if}
+            : `until ${formatSnoozeTime(item.snoozedUntil, new Date(now))}`}
+        </span>{:else if woke}<span class="snz" data-testid="row-woke">
+          ⏰ {item.wakeCause === 'activity' ? 'back: new activity' : 'back from snooze'}
+        </span>{/if}
       {#if item.hasDraft}<span class="draft" title="Draft saved">Draft</span>{/if}
-      {#if c.state === 'auto_replied'}<span class="badge" title="Answered on YouTube">Answered</span
-        >{:else if c.state === 'replied'}<span class="badge">Replied</span>{:else if showState && stateText}<span
+      {#if c.state === 'auto_replied'}<span class="badge" title="Answered on YouTube">
+          Answered
+        </span>{:else if c.state === 'replied'}<span class="badge">Replied</span>{:else if showState && stateText}<span
           class="badge"
-          data-testid="row-state">{stateText}</span
-        >{/if}
+          data-testid="row-state"
+        >
+          {stateText}
+        </span>{/if}
     </div>
     {#if gh || todo}
       <div class="text gh-title" data-testid="row-title">{(gh ?? todo)?.title}</div>
@@ -199,22 +202,23 @@
           class="vtitle nag truncate"
           data-testid="row-nag"
           title="{nagText(nag.bucket, nag.days)}{why ? ` · You snoozed this to: ${why}` : ''}"
-          ><b>{nagText(nag.bucket, nag.days)}</b>{#if why}
-            <span class="why"> · {why}</span>{/if}</span
         >
+          <b>{nagText(nag.bucket, nag.days)}</b>{#if why}
+            <span class="why"> · {why}</span>{/if}
+        </span>
       {:else if line.text || line.bucket}
-        <span class="vtitle why truncate" data-testid="row-why" title={line.text || `Snoozed · ${line.bucket}`}
-          >{line.text}{#if line.bucket}<span class="bkt" data-testid="row-bucket"
-              >{line.text ? ' · ' : 'Snoozed · '}{line.bucket}</span
-            >{/if}</span
-        >
+        <span class="vtitle why truncate" data-testid="row-why" title={line.text || `Snoozed · ${line.bucket}`}>
+          {line.text}{#if line.bucket}<span class="bkt" data-testid="row-bucket">
+              {line.text ? ' · ' : 'Snoozed · '}{line.bucket}
+            </span>{/if}
+        </span>
       {/if}
-      <span class="vtitle faint truncate" class:hide={!!line.text || !!line.bucket || !!nag}
-        >{#if todo}{c.textPlain || 'Todo'}{:else if gh}<span class="kind" data-testid="row-kind"
-            >{gh.kind === 'pr' ? 'PR' : 'Issue'}</span
-          >
-          {refLabel(gh)}{:else}{item.video.title}{/if}</span
-      >
+      <span class="vtitle faint truncate" class:hide={!!line.text || !!line.bucket || !!nag}>
+        {#if todo}{c.textPlain || 'Todo'}{:else if gh}<span class="kind" data-testid="row-kind">
+            {gh.kind === 'pr' ? 'PR' : 'Issue'}
+          </span>
+          {refLabel(gh)}{:else}{item.video.title}{/if}
+      </span>
       <!-- Chips wrap onto a hidden second line instead of shrinking, so one is shown whole or not at all. -->
       <span class="tagline">
         {#if gh?.github}

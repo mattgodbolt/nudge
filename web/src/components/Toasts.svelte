@@ -19,8 +19,10 @@
           onclick={() => {
             t.action?.run();
             toasts.dismiss(t.id);
-          }}>{t.action.label}</button
+          }}
         >
+          {t.action.label}
+        </button>
       {/if}
       <button class="close" aria-label="Dismiss" onclick={() => toasts.dismiss(t.id)}>×</button>
     </div>

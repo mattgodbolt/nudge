@@ -72,9 +72,9 @@
   {@attach tip({ id, label })}
 >
   <Icon name={icon} size={tile ? 22 : 14} />
-  {#if tile}<span class="lbl">{short ?? label}</span>{:else if showLabel}<span class="lbl"
-      >{compact ? (short ?? label) : label}</span
-    >{/if}
+  {#if tile}<span class="lbl">{short ?? label}</span>{:else if showLabel}<span class="lbl">
+      {compact ? (short ?? label) : label}
+    </span>{/if}
 </button>
 
 <style>

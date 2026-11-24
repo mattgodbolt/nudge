@@ -34,8 +34,10 @@
     data-testid={testid}
     data-action={suggestion.action ?? 'suspicious'}
     data-turn={suggestion.turn ?? ''}
-    data-confidence={suggestion.confidence}>{chipText(suggestion)}</span
+    data-confidence={suggestion.confidence}
   >
+    {chipText(suggestion)}
+  </span>
 {/if}
 
 <style>

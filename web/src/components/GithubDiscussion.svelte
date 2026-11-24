@@ -102,14 +102,14 @@
           <Avatar url={e.avatarUrl} name={e.author} size={20} />
           <strong>{e.author}</strong>
           {#if chip}<span class="badge rowchip {chip.tone}" title={chip.title}>{chip.text}</span>{/if}
-          {#if review}<span class="badge {review.tone}" data-testid="gh-review-state" title={review.title}
-              >{review.text}</span
-            >{/if}
+          {#if review}<span class="badge {review.tone}" data-testid="gh-review-state" title={review.title}>
+              {review.text}
+            </span>{/if}
           {#if isNew}<span class="badge accent" data-testid="gh-new">New</span>{/if}
           <span class="faint meta when">
-            {#if e.url}<a href={e.url} target="_blank" rel="noopener noreferrer" title={e.createdAt}
-                >{relativeTime(e.createdAt, now)}</a
-              >{:else}{relativeTime(e.createdAt, now)}{/if}
+            {#if e.url}<a href={e.url} target="_blank" rel="noopener noreferrer" title={e.createdAt}>
+                {relativeTime(e.createdAt, now)}
+              </a>{:else}{relativeTime(e.createdAt, now)}{/if}
           </span>
         </div>
         {#if ctx(e)}<div class="file mono" data-testid="gh-inline-context">{ctx(e)}</div>{/if}

@@ -417,8 +417,9 @@
             font-family="ui-monospace, monospace"
             fill="var(--rpg-o)"
             stroke="none"
-            >{id === 'the_answer' ? '42' : id === 'leet' ? '1337' : id === 'off_by_one' ? '±1' : '29'}</text
           >
+            {id === 'the_answer' ? '42' : id === 'leet' ? '1337' : id === 'off_by_one' ? '±1' : '29'}
+          </text>
         {:else if id === 'auditor'}
           <circle cx="14.8" cy="11.8" r="3.6" />
           <path d="M17.4 14.4 L21 18" stroke-width="2.2" />
@@ -478,8 +479,10 @@
           font-weight="700"
           fill="var(--rpg-o)"
           stroke="none"
-          data-numeral={roman(shownTier)}>{roman(shownTier)}</text
+          data-numeral={roman(shownTier)}
         >
+          {roman(shownTier)}
+        </text>
       {/if}
     {/if}
   </g>

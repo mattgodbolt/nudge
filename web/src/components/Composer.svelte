@@ -157,8 +157,10 @@
           type="button"
           onclick={handoffInstead}
           disabled={!body.trim()}
-          data-testid="composer-handoff">Copy &amp; open instead</button
+          data-testid="composer-handoff"
         >
+          Copy &amp; open instead
+        </button>
       {/if}
       <button class="btn sm" type="button" onclick={() => copyOnly(body)} disabled={!body.trim()}>Copy</button>
       <button class="btn sm primary" type="button" onclick={doSend} disabled={!body.trim()} data-testid="composer-send">

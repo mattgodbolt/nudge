@@ -32,8 +32,10 @@
               e.preventDefault();
               r.onopen();
             }
-          }}>{r.label}</a
+          }}
         >
+          {r.label}
+        </a>
       {:else}
         <span class="name truncate" title={r.label}>{r.label}</span>
       {/if}

@@ -120,9 +120,9 @@
         <circle cx="16" cy="8" r="5" fill="var(--accent)" />
       </svg>
       {#if rpg.enabled && rpg.sheet?.today.hat}
-        <span class="hat" data-testid="rpg-hat"
-          ><RpgArt kind="loot" id="hat" size={14} label="Wizard Hat (levelled up today)" /></span
-        >
+        <span class="hat" data-testid="rpg-hat">
+          <RpgArt kind="loot" id="hat" size={14} label="Wizard Hat (levelled up today)" />
+        </span>
       {/if}
     </span>
     <span class="name">Nudge</span>
@@ -155,8 +155,9 @@
     onclick={() => (ui.paletteOpen = true)}
     aria-label="Jump to… (search commands and views)"
   >
-    <Icon name={phone.value ? 'command' : 'search'} size={phone.value ? 22 : 14} /><span class="grow">Jump to…</span
-    ><Kbd keys="$mod+k" />
+    <Icon name={phone.value ? 'command' : 'search'} size={phone.value ? 22 : 14} /><span class="grow">
+      Jump to…
+    </span><Kbd keys="$mod+k" />
   </button>
 
   <button
@@ -189,8 +190,10 @@
             class="count"
             class:strong={v.route === 'inbox' && v.count > 0}
             class:zero={v.route === 'snoozed' && v.count === 0}
-            data-testid={v.testid}>{formatNumber(v.count)}</span
+            data-testid={v.testid}
           >
+            {formatNumber(v.count)}
+          </span>
         </a>
       {/each}
     </div>
@@ -232,8 +235,10 @@
                 aria-label="{open ? 'Collapse' : 'Expand'} {f.owner}"
                 aria-expanded={open}
                 data-testid="feed-toggle"
-                onclick={() => toggle(f.id)}><Icon name="chevron-down" size={12} /></button
-              >{/if}
+                onclick={() => toggle(f.id)}
+              >
+                <Icon name="chevron-down" size={12} />
+              </button>{/if}
             <a
               class="item sub grow"
               class:active={router.route === 'inbox' && router.query.feed === String(f.id) && !router.query.repo}
@@ -289,9 +294,9 @@
       >
         <Icon name="check" size={14} />
         <span class="grow truncate">Todos</span>
-        {#if inbox.counts.todos > 0}<span class="count" data-testid="sidebar-todos-count"
-            >{formatNumber(inbox.counts.todos)}</span
-          >{/if}
+        {#if inbox.counts.todos > 0}<span class="count" data-testid="sidebar-todos-count">
+            {formatNumber(inbox.counts.todos)}
+          </span>{/if}
       </a>
     </div>
   </div>
@@ -316,8 +321,10 @@
       onclick={(e) => {
         e.preventDefault();
         router.navigate('sources');
-      }}><Icon name="list" /><span class="grow">Manage sources</span></a
+      }}
     >
+      <Icon name="list" /><span class="grow">Manage sources</span>
+    </a>
     <a
       class="item"
       class:active={router.route === 'stats'}
@@ -326,8 +333,10 @@
       onclick={(e) => {
         e.preventDefault();
         router.navigate('stats');
-      }}><Icon name="chart" /><span class="grow">Stats</span></a
+      }}
     >
+      <Icon name="chart" /><span class="grow">Stats</span>
+    </a>
     <a
       class="item"
       class:active={router.route === 'settings'}
@@ -336,8 +345,10 @@
       onclick={(e) => {
         e.preventDefault();
         router.navigate('settings');
-      }}><Icon name="settings" /><span class="grow">Settings</span></a
+      }}
     >
+      <Icon name="settings" /><span class="grow">Settings</span>
+    </a>
     <RpgChip />
     <SyncIndicator />
     <QuotaMeter />

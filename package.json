@@ -36,17 +36,17 @@
     "eval:classify": "tsx server/classify/eval.ts"
   },
   "dependencies": {
-    "@fastify/static": "^10.1.11",
+    "@fastify/static": "^10.1.12",
     "@fontsource-variable/inter": "^5.3.0",
     "@fontsource-variable/jetbrains-mono": "^5.3.0",
-    "better-sqlite3": "^13.1.1",
-    "dompurify": "^3.4.17",
+    "better-sqlite3": "^13.2.0",
+    "dompurify": "^3.4.18",
     "fastify": "^5.12.8",
-    "marked": "^18.2.0",
+    "marked": "^18.2.1",
     "web-push": "^4.0.0"
   },
   "devDependencies": {
-    "@playwright/test": "^1.65.0",
+    "@playwright/test": "^1.65.1",
     "@sveltejs/vite-plugin-svelte": "^7.3.1",
     "@testing-library/svelte": "^5.4.2",
     "@tsconfig/svelte": "^5.0.9",
@@ -57,12 +57,12 @@
     "concurrently": "^10.0.7",
     "jsdom": "^31.0.1",
     "prettier": "^3.10.1",
-    "prettier-plugin-svelte": "^4.1.1",
-    "svelte": "^5.57.3",
+    "prettier-plugin-svelte": "^4.2.0",
+    "svelte": "^5.58.0",
     "svelte-check": "^4.7.8",
     "tsx": "^4.23.15",
     "typescript": "^6.0.3",
     "vite": "^8.3.8",
-    "vitest": "^5.1.0"
+    "vitest": "^5.1.1"
   }
 }
