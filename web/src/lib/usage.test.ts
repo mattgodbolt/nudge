@@ -196,6 +196,32 @@ describe('Usage', () => {
     expect(u.pending['session.start']).toBe(1);
   });
 
+  it('notices a long absence from the heartbeat when the page was frozen without a visibility event', async () => {
+    u.start({ demo: false });
+    await vi.advanceTimersByTimeAsync(60_000); // a first beat records the time
+    await settle();
+    send.mockClear();
+    now += 45 * 60_000; // frozen: no visibilitychange, and no timers ran
+    await vi.advanceTimersByTimeAsync(60_000);
+    const starts = () =>
+      send.mock.calls.reduce((n, c) => n + ((c[0] as Record<string, number>)['session.start'] ?? 0), 0) +
+      (u.pending['session.start'] ?? 0);
+    expect(starts()).toBe(1);
+    // The visibility path seeing the same absence must not count it again.
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' });
+    document.dispatchEvent(new Event('visibilitychange'));
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
+    document.dispatchEvent(new Event('visibilitychange'));
+    expect(starts()).toBe(1);
+  });
+
+  it('counts a reply sent from the composer as replied', () => {
+    u.start({ demo: false });
+    u.binding('composer.send', 'kbd');
+    u.binding('composer.send', 'touch');
+    expect(u.pending).toMatchObject({ 'replied.kbd': 1, 'replied.touch': 1 });
+  });
+
   it('reads a touch pointer as touch and anything else as the fallback', () => {
     expect(viaOfEvent({ pointerType: 'touch' } as unknown as Event)).toBe('touch');
     expect(viaOfEvent({ pointerType: 'mouse' } as unknown as Event)).toBe('btn');

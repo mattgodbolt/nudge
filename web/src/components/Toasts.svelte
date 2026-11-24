@@ -1,5 +1,6 @@
 <script lang="ts">
   import { toasts } from '../lib/stores/toasts.svelte';
+  import { usage, viaOfEvent } from '../lib/usage';
   import { fly } from 'svelte/transition';
 </script>
 
@@ -16,7 +17,9 @@
       {#if t.action}
         <button
           class="act"
-          onclick={() => {
+          onclick={(e) => {
+            // Every undo toast (triage, reply, mute, assistant) says "Undo", and none of them go through the keymap.
+            if (t.action?.label === 'Undo') usage.action('undo', viaOfEvent(e));
             t.action?.run();
             toasts.dismiss(t.id);
           }}

@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { InboxItem } from '../../../shared/types';
   import { keymap } from '../lib/keys/keymap.svelte';
+  import { usage, viaOfEvent } from '../lib/usage';
   import { copyOnly, handoff, send } from '../lib/reply';
   import { drafts } from '../lib/stores/drafts.svelte';
   import { inbox } from '../lib/stores/inbox.svelte';
@@ -155,7 +156,10 @@
         <button
           class="btn sm ghost"
           type="button"
-          onclick={handoffInstead}
+          onclick={(e) => {
+            usage.binding('composer.send', viaOfEvent(e));
+            handoffInstead();
+          }}
           disabled={!body.trim()}
           data-testid="composer-handoff"
         >
@@ -163,7 +167,16 @@
         </button>
       {/if}
       <button class="btn sm" type="button" onclick={() => copyOnly(body)} disabled={!body.trim()}>Copy</button>
-      <button class="btn sm primary" type="button" onclick={doSend} disabled={!body.trim()} data-testid="composer-send">
+      <button
+        class="btn sm primary"
+        type="button"
+        onclick={(e) => {
+          usage.binding('composer.send', viaOfEvent(e));
+          doSend();
+        }}
+        disabled={!body.trim()}
+        data-testid="composer-send"
+      >
         {handoffMode ? 'Copy & open' : 'Reply'}
       </button>
     </div>

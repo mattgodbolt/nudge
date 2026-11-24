@@ -20,6 +20,7 @@ export const BINDING_ACTIONS: Readonly<Record<string, UsageAction>> = {
   'snooze.again': 'snooze',
   'mute.open': 'mute',
   'triage.undo': 'undo',
+  'composer.send': 'replied', // Ctrl+Enter in the composer; its buttons count the same way (see Composer.svelte)
   'reply.open': 'reply',
   'open.comment': 'open_source',
   'open.video': 'open_source',
@@ -65,6 +66,8 @@ export class Usage {
   #lastFlush = -Infinity;
   #timer: ReturnType<typeof setTimeout> | undefined;
   #hiddenAt: number | null = null;
+  #lastBeat: number | null = null;
+  #sessionAt = -Infinity;
   #lastInput = -Infinity;
   #stop: (() => void) | undefined;
   #sending = false;
@@ -89,7 +92,7 @@ export class Usage {
       if (this.#enabled || opts.demo || opts.automated) return;
       this.#enabled = true;
       this.#attach();
-      this.count('session.start');
+      this.#newSession();
       this.#device();
     } catch {
       /* analytics never breaks the app */
@@ -166,6 +169,14 @@ export class Usage {
     }, wait);
   }
 
+  /** A new session, at most once per gap however many signals notice the same absence. */
+  #newSession(): void {
+    const t = this.deps.now();
+    if (t - this.#sessionAt < SESSION_GAP_MS) return;
+    this.#sessionAt = t;
+    this.count('session.start');
+  }
+
   #device(): void {
     const { win } = this.deps;
     if (!win) return;
@@ -184,13 +195,18 @@ export class Usage {
       } else {
         const gap = this.#hiddenAt === null ? 0 : this.deps.now() - this.#hiddenAt;
         this.#hiddenAt = null;
-        if (gap >= SESSION_GAP_MS) this.count('session.start');
+        if (gap >= SESSION_GAP_MS) this.#newSession();
       }
     };
     const onPageHide = () => this.flush();
     const onInput = () => (this.#lastInput = this.deps.now());
     // Active minutes: a heartbeat that counts a minute only if the tab is visible and the owner did something in it.
     const beat = () => {
+      // A phone can freeze the page without ever firing visibilitychange; its timers stop too, so a long hole
+      // between two heartbeats is the same absence.
+      const t = this.deps.now();
+      if (this.#lastBeat !== null && t - this.#lastBeat >= SESSION_GAP_MS) this.#newSession();
+      this.#lastBeat = t;
       if (doc.visibilityState === 'visible' && this.deps.now() - this.#lastInput <= ACTIVE_WINDOW_MS) {
         this.count('session.active_minute');
       }
