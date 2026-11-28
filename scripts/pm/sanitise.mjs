@@ -46,17 +46,24 @@ if (Array.isArray(out.usage?.rows)) {
   out.usage.byKey = byKey;
   out.usage.weekly = weekly; // keyed by the Monday that starts each week
 }
-// Last line of defence: anything still shaped like a handle, URL or email is dropped rather than trusted.
-// Generated prose (`sentence`) can quote a video title, so free text goes too: ids and enums here are short.
+// Then an allow-list over every remaining string, because a block-list lets through whatever it did not think of (an
+// item id did). Only dates, the ranks above and short lower-case words (enum values, counter keys, size bands) pass,
+// which no YouTube id, GitHub item id, URL, handle with capitals or title with spaces does. Id and text fields are
+// dropped outright, whatever they hold.
+const SAFE = [
+  /^\d{4}-\d{2}-\d{2}(T[\d:.]+Z)?$/,
+  /^(repo|video|channel|commenter|thread) #\d+$/,
+  /^[a-z0-9_.+<>-]{1,32}$/,
+];
+const DROP = new Set(['itemId', 'sourceId', 'videoId', 'commentId', 'authorId', 'label', 'sentence', 'url']);
 const scrub = (v) => {
-  if (typeof v === 'string') return v.length > 40 || /https?:\/\/|@|\/|[‘’“”]/.test(v) ? '[removed]' : v;
+  if (typeof v === 'string') return SAFE.some((re) => re.test(v)) ? v : '[removed]';
   if (Array.isArray(v)) return v.map(scrub);
-  if (v && typeof v === 'object')
-    return Object.fromEntries(
-      Object.entries(v)
-        .filter(([k]) => k !== 'sentence')
-        .map(([k, x]) => [k, scrub(x)]),
-    );
-  return v;
+  if (!v || typeof v !== 'object') return v;
+  return Object.fromEntries(
+    Object.entries(v)
+      .filter(([k]) => !DROP.has(k))
+      .map(([k, x]) => [k, scrub(x)]),
+  );
 };
 console.log(JSON.stringify(scrub(out), null, 1));
